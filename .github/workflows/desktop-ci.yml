@@ -46,19 +46,3 @@ jobs:
       - name: Smoke test packaged desktop under Xvfb
         if: matrix.platform == 'linux'
         run: xvfb-run --auto-servernum npm run desktop:smoke
-      - name: Build and inspect Docker server image
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          docker build --tag qual-hardware:ci .
-          docker run --detach --name qual-hardware-ci --publish 127.0.0.1:4178:4178 qual-hardware:ci
-          for attempt in {1..30}; do
-            status="$(docker inspect --format '{{.State.Health.Status}}' qual-hardware-ci)"
-            if [ "$status" = healthy ]; then
-              curl --fail --silent http://127.0.0.1:4178/api/health
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs qual-hardware-ci
-          exit 1

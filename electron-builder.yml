@@ -7,6 +7,8 @@ directories:
   buildResources: build
 files:
   - dist/**/*
+  - "!dist/server/server/index.js"
+  - "!dist/server/server/worker.js"
   - contracts/**/*
   - database/**/*
   - package.json

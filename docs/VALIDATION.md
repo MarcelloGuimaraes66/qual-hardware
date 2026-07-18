@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, required ASAR resources, loopback origin, health, bundled catalog, SQLite, calculation, PDF/XLSX/JSON exports, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 14-item catalog, Windows/Ubuntu/macOS recommendation targets, SQLite, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 2.2 exports, single-instance behavior and persistence after restart.
 
 ```sh
 npm ci
@@ -43,7 +43,10 @@ Run `npm run audit:source` whenever Perceptrum, DrakonSite, or AppHost source ch
 - N+1: 30% reserve after loss of one compute node.
 - Storage capacity and disk throughput are never node-count, headroom or bottleneck dimensions. The BOM includes only an operational NVMe workspace because inference media is short-lived and alert media is sparse.
 - Legacy `storeVideo`, `retentionDays` and `raidFactor` scenario fields remain readable but are ignored by the sizing engine.
-- Missing prices never become zero-cost parts; reports mark them as quotation required.
+- Missing seller quotes use a visibly identified, dated and sourced componentized reference estimate; values are never presented as a firm offer and purchase quotation remains required.
+- Minimum, recommended and N+1 use different primary hardware templates whenever compatible non-downgrade alternatives exist. Capacity constraints always take precedence over diversity.
 - A hardware template is rejected if any compute, memory, decoder or network dimension exceeds its policy-adjusted capacity.
+- Laptops and mini PCs participate in CPU-decode/remote-model sizing. The exact ASUS S5606CA profile can be forced and must never be silently replaced by another template.
+- Apple templates are considered only after explicit macOS selection; shared/unified memory is not dedicated VRAM and current local AiQ/NVIDIA decode demand rejects them.
 - Every PDF, XLSX and JSON proposal export contains the complete current set of minimum, recommended and N+1 designs; a partial recommendation set is rejected.
 - Hardware catalog imports require a configured Ed25519 public key and never replace the active catalog when signature verification fails.

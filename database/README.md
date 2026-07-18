@@ -5,8 +5,7 @@ Qual Hardware usa SQLite e cria sozinho um arquivo chamado obrigatoriamente `qua
 - Desktop Windows: `%APPDATA%\Qual Hardware\qual-hardware.sqlite` (expected Electron default; the existing portable must confirm this exact path before merge)
 - Desktop macOS: `~/Library/Application Support/Qual Hardware/qual-hardware.sqlite`
 - Desktop Ubuntu: `~/.config/Qual Hardware/qual-hardware.sqlite`
-- Desenvolvimento: `data/qual-hardware.sqlite`
-- Docker em um único host: `/data/qual-hardware.sqlite`, no volume `qual_hardware_data`
+- Desenvolvimento desktop: o mesmo diretório `userData` nativo da plataforma, substituível apenas por `--user-data-dir` em testes isolados.
 
 The desktop derives these locations from `app.getPath("userData")`; it does not hard-code, move or copy a database. Existing data must never be cleaned to make a validation pass. If the Windows comparison returns a different directory, the release is blocked until compatibility is restored.
 
@@ -16,6 +15,6 @@ O arquivo guarda apenas projetos do Qual Hardware, recomendações, metadados/re
 
 ## Confiabilidade e migração
 
-O esquema está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A aplicação aplica atualizações compatíveis ao abrir e recusa uma versão de banco mais nova do que o executável entende. O modo WAL permite que a API e o worker compartilhem o arquivo no mesmo computador.
+O esquema está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A aplicação aplica atualizações compatíveis ao abrir e recusa uma versão de banco mais nova do que o executável entende. O modo WAL atende às operações internas da janela desktop.
 
-SQLite não deve ser colocado em um compartilhamento SMB/NFS nem usado por contêineres em hosts diferentes. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.
+SQLite não deve ser colocado em um compartilhamento SMB/NFS. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.

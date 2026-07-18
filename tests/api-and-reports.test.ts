@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { createDefaultScenario } from "../src/shared/schemas.js";
-import type { BenchmarkManifest, CapacityRecommendation, ScenarioRecord } from "../src/shared/types.js";
+import type { BenchmarkManifest, CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
@@ -16,6 +16,10 @@ describe("Qual Hardware API and reports", () => {
     const catalogStatus = await app.request("/api/catalog/status");
     expect(catalogStatus.status).toBe(200);
     expect((await catalogStatus.json() as { catalogVersion: string }).catalogVersion).toMatch(/^hardware-reference\//);
+    const hardwareCatalog = await (await app.request("/api/catalog/hardware")).json() as HardwareNodeTemplate[];
+    expect(hardwareCatalog).toHaveLength(14);
+    expect(hardwareCatalog.some((item) => item.id === "laptop-vivobook-s16-285h-32gb-user")).toBe(true);
+    expect(hardwareCatalog.filter((item) => item.operatingSystemFamily === "macos")).toHaveLength(4);
     const scenario = createDefaultScenario(16);
     const createdResponse = await app.request("/api/scenarios", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario }) });
     expect(createdResponse.status).toBe(201);
@@ -29,6 +33,8 @@ describe("Qual Hardware API and reports", () => {
     const recommendations = await calculated.json() as CapacityRecommendation[];
     expect(recommendations).toHaveLength(3);
     expect(recommendations.every((item) => item.evidence.some((entry) => entry.startsWith("catalog-version:")))).toBe(true);
+    expect(new Set(recommendations.map((item) => item.primary.hardware.id)).size).toBe(3);
+    expect(recommendations.every((item) => item.primary.price.median !== null && item.primary.price.componentEstimates.length > 0)).toBe(true);
 
     const duplicateResponse = await app.request(`/api/scenarios/${created.id}/duplicate`, { method: "POST" });
     const duplicate = await duplicateResponse.json() as ScenarioRecord;
@@ -42,7 +48,7 @@ describe("Qual Hardware API and reports", () => {
     expect(json.headers.get("content-type")).toContain("application/json");
     expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-3-configuracoes.json"');
     const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[] };
-    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/2.0.0");
+    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/2.2.0");
     expect(jsonReport.recommendations.map((item) => item.policy)).toEqual(["minimum", "recommended", "n_plus_one"]);
 
     const pdf = await app.request(`/api/recommendations/${recommendation.id}/export/pdf`);
@@ -63,8 +69,12 @@ describe("Qual Hardware API and reports", () => {
     const configurations = workbook.getWorksheet("3 Configurations")!;
     expect(configurations.rowCount).toBe(4);
     expect([2, 3, 4].map((row) => configurations.getRow(row).getCell(1).value)).toEqual(["minimum", "recommended", "n_plus_one"]);
-    expect(workbook.getWorksheet("BOM")!.rowCount).toBe(37);
-    expect(new Set(workbook.getWorksheet("BOM")!.getColumn(1).values.slice(2).map(String))).toEqual(new Set(["minimum", "recommended", "n_plus_one"]));
+    const bom = workbook.getWorksheet("BOM")!;
+    expect(bom.rowCount).toBe(34);
+    expect(new Set(bom.getColumn(1).values.slice(2).map(String))).toEqual(new Set(["minimum", "recommended", "n_plus_one"]));
+    const bomHeaders = (bom.getRow(1).values as unknown[]).map(String);
+    expect(bomHeaders).toEqual(expect.arrayContaining(["currency", "unitCost", "perNodeCost", "projectCost", "priceBasis"]));
+    expect(bom.getColumn(bomHeaders.indexOf("projectCost")).values.slice(2).some((value) => typeof value === "number" && value > 0)).toBe(true);
     const nodePolicies = new Set(workbook.getWorksheet("Nodes")!.getColumn(1).values.slice(2).map(String));
     expect(nodePolicies).toEqual(new Set(["minimum", "recommended", "n_plus_one"]));
 

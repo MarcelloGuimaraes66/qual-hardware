@@ -51,12 +51,28 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await reopenedStore.close();
   });
 
-  it("shares one persistent SQLite volume between the API and worker in Compose", async () => {
-    const compose = await readFile(new URL("../docker-compose.yml", import.meta.url), "utf8");
-    expect(compose).toContain("QUAL_HARDWARE_SQLITE_PATH: /data/qual-hardware.sqlite");
-    expect(compose.match(/qual_hardware_data:\/data/g)).toHaveLength(2);
-    expect(compose).toContain("qual_hardware_private:");
-    expect(compose.toLowerCase()).not.toContain("postgres");
-    expect(compose.toLowerCase()).not.toContain("perceptrum");
+  it("repairs a stale partial bundled catalog before signed-cache initialization", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-bundled-refresh-"));
+    cleanupDirectories.push(directory);
+    const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
+    const firstStore = new SqlitePlannerStore(databasePath);
+    await firstStore.replaceCatalog(HARDWARE_CATALOG.slice(0, 2), []);
+    expect(await firstStore.getCatalog()).toHaveLength(2);
+    await firstStore.close();
+
+    const reopenedStore = new SqlitePlannerStore(databasePath);
+    expect(await reopenedStore.getCatalog()).toHaveLength(HARDWARE_CATALOG.length);
+    expect(new Set((await reopenedStore.getCatalog()).map((item) => item.id))).toEqual(new Set(HARDWARE_CATALOG.map((item) => item.id)));
+    await reopenedStore.close();
+  });
+
+  it("ships as a local desktop application with a loopback-only internal API", async () => {
+    const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { main: string; scripts: Record<string, string> };
+    const desktopMain = await readFile(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
+    expect(packageJson.main).toBe("dist/server/desktop/main.js");
+    expect(packageJson.scripts.start).toBe("npm run desktop:run");
+    expect(packageJson.scripts["dev:web"]).toBeUndefined();
+    expect(desktopMain).toContain('const HOST = "127.0.0.1"');
+    expect(desktopMain).toContain("port: 0");
   });
 });

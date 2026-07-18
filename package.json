@@ -10,15 +10,13 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "tsx watch src/server/index.ts",
-    "dev:web": "vite",
+    "dev": "npm run desktop:run",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
     "desktop:run": "npm run build && electron .",
     "desktop:package": "npm run build && electron-builder --publish never",
     "desktop:package:dir": "npm run build && electron-builder --dir --publish never",
     "desktop:smoke": "tsx scripts/smoke-desktop.ts",
-    "start": "node dist/server/server/index.js",
-    "worker": "tsx src/server/worker.ts",
+    "start": "npm run desktop:run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

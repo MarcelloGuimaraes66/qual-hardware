@@ -6,7 +6,7 @@ import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createDefaultScenario } from "../src/shared/schemas.js";
-import type { CapacityRecommendation, ScenarioRecord } from "../src/shared/types.js";
+import type { CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
 
 interface PackagePaths {
   executable: string;
@@ -218,6 +218,10 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
     "/contracts/perceptrum-workload-v1.json",
     "/database/sqlite-schema.sql",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
+  for (const forbidden of [
+    "/dist/server/server/index.js",
+    "/dist/server/server/worker.js",
+  ]) assert(!listing.includes(forbidden), `Desktop-only ASAR contains forbidden runtime ${forbidden}`);
 }
 
 async function verifyReleaseArtifacts(): Promise<void> {
@@ -258,7 +262,11 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   assert.deepEqual(health, { status: "ok", storage: "sqlite" });
   const catalog = await api<{ source: string; hardwareCount: number }>(application.origin, "/api/catalog/status");
   assert.equal(catalog.source, "bundled");
-  assert(catalog.hardwareCount > 0);
+  assert.equal(catalog.hardwareCount, 14);
+  const hardware = await api<HardwareNodeTemplate[]>(application.origin, "/api/catalog/hardware");
+  assert.equal(hardware.length, 14);
+  assert.equal(hardware.filter((item) => item.operatingSystemFamily === "macos").length, 4);
+  assert(hardware.some((item) => item.id === "laptop-vivobook-s16-285h-32gb-user"));
   const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();
   assert(html.includes("Qual Hardware"));
   assert(html.includes("Content-Security-Policy"));
@@ -272,6 +280,12 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   });
   const recommendations = await api<CapacityRecommendation[]>(application.origin, `/api/scenarios/${created.id}/recommendations`, { method: "POST" });
   assert.equal(recommendations.length, 3);
+  assert.equal(new Set(recommendations.map((item) => item.primary.hardware.id)).size, 3);
+  for (const item of recommendations) {
+    assert(item.primary.price.median && item.primary.price.median > 0);
+    const componentTotal = Math.round(item.primary.price.componentEstimates.reduce((sum, component) => sum + component.projectAmount, 0) * 100) / 100;
+    assert.equal(componentTotal, item.primary.price.median);
+  }
   const recommendation = recommendations.find((item) => item.policy === "recommended");
   assert(recommendation);
   for (const format of ["json", "pdf", "xlsx"] as const) {
@@ -280,8 +294,23 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
-    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/2.0.0");
+    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/2.2.0");
   }
+
+  const macScenario = createDefaultScenario(4);
+  macScenario.projectName = "Packaged Apple Silicon smoke test";
+  macScenario.cameraGroups[0]!.decodeMode = "cpu";
+  macScenario.cameraGroups[0]!.agents[0]!.inputType = "image";
+  macScenario.constraints.operatingSystem = "macos";
+  const createdMac = await api<ScenarioRecord>(application.origin, "/api/scenarios", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ scenario: macScenario }),
+  });
+  const macRecommendations = await api<CapacityRecommendation[]>(application.origin, `/api/scenarios/${createdMac.id}/recommendations`, { method: "POST" });
+  assert.equal(macRecommendations.length, 3);
+  assert.equal(new Set(macRecommendations.map((item) => item.primary.hardware.id)).size, 3);
+  assert(macRecommendations.every((item) => item.primary.hardware.operatingSystemFamily === "macos"));
   return created.id;
 }
 
