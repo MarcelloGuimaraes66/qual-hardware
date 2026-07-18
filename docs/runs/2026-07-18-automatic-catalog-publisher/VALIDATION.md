@@ -29,4 +29,6 @@
 - Matriz nativa Windows/macOS/Ubuntu no GitHub.
 - Dry-run do workflow, primeira Release assinada e smoke consumindo a Release.
 
+Primeira execução remota: macOS aprovado; Windows compilou/empacotou e revelou que a saída do utilitário ASAR usa `\\` naquele sistema. O smoke foi corrigido para normalizar separadores antes de inspecionar o conteúdo e precisa ser reexecutado. A falha não ocorreu dentro do aplicativo.
+
 Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.

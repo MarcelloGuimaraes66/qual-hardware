@@ -211,7 +211,7 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
 
   const require = createRequire(import.meta.url);
   const asarCli = join(dirname(require.resolve("@electron/asar/package.json")), "bin", "asar.js");
-  const listing = execFileSync(process.execPath, [asarCli, "list", paths.asar], { encoding: "utf8" });
+  const listing = execFileSync(process.execPath, [asarCli, "list", paths.asar], { encoding: "utf8" }).replaceAll("\\", "/");
   for (const required of [
     "/dist/web/index.html",
     "/dist/server/desktop/main.js",
