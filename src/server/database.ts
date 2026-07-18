@@ -1,7 +1,7 @@
 import { basename, resolve } from "node:path";
 
 export const QUAL_HARDWARE_SQLITE_FILENAME = "qual-hardware.sqlite";
-export const QUAL_HARDWARE_SQLITE_SCHEMA_VERSION = 2;
+export const QUAL_HARDWARE_SQLITE_SCHEMA_VERSION = 3;
 
 /**
  * Prevents Qual Hardware from opening a Perceptrum or generic shared database.

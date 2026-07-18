@@ -10,6 +10,9 @@ import type {
   CapacityPrediction,
   CapacityRecommendation,
   CapacityScenario,
+  CatalogUpdateRun,
+  EvidenceCatalogSnapshot,
+  HardwareComponent,
   HardwareNodeTemplate,
   LocalCalibrationRun,
   PriceQuote,
@@ -54,6 +57,11 @@ export interface PlannerStore {
   listCalibrationRuns(): Promise<LocalCalibrationRun[]>;
   upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void>;
   listBenchmarkObservations(): Promise<PublicBenchmarkObservation[]>;
+  saveEvidenceSnapshot(snapshot: EvidenceCatalogSnapshot): Promise<void>;
+  getActiveEvidenceSnapshot(): Promise<EvidenceCatalogSnapshot | null>;
+  listHardwareComponents(): Promise<HardwareComponent[]>;
+  saveCatalogUpdateRun(run: CatalogUpdateRun): Promise<void>;
+  listCatalogUpdateRuns(): Promise<CatalogUpdateRun[]>;
   savePredictions(predictions: CapacityPrediction[]): Promise<void>;
   listPredictions(): Promise<CapacityPrediction[]>;
   getCatalog(): Promise<HardwareNodeTemplate[]>;
@@ -78,6 +86,11 @@ export class MemoryPlannerStore implements PlannerStore {
   private results = new Map<string, BenchmarkResultRecord>();
   private calibrationRuns = new Map<string, LocalCalibrationRun>();
   private observations = new Map<string, PublicBenchmarkObservation>();
+  private components = new Map<string, HardwareComponent>();
+  private activeObservationIds = new Set<string>();
+  private activeComponentIds = new Set<string>();
+  private activeEvidenceSnapshot: EvidenceCatalogSnapshot | null = null;
+  private catalogUpdateRuns = new Map<string, CatalogUpdateRun>();
   private predictions = new Map<string, CapacityPrediction>();
   private quotes = [...SEED_PRICE_QUOTES];
   private hardware = [...HARDWARE_CATALOG];
@@ -131,9 +144,31 @@ export class MemoryPlannerStore implements PlannerStore {
     return [...this.calibrationRuns.values()].sort((left, right) => right.completedAt.localeCompare(left.completedAt));
   }
   async upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void> {
-    for (const observation of observations) this.observations.set(observation.id, observation);
+    for (const observation of observations) {
+      this.observations.set(observation.id, observation);
+      this.activeObservationIds.add(observation.id);
+    }
   }
-  async listBenchmarkObservations(): Promise<PublicBenchmarkObservation[]> { return [...this.observations.values()]; }
+  async listBenchmarkObservations(): Promise<PublicBenchmarkObservation[]> {
+    return [...this.activeObservationIds].map((id) => this.observations.get(id)).filter((item): item is PublicBenchmarkObservation => Boolean(item));
+  }
+  async saveEvidenceSnapshot(snapshot: EvidenceCatalogSnapshot): Promise<void> {
+    for (const observation of snapshot.observations) this.observations.set(observation.id, observation);
+    for (const component of snapshot.components ?? []) this.components.set(component.id, component);
+    this.activeObservationIds = new Set(snapshot.observations.map((item) => item.id));
+    this.activeComponentIds = new Set((snapshot.components ?? []).map((item) => item.id));
+    this.activeEvidenceSnapshot = structuredClone(snapshot);
+  }
+  async getActiveEvidenceSnapshot(): Promise<EvidenceCatalogSnapshot | null> {
+    return this.activeEvidenceSnapshot ? structuredClone(this.activeEvidenceSnapshot) : null;
+  }
+  async listHardwareComponents(): Promise<HardwareComponent[]> {
+    return [...this.activeComponentIds].map((id) => this.components.get(id)).filter((item): item is HardwareComponent => Boolean(item));
+  }
+  async saveCatalogUpdateRun(run: CatalogUpdateRun): Promise<void> { this.catalogUpdateRuns.set(run.id, structuredClone(run)); }
+  async listCatalogUpdateRuns(): Promise<CatalogUpdateRun[]> {
+    return [...this.catalogUpdateRuns.values()].sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  }
   async savePredictions(predictions: CapacityPrediction[]): Promise<void> {
     for (const prediction of predictions) this.predictions.set(prediction.id, prediction);
   }
@@ -234,6 +269,10 @@ export class SqlitePlannerStore implements PlannerStore {
         "INSERT INTO catalog_snapshot_membership(snapshot_id,hardware_template_id) VALUES('bundled',?) ON CONFLICT(snapshot_id,hardware_template_id) DO NOTHING",
       );
       for (const item of HARDWARE_CATALOG) membership.run(item.id);
+      const quoteMembership = this.database.prepare(
+        "INSERT INTO catalog_snapshot_quote_membership(snapshot_id,quote_id) VALUES('bundled',?) ON CONFLICT(snapshot_id,quote_id) DO NOTHING",
+      );
+      for (const quote of SEED_PRICE_QUOTES) quoteMembership.run(quote.id);
       this.database.prepare(
         "INSERT INTO catalog_active_state(singleton,snapshot_id,activated_at) VALUES(1,'bundled',?) ON CONFLICT(singleton) DO UPDATE SET snapshot_id=excluded.snapshot_id,activated_at=excluded.activated_at",
       ).run(timestamp);
@@ -337,8 +376,62 @@ export class SqlitePlannerStore implements PlannerStore {
     }, "IMMEDIATE");
   }
   async listBenchmarkObservations(): Promise<PublicBenchmarkObservation[]> {
-    return rows(this.database.prepare("SELECT observation_json FROM public_benchmark_observations ORDER BY observed_at DESC").all())
-      .map((row) => parseJson<PublicBenchmarkObservation>(row.observation_json));
+    const active = rows(this.database.prepare(
+      "SELECT o.observation_json FROM public_benchmark_observations o JOIN evidence_snapshot_observations m ON m.observation_id=o.id JOIN evidence_active_state a ON a.catalog_version=m.catalog_version WHERE a.singleton=1 ORDER BY o.observed_at DESC",
+    ).all());
+    const selected = active.length ? active : rows(this.database.prepare(
+      "SELECT observation_json FROM public_benchmark_observations ORDER BY observed_at DESC",
+    ).all());
+    return selected.map((row) => parseJson<PublicBenchmarkObservation>(row.observation_json));
+  }
+  async saveEvidenceSnapshot(snapshot: EvidenceCatalogSnapshot): Promise<void> {
+    const observationStatement = this.database.prepare(
+      "INSERT INTO public_benchmark_observations(id,hardware_template_id,stage,profile_id,observation_json,observed_at,imported_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hardware_template_id=excluded.hardware_template_id,stage=excluded.stage,profile_id=excluded.profile_id,observation_json=excluded.observation_json,observed_at=excluded.observed_at,imported_at=excluded.imported_at",
+    );
+    const componentStatement = this.database.prepare(
+      "INSERT INTO hardware_components(id,component_json,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET component_json=excluded.component_json,updated_at=excluded.updated_at",
+    );
+    this.inTransaction(() => {
+      const importedAt = now();
+      this.database.prepare(
+        "INSERT INTO evidence_catalog_snapshots(catalog_version,snapshot_json,generated_at,imported_at) VALUES(?,?,?,?) ON CONFLICT(catalog_version) DO UPDATE SET snapshot_json=excluded.snapshot_json,generated_at=excluded.generated_at,imported_at=excluded.imported_at",
+      ).run(snapshot.catalogVersion, JSON.stringify(snapshot), snapshot.generatedAt, importedAt);
+      for (const observation of snapshot.observations) {
+        observationStatement.run(observation.id, observation.hardwareTemplateId, observation.stage, observation.profileId, JSON.stringify(observation), observation.observedAt, importedAt);
+        this.database.prepare(
+          "INSERT INTO evidence_snapshot_observations(catalog_version,observation_id) VALUES(?,?) ON CONFLICT(catalog_version,observation_id) DO NOTHING",
+        ).run(snapshot.catalogVersion, observation.id);
+      }
+      for (const component of snapshot.components ?? []) {
+        componentStatement.run(component.id, JSON.stringify(component), importedAt);
+        this.database.prepare(
+          "INSERT INTO evidence_snapshot_components(catalog_version,component_id) VALUES(?,?) ON CONFLICT(catalog_version,component_id) DO NOTHING",
+        ).run(snapshot.catalogVersion, component.id);
+      }
+      this.database.prepare(
+        "INSERT INTO evidence_active_state(singleton,catalog_version,activated_at) VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET catalog_version=excluded.catalog_version,activated_at=excluded.activated_at",
+      ).run(snapshot.catalogVersion, importedAt);
+    }, "IMMEDIATE");
+  }
+  async getActiveEvidenceSnapshot(): Promise<EvidenceCatalogSnapshot | null> {
+    const row = this.database.prepare(
+      "SELECT s.snapshot_json FROM evidence_catalog_snapshots s JOIN evidence_active_state a ON a.catalog_version=s.catalog_version WHERE a.singleton=1",
+    ).get() as Record<string, unknown> | undefined;
+    return row ? parseJson<EvidenceCatalogSnapshot>(row.snapshot_json) : null;
+  }
+  async listHardwareComponents(): Promise<HardwareComponent[]> {
+    return rows(this.database.prepare(
+      "SELECT c.component_json FROM hardware_components c JOIN evidence_snapshot_components m ON m.component_id=c.id JOIN evidence_active_state a ON a.catalog_version=m.catalog_version WHERE a.singleton=1 ORDER BY c.id",
+    ).all()).map((row) => parseJson<HardwareComponent>(row.component_json));
+  }
+  async saveCatalogUpdateRun(run: CatalogUpdateRun): Promise<void> {
+    this.database.prepare(
+      "INSERT INTO catalog_update_runs(id,update_type,status,run_json,started_at,completed_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,run_json=excluded.run_json,completed_at=excluded.completed_at",
+    ).run(run.id, run.updateType, run.status, JSON.stringify(run), run.startedAt, run.completedAt);
+  }
+  async listCatalogUpdateRuns(): Promise<CatalogUpdateRun[]> {
+    return rows(this.database.prepare("SELECT run_json FROM catalog_update_runs ORDER BY started_at DESC LIMIT 100").all())
+      .map((row) => parseJson<CatalogUpdateRun>(row.run_json));
   }
   async savePredictions(predictions: CapacityPrediction[]): Promise<void> {
     const statement = this.database.prepare(
@@ -379,13 +472,19 @@ export class SqlitePlannerStore implements PlannerStore {
         "INSERT INTO catalog_snapshot_membership(snapshot_id,hardware_template_id) VALUES(?,?)",
       );
       for (const item of hardware) membership.run(snapshotId, item.id);
+      const quoteMembership = this.database.prepare(
+        "INSERT INTO catalog_snapshot_quote_membership(snapshot_id,quote_id) VALUES(?,?)",
+      );
+      for (const quote of quotes) quoteMembership.run(snapshotId, quote.id);
       this.database.prepare(
         "INSERT INTO catalog_active_state(singleton,snapshot_id,activated_at) VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET snapshot_id=excluded.snapshot_id,activated_at=excluded.activated_at",
       ).run(snapshotId, timestamp);
     }, "IMMEDIATE");
   }
   async getQuotes(): Promise<PriceQuote[]> {
-    return rows(this.database.prepare("SELECT quote_json FROM price_quotes ORDER BY observed_at DESC").all())
+    return rows(this.database.prepare(
+      "SELECT q.quote_json FROM price_quotes q JOIN catalog_snapshot_quote_membership m ON m.quote_id=q.id JOIN catalog_active_state a ON a.snapshot_id=m.snapshot_id WHERE a.singleton=1 ORDER BY q.observed_at DESC",
+    ).all())
       .map((row) => parseJson<PriceQuote>(row.quote_json));
   }
   async upsertQuotes(quotes: PriceQuote[]): Promise<void> {
@@ -395,6 +494,9 @@ export class SqlitePlannerStore implements PlannerStore {
     this.inTransaction(() => {
       for (const quote of quotes) {
         statement.run(quote.id, quote.hardwareTemplateId, JSON.stringify(quote), quote.observedAt);
+        this.database.prepare(
+          "INSERT INTO catalog_snapshot_quote_membership(snapshot_id,quote_id) SELECT snapshot_id,? FROM catalog_active_state WHERE singleton=1 ON CONFLICT(snapshot_id,quote_id) DO NOTHING",
+        ).run(quote.id);
       }
     });
   }

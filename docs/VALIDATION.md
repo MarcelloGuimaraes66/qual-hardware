@@ -18,8 +18,8 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 ## Recommendation confidence
 
 - `validated_local`: exact linked catalog profile, CPU, GPU, form factor, build/model hash and workload completed local calibration.
-- `extrapolated_high`: class A with at least two strong comparable anchors, stage coverage, leave-one-out safety and at least 20% reserve.
-- `extrapolated_medium`: class B with one strong/adjacent anchor and at least 30% reserve.
+- `extrapolated_high`: class A with at least three eligible physical runs from three distinct, strongly comparable hardware profiles, complete stage coverage, leave-one-out safety and the greater of 20% or the measured empirical error reserve.
+- `extrapolated_medium`: class B with at least two eligible runs from two distinct, strongly comparable hardware profiles and the greater of 30% or the measured empirical error reserve.
 - `reference_only`: class C, incomplete coverage or cross-architecture evidence; at least 40% reserve and no purchase-capacity claim.
 
 ## Local calibration gate
@@ -33,7 +33,7 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 
 ## Audited source baseline
 
-Run `npm run audit:source` whenever Perceptrum, DrakonSite, or AppHost source changes. The current filtered first-party inventory contains 498 files and has aggregate hash `fbb53b53525549138a65bae8f807f3dc3509ad0a37a3042573504952894ee381`. Generated files, dependencies, binaries, build folders, and package caches are explicitly excluded and recorded in the inventory itself.
+Run `PERCEPTRUM_SOURCE_ROOT=/path/to/perceptrum npm run audit:source` whenever Perceptrum, DrakonSite, or AppHost source changes. The command records the current count and aggregate hash in `audit/perceptrum-source-inventory.json`; generated files, dependencies, binaries, build folders and package caches are explicitly excluded and recorded in the inventory itself. Never reuse a previously documented hash after the Perceptrum source changes.
 
 ## Design policies
 

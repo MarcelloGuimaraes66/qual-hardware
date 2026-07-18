@@ -49,7 +49,21 @@ function comparableBenchmark(
     target.benchmarkName === anchor.benchmarkName &&
     target.benchmarkVersion === anchor.benchmarkVersion &&
     target.unit === anchor.unit &&
-    target.higherIsBetter && anchor.higherIsBetter;
+    target.higherIsBetter === anchor.higherIsBetter &&
+    (!target.componentKind || !anchor.componentKind || target.componentKind === anchor.componentKind);
+}
+
+function benchmarkRatio(target: PublicBenchmarkObservation, anchor: PublicBenchmarkObservation): number {
+  if (!comparableBenchmark(target, anchor)) return Number.NaN;
+  return target.higherIsBetter ? target.score / anchor.score : anchor.score / target.score;
+}
+
+function calibrationRunEligible(run: LocalCalibrationRun): boolean {
+  return run.mode === "full" && run.executionMode === "production_pipeline" &&
+    run.developmentOnly !== true &&
+    run.pipelineEvidence?.complete === true && run.qualityGate?.eligibleForCapacityExtrapolation === true &&
+    run.externalRequestCount === 0 && run.openAiRequestCount === 0 &&
+    run.phases.every((phase) => phase.outOfMemoryCount === 0 && phase.queueGrowthPerMinute <= 0.05 && phase.inferenceSuccessRate >= 0.99);
 }
 
 function compatibleAnchor(
@@ -86,14 +100,14 @@ function contributionsFor(
   const targets = observations.filter((item) => item.hardwareTemplateId === target.id && item.stage === stage);
   const contributions: Contribution[] = [];
   for (const run of runs) {
-    if (run.id === excludedRunId || !run.fingerprint.hardwareTemplateId) continue;
+    if (run.id === excludedRunId || !run.fingerprint.hardwareTemplateId || !calibrationRunEligible(run)) continue;
     const measured = run.stages.find((item) => item.stage === stage);
     if (!measured || measured.safeCameraCapacity <= 0) continue;
     const anchors = observations.filter((item) => item.hardwareTemplateId === run.fingerprint.hardwareTemplateId && item.stage === stage);
     for (const targetObservation of targets) {
       const anchor = anchors.find((item) => comparableBenchmark(targetObservation, item));
       if (!anchor) continue;
-      const ratio = targetObservation.score / anchor.score;
+      const ratio = benchmarkRatio(targetObservation, anchor);
       if (!Number.isFinite(ratio) || ratio <= 0) continue;
       contributions.push({
         run,
@@ -112,9 +126,71 @@ function confidenceFor(target: HardwareNodeTemplate, contributions: Contribution
   const distinctRuns = new Map(contributions.map((item) => [item.run.id, item.run])).values();
   const runs = [...distinctRuns];
   const strong = runs.filter((run) => compatibleAnchor(target, run) === "strong");
-  if (strong.length >= 2) return "A";
-  if (strong.length >= 1) return "B";
+  const strongHardware = new Set(strong.map((run) => run.fingerprint.hardwareTemplateId));
+  if (strong.length >= 3 && strongHardware.size >= 3) return "A";
+  if (strong.length >= 2 && strongHardware.size >= 2) return "B";
   return "C";
+}
+
+interface StageErrorProfile {
+  maximumOverpredictionPercent: number;
+  repeatVariabilityPercent: number;
+  medianAbsoluteErrorPercent: number | null;
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const ordered = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(ordered.length / 2);
+  return ordered.length % 2 === 0 ? ((ordered[middle - 1] ?? 0) + (ordered[middle] ?? 0)) / 2 : ordered[middle] ?? null;
+}
+
+function stageErrorProfile(
+  runs: LocalCalibrationRun[],
+  catalog: HardwareNodeTemplate[],
+  observations: PublicBenchmarkObservation[],
+  stage: CalibrationStage,
+): StageErrorProfile {
+  const eligibleRuns = runs.filter(calibrationRunEligible);
+  const absoluteErrors: number[] = [];
+  const overpredictions: number[] = [];
+  for (const heldOut of eligibleRuns) {
+    const target = catalog.find((item) => item.id === heldOut.fingerprint.hardwareTemplateId);
+    const measured = heldOut.stages.find((item) => item.stage === stage)?.safeCameraCapacity ?? 0;
+    if (!target || measured <= 0) continue;
+    const contributions = contributionsFor(target, stage, eligibleRuns, observations, heldOut.id);
+    if (!contributions.length) continue;
+    const predicted = Math.min(...contributions.map((item) => item.rawCapacity));
+    const errorPercent = Math.abs(predicted - measured) * 100 / measured;
+    absoluteErrors.push(errorPercent);
+    overpredictions.push(Math.max(0, (predicted - measured) * 100 / measured));
+  }
+  const repeatVariabilities: number[] = [];
+  const byHardware = new Map<string, number[]>();
+  for (const run of eligibleRuns) {
+    const hardwareId = run.fingerprint.hardwareTemplateId;
+    const capacity = run.stages.find((item) => item.stage === stage)?.safeCameraCapacity ?? 0;
+    if (!hardwareId || capacity <= 0) continue;
+    byHardware.set(hardwareId, [...(byHardware.get(hardwareId) ?? []), capacity]);
+  }
+  for (const values of byHardware.values()) {
+    if (values.length < 2) continue;
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    repeatVariabilities.push(average > 0 ? (Math.max(...values) - Math.min(...values)) * 100 / average : 0);
+  }
+  return {
+    maximumOverpredictionPercent: Math.max(0, ...overpredictions),
+    repeatVariabilityPercent: Math.max(0, ...repeatVariabilities),
+    medianAbsoluteErrorPercent: median(absoluteErrors),
+  };
+}
+
+function effectiveReserve(confidence: Exclude<CalibrationConfidenceClass, "none">, profile: StageErrorProfile): number {
+  return Math.min(70, Math.max(
+    RESERVE_BY_CLASS[confidence],
+    Math.ceil(profile.maximumOverpredictionPercent),
+    Math.ceil(profile.repeatVariabilityPercent),
+  ));
 }
 
 function leaveOneOutUnsafeCount(
@@ -123,7 +199,7 @@ function leaveOneOutUnsafeCount(
   observations: PublicBenchmarkObservation[],
 ): number {
   let unsafe = 0;
-  for (const heldOut of runs) {
+  for (const heldOut of runs.filter(calibrationRunEligible)) {
     const hardwareId = heldOut.fingerprint.hardwareTemplateId;
     const target = catalog.find((item) => item.id === hardwareId);
     if (!target) continue;
@@ -131,7 +207,8 @@ function leaveOneOutUnsafeCount(
       const contributions = contributionsFor(target, metric.stage, runs, observations, heldOut.id);
       if (contributions.length === 0) continue;
       const confidence = confidenceFor(target, contributions);
-      const safe = Math.floor(Math.min(...contributions.map((item) => item.rawCapacity)) * (1 - RESERVE_BY_CLASS[confidence] / 100));
+      const profile = stageErrorProfile(runs, catalog, observations, metric.stage);
+      const safe = Math.floor(Math.min(...contributions.map((item) => item.rawCapacity)) * (1 - effectiveReserve(confidence, profile) / 100));
       if (safe > metric.safeCameraCapacity) unsafe += 1;
     }
   }
@@ -149,6 +226,7 @@ export function createCalibrationPlan(
     id: randomUUID(),
     createdAt: new Date().toISOString(),
     mode,
+    executionMode: quick ? "readiness" : "production_pipeline",
     workloadContractVersion: WORKLOAD_CONTRACT_VERSION,
     targetHardwareTemplateId,
     scenario: { ...scenario, workloadContractVersion: WORKLOAD_CONTRACT_VERSION },
@@ -187,12 +265,12 @@ export function buildCapacityPredictions(
   observations: PublicBenchmarkObservation[],
 ): CapacityPrediction[] {
   const unsafeCount = leaveOneOutUnsafeCount(runs, catalog, observations);
+  const errorProfiles = new Map(REQUIRED_CALIBRATION_STAGES.map((stage) => [stage, stageErrorProfile(runs, catalog, observations, stage)]));
   return catalog.map((target) => {
     const exactRuns = runs
       .filter((run) => run.fingerprint.hardwareTemplateId === target.id &&
         run.overallSafeCameraCapacity > 0 &&
-        run.externalRequestCount === 0 && run.openAiRequestCount === 0 &&
-        run.phases.every((phase) => phase.outOfMemoryCount === 0 && phase.queueGrowthPerMinute <= 0.05 && phase.inferenceSuccessRate >= 0.99))
+        calibrationRunEligible(run))
       .sort((left, right) => right.completedAt.localeCompare(left.completedAt));
     const exact = exactRuns[0];
     if (exact) {
@@ -223,7 +301,8 @@ export function buildCapacityPredictions(
       if (unsafeCount > 0 && confidence === "A") confidence = "B";
       if (confidence === "C") overallClass = "C";
       else if (confidence === "B" && overallClass === "A") overallClass = "B";
-      const reservePercent = RESERVE_BY_CLASS[confidence];
+      const errorProfile = errorProfiles.get(stage) ?? { maximumOverpredictionPercent: 0, repeatVariabilityPercent: 0, medianAbsoluteErrorPercent: null };
+      const reservePercent = effectiveReserve(confidence, errorProfile);
       const rawCameraCapacity = Math.min(...contributions.map((item) => item.rawCapacity));
       stagePredictions.push({
         stage,
@@ -234,6 +313,9 @@ export function buildCapacityPredictions(
         rawCameraCapacity,
         safeCameraCapacity: Math.max(0, Math.floor(rawCameraCapacity * (1 - reservePercent / 100))),
         reservePercent,
+        empiricalOverpredictionPercent: errorProfile.maximumOverpredictionPercent,
+        repeatVariabilityPercent: errorProfile.repeatVariabilityPercent,
+        ...(errorProfile.medianAbsoluteErrorPercent === null ? {} : { medianAbsoluteErrorPercent: errorProfile.medianAbsoluteErrorPercent }),
         sourceUrls: [...new Set(contributions.map((item) => item.sourceUrl))],
       });
     }
@@ -245,7 +327,9 @@ export function buildCapacityPredictions(
     const complete = requiredCoverage.every((stage) => covered.has(stage));
     if (!complete || stagePredictions.length === 0) overallClass = "C";
     const bottleneckPrediction = [...stagePredictions].sort((left, right) => left.safeCameraCapacity - right.safeCameraCapacity)[0];
-    const reservePercent = RESERVE_BY_CLASS[overallClass];
+    const reservePercent = stagePredictions.length
+      ? Math.max(...stagePredictions.map((item) => item.reservePercent))
+      : RESERVE_BY_CLASS[overallClass];
     const status = overallClass === "A"
       ? "extrapolated_high"
       : overallClass === "B" ? "extrapolated_medium" : "reference_only";
@@ -263,9 +347,15 @@ export function buildCapacityPredictions(
       exactCalibrationRunId: null,
       stagePredictions,
       leaveOneOutUnsafeOverestimateCount: unsafeCount,
+      medianAbsoluteErrorPercent: median(stagePredictions
+        .map((item) => item.medianAbsoluteErrorPercent)
+        .filter((value): value is number => value !== undefined)),
       reasons: complete
-        ? ["Stage-specific ratios use the conservative minimum across comparable physical anchors."]
-        : ["Public or physical anchor coverage is incomplete; this machine is reference-only."],
+        ? [
+            "Stage-specific ratios use the conservative minimum across comparable physical anchors.",
+            `The effective reserve is the largest of the class floor, empirical overprediction and repeat variability (${reservePercent}%).`,
+          ]
+        : ["Public or eligible physical anchor coverage is incomplete; this machine is reference-only."],
     } satisfies CapacityPrediction;
   });
 }

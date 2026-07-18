@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS catalog_snapshot_membership (
   hardware_template_id TEXT NOT NULL REFERENCES hardware_catalog(id),
   PRIMARY KEY (snapshot_id, hardware_template_id)
 ) STRICT;
+CREATE TABLE IF NOT EXISTS catalog_snapshot_quote_membership (
+  snapshot_id TEXT NOT NULL REFERENCES catalog_snapshots(id),
+  quote_id TEXT NOT NULL REFERENCES price_quotes(id),
+  PRIMARY KEY (snapshot_id, quote_id)
+) STRICT;
 CREATE TABLE IF NOT EXISTS catalog_active_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   snapshot_id TEXT NOT NULL REFERENCES catalog_snapshots(id),
@@ -109,6 +114,36 @@ CREATE TABLE IF NOT EXISTS evidence_catalog_snapshots (
   imported_at TEXT NOT NULL
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS hardware_components (
+  id TEXT PRIMARY KEY,
+  component_json TEXT NOT NULL CHECK (json_valid(component_json)),
+  updated_at TEXT NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS evidence_snapshot_observations (
+  catalog_version TEXT NOT NULL REFERENCES evidence_catalog_snapshots(catalog_version),
+  observation_id TEXT NOT NULL REFERENCES public_benchmark_observations(id),
+  PRIMARY KEY (catalog_version, observation_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS evidence_snapshot_components (
+  catalog_version TEXT NOT NULL REFERENCES evidence_catalog_snapshots(catalog_version),
+  component_id TEXT NOT NULL REFERENCES hardware_components(id),
+  PRIMARY KEY (catalog_version, component_id)
+) STRICT;
+CREATE TABLE IF NOT EXISTS evidence_active_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  catalog_version TEXT NOT NULL REFERENCES evidence_catalog_snapshots(catalog_version),
+  activated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS catalog_update_runs (
+  id TEXT PRIMARY KEY,
+  update_type TEXT NOT NULL CHECK (update_type IN ('inventory_prices', 'evidence')),
+  status TEXT NOT NULL CHECK (status IN ('checking', 'verified', 'applied', 'failed')),
+  run_json TEXT NOT NULL CHECK (json_valid(run_json)),
+  started_at TEXT NOT NULL,
+  completed_at TEXT
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS hardware_predictions (
   id TEXT PRIMARY KEY,
   hardware_template_id TEXT NOT NULL,
@@ -118,4 +153,4 @@ CREATE TABLE IF NOT EXISTS hardware_predictions (
 CREATE INDEX IF NOT EXISTS hardware_predictions_hardware_idx
   ON hardware_predictions (hardware_template_id, generated_at DESC);
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

@@ -246,6 +246,24 @@ export interface CatalogStatus {
   configurationWritable: boolean;
   remoteUrl: string | null;
   lastError: string | null;
+  lastUpdate?: CatalogUpdateRun | null;
+}
+
+export interface CatalogUpdateRun {
+  id: string;
+  updateType: "inventory_prices" | "evidence";
+  status: "checking" | "verified" | "applied" | "failed";
+  startedAt: string;
+  completedAt: string | null;
+  source: "remote" | "imported" | "cached";
+  fromVersion: string | null;
+  toVersion: string | null;
+  added: number;
+  updated: number;
+  unchanged: number;
+  rejected: number;
+  message: string;
+  error: string | null;
 }
 
 export interface PriceSummary {
@@ -450,6 +468,8 @@ export interface LocalCalibrationRun {
   completedAt: string;
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
   mode: "quick" | "full";
+  executionMode?: "readiness" | "production_pipeline";
+  developmentOnly?: true;
   fingerprint: HardwareFingerprint;
   requestedSourceFps: number;
   measuredSourceFps: number;
@@ -470,6 +490,23 @@ export interface LocalCalibrationRun {
   phases: CalibrationPhaseMetric[];
   overallSafeCameraCapacity: number;
   bottleneck: CalibrationStage;
+  pipelineEvidence?: {
+    complete: boolean;
+    isolatedDatabase: boolean;
+    sourceRegistered: boolean;
+    rtspClipProvided: boolean;
+    intelligenceJobQueued: boolean;
+    schedulerClaimedJob: boolean;
+    aiqLocalCompleted: boolean;
+    resultPersisted: boolean;
+    [key: string]: unknown;
+  };
+  qualityGate?: {
+    eligibleForCapacityExtrapolation: boolean;
+    evidenceLevel: "validated_local" | "representative_only";
+    failures: string[];
+    warnings: string[];
+  };
   notes: string[];
 }
 
@@ -478,6 +515,7 @@ export interface CalibrationPlan {
   id: string;
   createdAt: string;
   mode: "quick" | "full";
+  executionMode: "readiness" | "production_pipeline";
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
   targetHardwareTemplateId: string | null;
   scenario: CapacityScenario;
@@ -491,6 +529,18 @@ export interface CalibrationPlan {
   instructions: string[];
 }
 
+export type HardwareComponentKind = "cpu" | "gpu" | "memory" | "storage" | "network" | "system";
+
+export interface HardwareComponent {
+  id: string;
+  kind: HardwareComponentKind;
+  manufacturer: string;
+  sku: string;
+  architecture: string;
+  specifications: Record<string, string | number | boolean | null>;
+  sourceUrls: string[];
+}
+
 export interface PublicBenchmarkObservation {
   id: string;
   hardwareTemplateId: string;
@@ -500,18 +550,26 @@ export interface PublicBenchmarkObservation {
   benchmarkVersion: string;
   score: number;
   unit: string;
-  higherIsBetter: true;
+  higherIsBetter: boolean;
+  componentId?: string;
+  componentKind?: HardwareComponentKind;
   sourceTier: 1 | 2 | 3;
   sourceUrl: string;
   observedAt: string;
   operatingSystem: OperatingSystemFamily | "any";
   configuration: string;
+  powerWatts?: number | null;
+  driverVersion?: string | null;
+  coolingProfile?: string | null;
+  sampleCount?: number;
+  qualityFlags?: string[];
 }
 
 export interface EvidenceCatalogSnapshot {
   schemaVersion: typeof EVIDENCE_CATALOG_VERSION;
   catalogVersion: string;
   generatedAt: string;
+  components?: HardwareComponent[];
   observations: PublicBenchmarkObservation[];
 }
 
@@ -524,6 +582,9 @@ export interface StagePrediction {
   rawCameraCapacity: number;
   safeCameraCapacity: number;
   reservePercent: number;
+  empiricalOverpredictionPercent?: number;
+  repeatVariabilityPercent?: number;
+  medianAbsoluteErrorPercent?: number;
   sourceUrls: string[];
 }
 
@@ -541,6 +602,7 @@ export interface CapacityPrediction {
   exactCalibrationRunId: string | null;
   stagePredictions: StagePrediction[];
   leaveOneOutUnsafeOverestimateCount: number;
+  medianAbsoluteErrorPercent?: number | null;
   reasons: string[];
 }
 

@@ -357,10 +357,10 @@ function CatalogManager({
   };
 
   const refresh = async (): Promise<void> => {
-    setWorking(true); setDetail("");
+    setWorking(true); setDetail(lang === "pt" ? "Etapa 1/4: consultando a URL configurada. Em seguida a assinatura e a data serão verificadas antes de qualquer ativação." : "Step 1/4: checking the configured URL, signature and timestamp before activation.");
     try {
       const next = await api<CatalogStatus>("/api/catalog/refresh", { method: "POST" });
-      onCatalogApplied(next, lang === "pt" ? `Hardware atualizado para ${next.catalogVersion}.` : `Hardware updated to ${next.catalogVersion}.`);
+      onCatalogApplied(next, next.lastUpdate?.message ?? (lang === "pt" ? `Hardware atualizado para ${next.catalogVersion}.` : `Hardware updated to ${next.catalogVersion}.`));
     } catch (error) {
       setDetail(error instanceof Error ? error.message : "catalog_update_failed");
     } finally { setWorking(false); }
@@ -374,12 +374,12 @@ function CatalogManager({
       setDetail(lang === "pt" ? "Salve primeiro a chave pública usada para verificar o catálogo." : "Save the catalog verification public key first.");
       return;
     }
-    setWorking(true); setDetail("");
+    setWorking(true); setDetail(lang === "pt" ? "Etapa 1/4: lendo o arquivo. Nada será ativado até validar assinatura Ed25519, versão, equipamentos e preços." : "Step 1/4: reading and verifying the signed file before activation.");
     try {
       const response = await fetch("/api/catalog/import", { method: "POST", headers: { "content-type": "application/json" }, body: await file.text() });
       const body = await response.json() as CatalogStatus & { error?: string };
       if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
-      onCatalogApplied(body, lang === "pt" ? `Catálogo assinado ${body.catalogVersion} importado.` : `Signed catalog ${body.catalogVersion} imported.`);
+      onCatalogApplied(body, body.lastUpdate?.message ?? (lang === "pt" ? `Catálogo assinado ${body.catalogVersion} importado.` : `Signed catalog ${body.catalogVersion} imported.`));
     } catch (error) {
       setDetail(error instanceof Error ? error.message : "catalog_import_failed");
     } finally { setWorking(false); }
@@ -397,7 +397,8 @@ function CatalogManager({
       </div>
       <div className="catalog-actions"><button type="button" className="secondary" disabled={working || !status?.configurationWritable || !publicKeyPem.trim()} onClick={configure}>{lang === "pt" ? "Salvar configuração" : "Save configuration"}</button><button type="button" className="primary" disabled={working || !status?.remoteUpdateConfigured} onClick={refresh}>{lang === "pt" ? "Buscar atualização online" : "Check online update"}</button><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar catálogo assinado" : "Import signed catalog"}<input type="file" hidden accept="application/json,.json" disabled={working} onChange={importSnapshot} /></label></div>
       {detail && <div className="catalog-message">{detail}</div>}
-      <p className="catalog-privacy">{lang === "pt" ? "Somente equipamentos, especificações e preços são atualizados. Projetos, câmeras e credenciais nunca são enviados." : "Only hardware, specifications and prices are updated. Projects, cameras and credentials are never uploaded."}</p>
+      {status?.lastUpdate && <div className="catalog-message">{status.lastUpdate.message}<br /><small>{status.lastUpdate.status} · {status.lastUpdate.added} novo(s) · {status.lastUpdate.updated} atualizado(s) · {status.lastUpdate.unchanged} inalterado(s)</small></div>}
+      <p className="catalog-privacy">{lang === "pt" ? "Somente equipamentos, especificações e preços são atualizados. Projetos, câmeras e credenciais nunca são enviados. Quando URL e chave estão configuradas, o aplicativo verifica ao abrir e a cada 24 horas; toda tentativa fica registrada e aparece aqui." : "Only hardware, specifications and prices are updated. Projects, cameras and credentials are never uploaded. With URL and key configured, checks run at startup and every 24 hours; every attempt is recorded here."}</p>
     </section>
   </div>;
 }
@@ -456,12 +457,15 @@ function CalibrationCenter({
     setWorking(true); setDetail("");
     try {
       const run = JSON.parse(await file.text()) as LocalCalibrationRun;
-      await api<{ run: LocalCalibrationRun; predictions: CapacityPrediction[] }>("/api/calibrations/import", {
+      const imported = await api<{ run: LocalCalibrationRun; predictions: CapacityPrediction[] }>("/api/calibrations/import", {
         method: "POST",
         body: JSON.stringify(run),
       });
       refreshStatus();
-      onChanged(lang === "pt" ? "Calibração física importada. Recalcule as máquinas sugeridas." : "Physical calibration imported. Recalculate suggested machines.");
+      const eligible = imported.run.qualityGate?.eligibleForCapacityExtrapolation === true;
+      onChanged(lang === "pt"
+        ? `${eligible ? "Calibração integral aprovada" : "Resultado importado somente como diagnóstico"}. ${eligible ? "Ela pode participar das extrapolações conservadoras." : "Ela não será usada para justificar uma compra."} Recalcule as máquinas sugeridas.`
+        : `${eligible ? "Full calibration approved" : "Result imported as diagnostic only"}. Recalculate suggested machines.`);
     } catch (error) { setDetail(error instanceof Error ? error.message : "calibration_import_failed"); }
     finally { setWorking(false); }
   };
@@ -472,7 +476,7 @@ function CalibrationCenter({
       setDetail(lang === "pt" ? "Configure primeiro a chave pública Ed25519 em Atualizar hardware." : "Configure the Ed25519 public key under Update hardware first.");
       return;
     }
-    setWorking(true); setDetail("");
+    setWorking(true); setDetail(lang === "pt" ? "Validando assinatura, componentes, versões, unidades e proveniência antes de ativar a nova base." : "Validating signature, components, versions, units and provenance before activation.");
     try {
       const response = await fetch("/api/evidence/import", { method: "POST", headers: { "content-type": "application/json" }, body: await file.text() });
       const body = await response.json() as { error?: string };

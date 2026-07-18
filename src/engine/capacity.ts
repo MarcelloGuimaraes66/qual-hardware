@@ -302,14 +302,21 @@ function summarizePrice(
 ): PriceSummary {
   const now = Date.now();
   const exclusions = ["taxes", "shipping", "licenses", "energy", "support", "TCO"];
-  const applicable = quotes
+  const matching = quotes
     .filter((quote) =>
       quote.hardwareTemplateId === template.id &&
       quote.market === scenario.market &&
       quote.currency === scenario.currency &&
       quote.condition === "new" &&
       quote.inStock,
-    )
+    );
+  const stale = matching.filter((quote) => {
+    const observedAt = Date.parse(quote.observedAt);
+    return !Number.isFinite(observedAt) || observedAt > now + 5 * 60_000 || now - observedAt > 72 * 60 * 60 * 1000;
+  });
+  const staleIds = new Set(stale.map((quote) => quote.id));
+  const applicable = matching
+    .filter((quote) => !staleIds.has(quote.id))
     .sort((left, right) => left.amount - right.amount);
   const rawAmounts = applicable.map((quote) => quote.amount * nodeCount);
   const rawMedian = rawAmounts.length === 0 ? 0 : rawAmounts[Math.floor((rawAmounts.length - 1) / 2)] ?? 0;
@@ -367,7 +374,7 @@ function summarizePrice(
       maximum: amounts.at(-1) === undefined ? null : Math.round(amounts.at(-1)! * 100) / 100,
       quotationRequired: false,
       quoteCount: applicable.length,
-      staleQuoteCount: applicable.filter((quote) => now - Date.parse(quote.observedAt) > 72 * 60 * 60 * 1000).length,
+      staleQuoteCount: stale.length,
       sourceUrls: [...new Set(applicable.map((quote) => quote.url))],
       componentEstimates: allocatedComponents,
       exclusions,
@@ -387,7 +394,7 @@ function summarizePrice(
       maximum: Math.round(referenceTotal * 1.15 * 100) / 100,
       quotationRequired: true,
       quoteCount: 0,
-      staleQuoteCount: 0,
+      staleQuoteCount: stale.length,
       sourceUrls: [...new Set([...profile.sourceUrls, fx.sourceUrl])],
       componentEstimates: referenceComponents,
       exclusions,
@@ -405,7 +412,7 @@ function summarizePrice(
     maximum: null,
     quotationRequired: true,
     quoteCount: 0,
-    staleQuoteCount: 0,
+    staleQuoteCount: stale.length,
     sourceUrls: [],
     componentEstimates: [],
     exclusions,

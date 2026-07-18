@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { Currency, Market, PriceQuote } from "../shared/types.js";
+import { getFxRate } from "./fx.js";
 
 export interface PriceSourceConfig {
   name: string;
@@ -21,9 +22,28 @@ function configuredSources(): PriceSourceConfig[] {
   return parsed as PriceSourceConfig[];
 }
 
-async function robotsAllows(url: URL): Promise<boolean> {
+function assertAllowedPriceUrl(url: URL, allowlist: Set<string>): void {
+  if (url.protocol !== "https:" || !allowlist.has(url.hostname.toLowerCase())) {
+    throw new Error("price_redirect_not_allowlisted");
+  }
+}
+
+async function fetchAllowlisted(url: URL, allowlist: Set<string>, headers: Record<string, string>): Promise<Response> {
+  let current = new URL(url);
+  for (let redirect = 0; redirect <= 3; redirect += 1) {
+    assertAllowedPriceUrl(current, allowlist);
+    const response = await fetch(current, { headers, redirect: "manual", signal: AbortSignal.timeout(15_000) });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get("location");
+    if (!location || redirect === 3) throw new Error("price_redirect_rejected");
+    current = new URL(location, current);
+  }
+  throw new Error("price_redirect_rejected");
+}
+
+async function robotsAllows(url: URL, allowlist: Set<string>): Promise<boolean> {
   const robotsUrl = new URL("/robots.txt", url.origin);
-  const response = await fetch(robotsUrl, { headers: { "user-agent": process.env.PRICE_COLLECTION_USER_AGENT ?? "AiquimistQualHardware/0.1 (+internal-catalog)" } });
+  const response = await fetchAllowlisted(robotsUrl, allowlist, { "user-agent": process.env.PRICE_COLLECTION_USER_AGENT ?? "AiquimistQualHardware/0.1 (+internal-catalog)" });
   if (response.status === 404) return true;
   if (!response.ok) return false;
   let applies = false;
@@ -35,6 +55,12 @@ async function robotsAllows(url: URL): Promise<boolean> {
     if (applies && field?.trim().toLowerCase() === "disallow" && value && url.pathname.startsWith(value)) return false;
   }
   return true;
+}
+
+function deterministicQuoteId(source: PriceSourceConfig): string {
+  return createHash("sha256")
+    .update([source.hardwareTemplateId, source.market, source.currency, source.mpn.toLowerCase(), source.url].join("\u0000"))
+    .digest("hex");
 }
 
 function objects(value: unknown): Array<Record<string, unknown>> {
@@ -70,21 +96,39 @@ export async function collectConfiguredPriceSources(): Promise<{ quotes: PriceQu
   const allowlist = allowedHosts();
   for (const source of configuredSources()) {
     const url = new URL(source.url);
-    if (!allowlist.has(url.hostname.toLowerCase())) { messages.push(`${source.name}: host_not_allowlisted`); continue; }
-    if (!await robotsAllows(url)) { messages.push(`${source.name}: robots_disallowed`); continue; }
-    const response = await fetch(url, { headers: { "user-agent": process.env.PRICE_COLLECTION_USER_AGENT ?? "AiquimistQualHardware/0.1 (+internal-catalog)", accept: "text/html" }, redirect: "follow" });
+    try { assertAllowedPriceUrl(url, allowlist); } catch { messages.push(`${source.name}: host_not_allowlisted`); continue; }
+    if (!await robotsAllows(url, allowlist)) { messages.push(`${source.name}: robots_disallowed`); continue; }
+    let response: Response;
+    try {
+      response = await fetchAllowlisted(url, allowlist, { "user-agent": process.env.PRICE_COLLECTION_USER_AGENT ?? "AiquimistQualHardware/0.1 (+internal-catalog)", accept: "text/html" });
+    } catch (error) {
+      messages.push(`${source.name}: ${error instanceof Error ? error.message : "request_rejected"}`);
+      continue;
+    }
     if (!response.ok) { messages.push(`${source.name}: http_${response.status}`); continue; }
     const html = await response.text();
     if (/captcha|sign in to continue|access denied/i.test(html)) { messages.push(`${source.name}: access_control_detected`); continue; }
     const product = exactProduct(html, source.mpn);
     if (!product) { messages.push(`${source.name}: exact_mpn_or_price_not_found`); continue; }
-    if (product.currency !== source.currency) { messages.push(`${source.name}: configured_currency_mismatch`); continue; }
+    let exchangeRate = 1;
+    let exchangeRateSource: string | null = null;
+    if (product.currency !== source.currency) {
+      try {
+        const fx = await getFxRate(product.currency, source.currency);
+        exchangeRate = fx.rate;
+        exchangeRateSource = `${fx.sourceUrl}#${fx.observedAt}`;
+      } catch (error) {
+        messages.push(`${source.name}: fx_unavailable_${error instanceof Error ? error.message : "unknown"}`);
+        continue;
+      }
+    }
+    const normalizedAmount = Math.round(product.amount * exchangeRate * 100) / 100;
     quotes.push({
-      id: randomUUID(), hardwareTemplateId: source.hardwareTemplateId, mpn: source.mpn,
+      id: deterministicQuoteId(source), hardwareTemplateId: source.hardwareTemplateId, mpn: source.mpn,
       seller: product.seller, market: source.market, currency: source.currency, condition: "new",
-      inStock: product.inStock, taxIncluded: null, amount: product.amount,
-      originalAmount: product.amount, originalCurrency: product.currency, exchangeRate: 1, exchangeRateSource: null,
-      url: source.url, observedAt: new Date().toISOString(), sourceKind: "allowed_page",
+      inStock: product.inStock, taxIncluded: null, amount: normalizedAmount,
+      originalAmount: product.amount, originalCurrency: product.currency, exchangeRate, exchangeRateSource,
+      url: response.url || source.url, observedAt: new Date().toISOString(), sourceKind: "allowed_page",
     });
     messages.push(`${source.name}: collected`);
   }

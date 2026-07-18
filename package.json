@@ -22,6 +22,7 @@
     "test:watch": "vitest",
     "catalog:collect": "tsx src/server/worker.ts --once",
     "catalog:sign": "tsx scripts/sign-catalog.ts",
+    "evidence:sign": "tsx scripts/sign-evidence.ts",
     "db:schema": "tsx src/server/applySchema.ts",
     "audit:source": "tsx scripts/audit-source-inventory.ts",
     "reports:sample": "tsx scripts/generate-report-samples.ts"

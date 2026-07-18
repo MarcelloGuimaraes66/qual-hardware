@@ -11,6 +11,8 @@ O executável do Qual Hardware e o catálogo têm ciclos de atualização indepe
 5. O arquivo JSON assinado é publicado em uma URL HTTPS privada/VPN.
 6. O desktop verifica a assinatura com a chave pública, adiciona/atualiza os itens do snapshot em uma transação SQLite, registra sua associação ao catálogo e preserva registros anteriores.
 
+Ao pressionar o botão, a interface informa que está lendo/baixando, verificando assinatura e data e só depois ativando. A conclusão mostra quantos itens foram adicionados, atualizados ou permaneceram iguais. Toda tentativa fica em `catalog_update_runs`; em falha, o snapshot anterior permanece ativo e a mensagem explica a rejeição.
+
 O repositório não contém worker contínuo, servidor hospedado nem agendador desse fluxo. Se a organização desejar execução periódica, o agendamento pertence à infraestrutura administrativa externa e deve apenas invocar os dois utilitários explícitos acima.
 
 O botão **Atualizar hardware** fica sempre visível no rodapé. No desktop, ele abre uma janela com duas opções:
@@ -20,7 +22,7 @@ O botão **Atualizar hardware** fica sempre visível no rodapé. No desktop, ele
 
 A configuração local fica em `catalog-update-config.json`, no mesmo perfil privado do banco SQLite. Ao iniciar, o desktop carrega essa configuração e tenta atualizar quando houver URL. Se a rede estiver indisponível, o arquivo estiver adulterado ou a assinatura for inválida, o catálogo anterior permanece ativo.
 
-Cada recomendação grava `catalog-version:<versão>` nas evidências. Cotações com mais de 72 horas aparecem como defasadas. Quando não existe cotação assinada atual, o desktop usa uma estimativa de referência datada, mostra a fonte e continua exigindo cotação de compra; nunca mostra zero nem apresenta a estimativa como oferta de vendedor.
+Cada recomendação grava `catalog-version:<versão>` nas evidências. Cotações com mais de 72 horas são excluídas do mínimo, mediana e máximo e aparecem como defasadas. Somente cotações pertencentes ao snapshot ativo participam do cálculo. Quando não existe cotação assinada atual, o desktop usa uma estimativa de referência datada, mostra a fonte e continua exigindo cotação de compra; nunca mostra zero nem apresenta a estimativa como oferta de vendedor.
 
 ## Fontes e frequência
 
@@ -35,6 +37,8 @@ Observações públicas para extrapolação seguem um snapshot assinado separado
 `qual-hardware-evidence-catalog/2.0.0`. Cada score identifica um único estágio,
 SKU, perfil, versão, unidade, configuração, sistema e fonte. Scores genéricos não
 substituem CPU, GPU, disco, rede ou sustentação térmica.
+
+O curador valida o JSON de evidências e o assina com `npm run evidence:sign`. A entrada e a saída são arquivos diferentes e a ferramenta recusa sobrescrita. O snapshot pode conter inventário amplo de componentes sem produzir capacidade de compra: uma máquina só sai de `reference_only` quando há observações por estágio e calibrações físicas elegíveis suficientes.
 
 ## O que precisa ser provisionado
 

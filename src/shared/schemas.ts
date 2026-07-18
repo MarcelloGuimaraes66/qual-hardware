@@ -164,6 +164,8 @@ export const localCalibrationRunSchema = z.object({
   completedAt: z.iso.datetime(),
   workloadContractVersion: z.literal(WORKLOAD_CONTRACT_VERSION),
   mode: z.enum(["quick", "full"]),
+  executionMode: z.enum(["readiness", "production_pipeline"]).optional(),
+  developmentOnly: z.literal(true).optional(),
   fingerprint: z.object({
     hardwareTemplateId: z.string().min(1).max(160).nullable(),
     hostnameHash: z.string().min(16).max(256),
@@ -230,6 +232,22 @@ export const localCalibrationRunSchema = z.object({
   })).length(3),
   overallSafeCameraCapacity: z.number().nonnegative(),
   bottleneck: calibrationStageSchema,
+  pipelineEvidence: z.object({
+    complete: z.boolean(),
+    isolatedDatabase: z.boolean(),
+    sourceRegistered: z.boolean(),
+    rtspClipProvided: z.boolean(),
+    intelligenceJobQueued: z.boolean(),
+    schedulerClaimedJob: z.boolean(),
+    aiqLocalCompleted: z.boolean(),
+    resultPersisted: z.boolean(),
+  }).loose().optional(),
+  qualityGate: z.object({
+    eligibleForCapacityExtrapolation: z.boolean(),
+    evidenceLevel: z.enum(["validated_local", "representative_only"]),
+    failures: z.array(z.string().max(240)).max(100),
+    warnings: z.array(z.string().max(240)).max(100),
+  }).optional(),
   notes: z.array(z.string().max(500)).max(100),
 }).superRefine((value, context) => {
   if (Date.parse(value.completedAt) <= Date.parse(value.startedAt)) {
@@ -238,6 +256,19 @@ export const localCalibrationRunSchema = z.object({
   if (value.framesInferred > value.framesPacked || value.framesPacked > value.framesExtracted) {
     context.addIssue({ code: "custom", path: ["framesInferred"], message: "Frame counters are not monotonic." });
   }
+  if (value.qualityGate?.eligibleForCapacityExtrapolation && value.pipelineEvidence?.complete !== true) {
+    context.addIssue({ code: "custom", path: ["pipelineEvidence"], message: "Eligible calibration requires complete production-pipeline evidence." });
+  }
+});
+
+export const hardwareComponentSchema = z.object({
+  id: z.string().min(1).max(240),
+  kind: z.enum(["cpu", "gpu", "memory", "storage", "network", "system"]),
+  manufacturer: z.string().min(1).max(160),
+  sku: z.string().min(1).max(240),
+  architecture: z.string().min(1).max(160),
+  specifications: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  sourceUrls: z.array(z.string().url().refine((value) => new URL(value).protocol === "https:")).min(1).max(30),
 });
 
 export const publicBenchmarkObservationSchema = z.object({
@@ -249,18 +280,26 @@ export const publicBenchmarkObservationSchema = z.object({
   benchmarkVersion: z.string().min(1).max(120),
   score: z.number().positive(),
   unit: z.string().min(1).max(80),
-  higherIsBetter: z.literal(true),
+  higherIsBetter: z.boolean(),
+  componentId: z.string().min(1).max(240).optional(),
+  componentKind: z.enum(["cpu", "gpu", "memory", "storage", "network", "system"]).optional(),
   sourceTier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   sourceUrl: z.string().url().refine((value) => new URL(value).protocol === "https:", "Evidence source must use HTTPS"),
   observedAt: z.iso.datetime(),
   operatingSystem: z.union([operatingSystemSchema, z.literal("any")]),
   configuration: z.string().min(20).max(2_000),
+  powerWatts: z.number().positive().max(20_000).nullable().optional(),
+  driverVersion: z.string().min(1).max(240).nullable().optional(),
+  coolingProfile: z.string().min(1).max(240).nullable().optional(),
+  sampleCount: z.number().int().positive().max(1_000_000).optional(),
+  qualityFlags: z.array(z.string().min(1).max(120)).max(40).optional(),
 });
 
 export const evidenceCatalogSnapshotSchema = z.object({
   schemaVersion: z.literal(EVIDENCE_CATALOG_VERSION),
   catalogVersion: z.string().min(1).max(160),
   generatedAt: z.iso.datetime(),
+  components: z.array(hardwareComponentSchema).max(100_000).optional(),
   observations: z.array(publicBenchmarkObservationSchema).min(1).max(100_000),
 });
 

@@ -148,11 +148,15 @@ describe("capacity engine", () => {
       condition: "new", inStock: true, taxIncluded: null, amount, originalAmount: amount, originalCurrency: "BRL",
       exchangeRate: 1, exchangeRateSource: null, url: `https://${seller}.example/product`, observedAt: new Date().toISOString(), sourceKind: "curated",
     });
-    const quotes = [quote("00000000-0000-4000-8000-000000000011", "one", 1000), quote("00000000-0000-4000-8000-000000000012", "two", 1100), quote("00000000-0000-4000-8000-000000000013", "three", 100000)];
+    const stale = quote("00000000-0000-4000-8000-000000000010", "stale", 1);
+    stale.observedAt = "2020-01-01T00:00:00.000Z";
+    const quotes = [stale, quote("00000000-0000-4000-8000-000000000011", "one", 1000), quote("00000000-0000-4000-8000-000000000012", "two", 1100), quote("00000000-0000-4000-8000-000000000013", "three", 100000)];
     const recommendation = buildRecommendations("00000000-0000-4000-8000-000000000001", 1, scenario, HARDWARE_CATALOG, quotes)[0]!;
     expect(recommendation.primary.price.confidence).toBe("medium");
     expect(recommendation.primary.price.basis).toBe("market_quotes");
     expect(recommendation.primary.price.quotationRequired).toBe(false);
+    expect(recommendation.primary.price.staleQuoteCount).toBe(1);
+    expect(recommendation.primary.price.minimum).toBe(1000 * recommendation.primary.nodeCount);
     expect(recommendation.primary.price.maximum).toBe(1100 * recommendation.primary.nodeCount);
     expect(Math.round(recommendation.primary.price.componentEstimates.reduce((sum, component) =>
       sum + component.projectAmount, 0) * 100) / 100).toBe(recommendation.primary.price.median);

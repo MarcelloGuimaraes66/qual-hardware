@@ -154,6 +154,7 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
   app.get("/api/catalog/hardware", async (context) => context.json(await store.getCatalog()));
   app.get("/api/catalog/quotes", async (context) => context.json(await store.getQuotes()));
   app.get("/api/catalog/status", (context) => context.json(catalogUpdates.status));
+  app.get("/api/catalog/update-runs", async (context) => context.json(await store.listCatalogUpdateRuns()));
   app.post("/api/catalog/refresh", async (context) => {
     if (!catalogUpdates.status.remoteUpdateConfigured) return context.json({ error: "catalog_update_not_configured" }, 503);
     return context.json(await catalogUpdates.refresh());
@@ -177,6 +178,7 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
   app.get("/api/calibrations", async (context) => context.json(await store.listCalibrationRuns()));
   app.get("/api/predictions", async (context) => context.json(await store.listPredictions()));
   app.get("/api/evidence", async (context) => context.json(await store.listBenchmarkObservations()));
+  app.get("/api/evidence/components", async (context) => context.json(await store.listHardwareComponents()));
   app.get("/api/calibrations/status", async (context) => context.json({
     schemaVersion: "qual-hardware-calibration-status/1.0.0",
     calibrationRuns: (await store.listCalibrationRuns()).length,

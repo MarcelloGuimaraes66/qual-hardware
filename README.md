@@ -76,6 +76,6 @@ npm run desktop:smoke
 npm run audit:source
 ```
 
-See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, and `contracts/perceptrum-workload-v2.json`.
+See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, `docs/PUBLIC_EVIDENCE_CURATION.md`, and `contracts/perceptrum-workload-v2.json`.
 
 O botão **Calibração de capacidade** gera planos locais de 10 ou 60 minutos para o Perceptrum desktop em macOS, Windows ou Ubuntu. O teste usa MediaMTX, FFmpeg e AiQ/Qwen em `127.0.0.1`, sem câmeras físicas e sem OpenAI. O antigo runner PowerShell permanece apenas como compatibilidade histórica em `runtime/README.md`.

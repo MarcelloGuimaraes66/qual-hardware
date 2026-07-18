@@ -1,8 +1,8 @@
-import { createPublicKey, verify } from "node:crypto";
+import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { HARDWARE_CATALOG, HARDWARE_CATALOG_GENERATED_AT, HARDWARE_CATALOG_VERSION, SEED_PRICE_QUOTES } from "../engine/catalog.js";
-import type { CatalogStatus, HardwareNodeTemplate, PriceQuote } from "../shared/types.js";
+import type { CatalogStatus, CatalogUpdateRun, HardwareNodeTemplate, PriceQuote } from "../shared/types.js";
 import type { EvidenceCatalogSnapshot } from "../shared/types.js";
 import { evidenceCatalogSnapshotSchema } from "../shared/schemas.js";
 import type { PlannerStore } from "./store.js";
@@ -124,6 +124,7 @@ export class CatalogUpdateService {
       configurationWritable: Boolean(this.configFile),
       remoteUrl: this.remoteUrl ?? null,
       lastError: null,
+      lastUpdate: null,
     };
   }
 
@@ -158,22 +159,29 @@ export class CatalogUpdateService {
 
   async refresh(): Promise<CatalogStatus> {
     if (!this.remoteUrl || !this.publicKeyPem) throw new Error("catalog_update_not_configured");
-    const url = new URL(this.remoteUrl);
-    const response = await fetch(url, {
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(15_000),
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) throw new Error(`catalog_update_http_${response.status}`);
-    const declaredLength = Number(response.headers.get("content-length") ?? "0");
-    if (declaredLength > MAX_SNAPSHOT_BYTES) throw new Error("catalog_snapshot_too_large");
-    const raw = await response.text();
-    const snapshot = parseSnapshot(raw);
-    verifySnapshot(snapshot, this.publicKeyPem);
-    await this.apply(snapshot.payload, "remote");
-    await this.writeCache(raw);
-    return this.status;
+    const run = await this.beginRun("inventory_prices", "remote", "Verificando atualização assinada de equipamentos e preços.");
+    try {
+      const url = new URL(this.remoteUrl);
+      const response = await fetch(url, {
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`catalog_update_http_${response.status}`);
+      const declaredLength = Number(response.headers.get("content-length") ?? "0");
+      if (declaredLength > MAX_SNAPSHOT_BYTES) throw new Error("catalog_snapshot_too_large");
+      const raw = await response.text();
+      const snapshot = parseSnapshot(raw);
+      verifySnapshot(snapshot, this.publicKeyPem);
+      if (Date.parse(snapshot.payload.generatedAt) < Date.parse(this.currentStatus.generatedAt)) throw new Error("catalog_snapshot_rollback_rejected");
+      await this.apply(snapshot.payload, "remote", run);
+      await this.writeCache(raw);
+      return this.status;
+    } catch (error) {
+      await this.failRun(run, error);
+      throw error;
+    }
   }
 
   async configure(configuration: CatalogUpdateConfiguration): Promise<CatalogStatus> {
@@ -200,27 +208,77 @@ export class CatalogUpdateService {
 
   async importSignedSnapshot(raw: string): Promise<CatalogStatus> {
     if (!this.publicKeyPem) throw new Error("catalog_verification_key_not_configured");
-    const snapshot = parseSnapshot(raw);
-    verifySnapshot(snapshot, this.publicKeyPem);
-    await this.apply(snapshot.payload, "imported");
-    await this.writeCache(raw);
-    return this.status;
+    const run = await this.beginRun("inventory_prices", "imported", "Validando o arquivo local assinado antes de alterar o catálogo ativo.");
+    try {
+      const snapshot = parseSnapshot(raw);
+      verifySnapshot(snapshot, this.publicKeyPem);
+      if (Date.parse(snapshot.payload.generatedAt) < Date.parse(this.currentStatus.generatedAt)) throw new Error("catalog_snapshot_rollback_rejected");
+      await this.apply(snapshot.payload, "imported", run);
+      await this.writeCache(raw);
+      return this.status;
+    } catch (error) {
+      await this.failRun(run, error);
+      throw error;
+    }
   }
 
   async importSignedEvidenceSnapshot(raw: string): Promise<EvidenceCatalogSnapshot> {
     if (!this.publicKeyPem) throw new Error("catalog_verification_key_not_configured");
-    if (Buffer.byteLength(raw, "utf8") > MAX_SNAPSHOT_BYTES) throw new Error("evidence_snapshot_too_large");
-    const envelope = JSON.parse(raw) as unknown;
-    if (!isRecord(envelope) || !isRecord(envelope.payload) || typeof envelope.signature !== "string") {
-      throw new Error("invalid_evidence_envelope");
+    const run = await this.beginRun("evidence", "imported", "Validando componentes, benchmarks e proveniência do snapshot público.");
+    try {
+      if (Buffer.byteLength(raw, "utf8") > MAX_SNAPSHOT_BYTES) throw new Error("evidence_snapshot_too_large");
+      const envelope = JSON.parse(raw) as unknown;
+      if (!isRecord(envelope) || !isRecord(envelope.payload) || typeof envelope.signature !== "string") {
+        throw new Error("invalid_evidence_envelope");
+      }
+      const payload = evidenceCatalogSnapshotSchema.parse(envelope.payload) as EvidenceCatalogSnapshot;
+      const signature = Buffer.from(envelope.signature, "base64");
+      if (!signature.length || !verify(null, Buffer.from(JSON.stringify(payload), "utf8"), this.publicKeyPem, signature)) {
+        throw new Error("invalid_evidence_signature");
+      }
+      const activeSnapshot = await this.store.getActiveEvidenceSnapshot();
+      if (activeSnapshot && Date.parse(payload.generatedAt) < Date.parse(activeSnapshot.generatedAt)) {
+        throw new Error("evidence_snapshot_rollback_rejected");
+      }
+      const before = await this.store.listBenchmarkObservations();
+      const beforeById = new Map(before.map((item) => [item.id, JSON.stringify(item)]));
+      const afterItems = payload.observations;
+      run.toVersion = payload.catalogVersion;
+      run.added = afterItems.filter((item) => !beforeById.has(item.id)).length + (payload.components?.length ?? 0);
+      run.updated = afterItems.filter((item) => beforeById.has(item.id) && beforeById.get(item.id) !== JSON.stringify(item)).length;
+      run.unchanged = afterItems.filter((item) => beforeById.get(item.id) === JSON.stringify(item)).length;
+      await this.store.saveEvidenceSnapshot(payload);
+      run.status = "applied";
+      run.completedAt = new Date().toISOString();
+      run.message = `Base pública ${payload.catalogVersion} ativada: ${run.added} novo(s), ${run.updated} atualizado(s), ${run.unchanged} inalterado(s).`;
+      await this.store.saveCatalogUpdateRun(run);
+      this.currentStatus.lastUpdate = run;
+      return payload;
+    } catch (error) {
+      await this.failRun(run, error);
+      throw error;
     }
-    const payload = evidenceCatalogSnapshotSchema.parse(envelope.payload) as EvidenceCatalogSnapshot;
-    const signature = Buffer.from(envelope.signature, "base64");
-    if (!signature.length || !verify(null, Buffer.from(JSON.stringify(payload), "utf8"), this.publicKeyPem, signature)) {
-      throw new Error("invalid_evidence_signature");
-    }
-    await this.store.upsertBenchmarkObservations(payload.observations);
-    return payload;
+  }
+
+  private async beginRun(updateType: CatalogUpdateRun["updateType"], source: CatalogUpdateRun["source"], message: string): Promise<CatalogUpdateRun> {
+    const run: CatalogUpdateRun = {
+      id: randomUUID(), updateType, status: "checking", startedAt: new Date().toISOString(), completedAt: null,
+      source, fromVersion: updateType === "inventory_prices" ? this.currentStatus.catalogVersion : null,
+      toVersion: null, added: 0, updated: 0, unchanged: 0, rejected: 0, message, error: null,
+    };
+    await this.store.saveCatalogUpdateRun(run);
+    this.currentStatus.lastUpdate = run;
+    return run;
+  }
+
+  private async failRun(run: CatalogUpdateRun, error: unknown): Promise<void> {
+    run.status = "failed";
+    run.completedAt = new Date().toISOString();
+    run.error = error instanceof Error ? error.message : "catalog_update_failed";
+    run.message = `Atualização rejeitada: ${run.error}. O snapshot anterior continua ativo.`;
+    await this.store.saveCatalogUpdateRun(run);
+    this.currentStatus.lastUpdate = run;
+    this.currentStatus.lastError = run.error;
   }
 
   private updateConfigurationStatus(): void {
@@ -239,8 +297,28 @@ export class CatalogUpdateService {
     await rename(temporary, this.cacheFile);
   }
 
-  private async apply(payload: CatalogPayload, source: "cached" | "remote" | "imported"): Promise<void> {
+  private async apply(payload: CatalogPayload, source: "cached" | "remote" | "imported", run?: CatalogUpdateRun): Promise<void> {
+    const beforeHardware = await this.store.getCatalog();
+    const beforeQuotes = await this.store.getQuotes();
+    const before = new Map([
+      ...beforeHardware.map((item) => [`hardware:${item.id}`, JSON.stringify(item)] as const),
+      ...beforeQuotes.map((item) => [`quote:${item.id}`, JSON.stringify(item)] as const),
+    ]);
+    const after = [
+      ...payload.hardware.map((item) => [`hardware:${item.id}`, JSON.stringify(item)] as const),
+      ...payload.quotes.map((item) => [`quote:${item.id}`, JSON.stringify(item)] as const),
+    ];
     await this.store.replaceCatalog(payload.hardware, payload.quotes);
+    if (run) {
+      run.toVersion = payload.catalogVersion;
+      run.added = after.filter(([id]) => !before.has(id)).length;
+      run.updated = after.filter(([id, value]) => before.has(id) && before.get(id) !== value).length;
+      run.unchanged = after.filter(([id, value]) => before.get(id) === value).length;
+      run.status = "applied";
+      run.completedAt = new Date().toISOString();
+      run.message = `Catálogo ${payload.catalogVersion} ativado: ${run.added} novo(s), ${run.updated} atualizado(s), ${run.unchanged} inalterado(s); ${payload.quotes.filter(quoteIsStale).length} preço(s) vencido(s) não sustentam compra.`;
+      await this.store.saveCatalogUpdateRun(run);
+    }
     this.currentStatus = {
       catalogVersion: payload.catalogVersion,
       generatedAt: payload.generatedAt,
@@ -254,6 +332,7 @@ export class CatalogUpdateService {
       configurationWritable: Boolean(this.configFile),
       remoteUrl: this.remoteUrl ?? null,
       lastError: null,
+      lastUpdate: run ?? this.currentStatus.lastUpdate ?? null,
     };
   }
 }

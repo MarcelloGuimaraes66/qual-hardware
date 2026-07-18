@@ -6,7 +6,7 @@ import type { HardwareNodeTemplate, LocalCalibrationRun, PublicBenchmarkObservat
 import { LOCAL_CALIBRATION_VERSION, WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 
 const base = HARDWARE_CATALOG.find((item) => item.id === "hp-z2-g1i-ultra9-rtx4500ada")!;
-const catalog: HardwareNodeTemplate[] = ["anchor-a", "anchor-b", "target-c"].map((id) => ({
+const catalog: HardwareNodeTemplate[] = ["anchor-a", "anchor-b", "anchor-d", "target-c"].map((id) => ({
   ...structuredClone(base), id, name: id, cpuArchitecture: "Arrow Lake", gpuArchitecture: "Ada Lovelace",
 }));
 
@@ -20,6 +20,7 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
     completedAt: "2026-07-18T13:00:00.000Z",
     workloadContractVersion: WORKLOAD_CONTRACT_VERSION,
     mode: "full",
+    executionMode: "production_pipeline",
     fingerprint: {
       hardwareTemplateId, hostnameHash: "0123456789abcdef", cpuModel: "Intel Core Ultra 9 285K",
       cpuArchitecture: "Arrow Lake", physicalCores: 24, logicalCores: 24, cpuPowerLimitWatts: 125,
@@ -45,12 +46,18 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
       { name: "sustained", durationSeconds: 2400, loadPercent: 100, cameraCount: capacity, inferenceSuccessRate: 1, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
       { name: "surge", durationSeconds: 600, loadPercent: 120, cameraCount: capacity, inferenceSuccessRate: 1, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
     ],
-    overallSafeCameraCapacity: capacity, bottleneck: "local_inference", notes: [],
+    overallSafeCameraCapacity: capacity, bottleneck: "local_inference",
+    pipelineEvidence: {
+      complete: true, isolatedDatabase: true, sourceRegistered: true, rtspClipProvided: true,
+      intelligenceJobQueued: true, schedulerClaimedJob: true, aiqLocalCompleted: true, resultPersisted: true,
+    },
+    qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", failures: [], warnings: [] },
+    notes: [],
   };
 }
 
 function observations(): PublicBenchmarkObservation[] {
-  const scores: Record<string, number> = { "anchor-a": 100, "anchor-b": 200, "target-c": 150 };
+  const scores: Record<string, number> = { "anchor-a": 100, "anchor-b": 200, "anchor-d": 125, "target-c": 150 };
   return catalog.flatMap((hardware) => REQUIRED_CALIBRATION_STAGES.map((stage) => ({
     id: `${hardware.id}-${stage}`, hardwareTemplateId: hardware.id, stage,
     profileId: `perceptrum-${stage}-v1`, benchmarkName: `Public ${stage}`,
@@ -71,19 +78,33 @@ describe("local calibration and conservative extrapolation", () => {
     expect(quick.phases.map((phase) => phase.durationSeconds)).toEqual([120, 300, 180]);
     expect(full.phases.map((phase) => phase.durationSeconds)).toEqual([600, 2400, 600]);
     expect(quick.requestedInferenceFps).toEqual([1]);
+    expect(quick.executionMode).toBe("readiness");
+    expect(full.executionMode).toBe("production_pipeline");
   });
 
-  it("uses the conservative per-stage minimum and 20 percent class-A reserve", () => {
+  it("requires three comparable anchors and uses the conservative per-stage reserve", () => {
     const predictions = buildCapacityPredictions(catalog, [
       run("00000000-0000-4000-8000-000000000001", "anchor-a", 10),
       run("00000000-0000-4000-8000-000000000002", "anchor-b", 18),
+      run("00000000-0000-4000-8000-000000000005", "anchor-d", 11),
     ], observations());
     const target = predictions.find((item) => item.hardwareTemplateId === "target-c")!;
     expect(target.status).toBe("extrapolated_high");
     expect(target.confidenceClass).toBe("A");
     expect(target.safeCameraMaximum).toBe(10);
-    expect(target.stagePredictions.every((stage) => stage.anchorRunIds.length === 2)).toBe(true);
+    expect(target.stagePredictions.every((stage) => stage.anchorRunIds.length === 3)).toBe(true);
     expect(target.leaveOneOutUnsafeOverestimateCount).toBe(0);
+  });
+
+  it("keeps legacy or representative-only runs out of purchasing extrapolation", () => {
+    const legacy = run("00000000-0000-4000-8000-000000000006", "anchor-a", 10);
+    delete legacy.executionMode;
+    delete legacy.pipelineEvidence;
+    delete legacy.qualityGate;
+    const target = buildCapacityPredictions(catalog, [legacy], observations())
+      .find((item) => item.hardwareTemplateId === "target-c")!;
+    expect(target.status).toBe("reference_only");
+    expect(target.safeCameraMaximum).toBeNull();
   });
 
   it("labels an exact safe run as physically validated and rejects non-loopback/OpenAI evidence", () => {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "perceptrum-source-inventory/1.0.0",
-  "generatedAt": "2026-07-17T22:50:34.428Z",
+  "generatedAt": "2026-07-18T16:51:56.526Z",
   "roots": [
     "Perceptrum",
     "DrakonSite",
@@ -49,1854 +49,2279 @@
     ".yaml",
     ".yml"
   ],
-  "fileCount": 498,
-  "totalBytes": 15809447,
-  "buildHash": "fbb53b53525549138a65bae8f807f3dc3509ad0a37a3042573504952894ee381",
+  "fileCount": 575,
+  "totalBytes": 25577579,
+  "buildHash": "bbf94e2bae63f146734ae4e635e1078bd7631d2ec1855e322cb4061c6e5539a0",
   "files": [
     {
       "path": "AppHost/App.xaml.cpp",
-      "bytes": 27159,
-      "sha256": "c10ca7a3080699bca98b70122cdc086bddc3728254c86661fb65225a30246a31"
+      "bytes": 25998,
+      "sha256": "c601a987f0836784c6a251ec51f4a2081d4c29c5025dfd4de7cd0f1b9f9bb3dd"
     },
     {
       "path": "AppHost/App.xaml.h",
-      "bytes": 4278,
-      "sha256": "188f2b34cbe1c3e6e64360ee2a1fc076e87e612818e4b45b48f5153e582e677e"
+      "bytes": 4114,
+      "sha256": "9ff79bf0f6f618bc306d3919507ff6f4b61d0e999cf1f46fc1904c7d9e32cb3e"
     },
     {
       "path": "AppHost/AppHost.vcxproj",
-      "bytes": 20411,
-      "sha256": "2e52fd7a947c2cb79ddad28707b79f8b8377a340d393f49684c645f6490f995e"
+      "bytes": 19676,
+      "sha256": "c106fcbd3967fda521f0ee489efa004e5a3a206ca3e98aa33d93b9c09b6dee3b"
     },
     {
       "path": "AppHost/BootstrapTrace.h",
-      "bytes": 1618,
-      "sha256": "f7b30ff2195a6d7012f8a08ff3d16bc07de7538a5882a852b394ec018ea4693d"
+      "bytes": 568,
+      "sha256": "3f35c983f0a724999c0b278c5a732414872048359b32a38e3a9d1026400b9959"
     },
     {
       "path": "AppHost/Frontend/vite.desktop-hosted.config.mjs",
-      "bytes": 1167,
-      "sha256": "b3570d57998d311330b0affaaf4824d40719724313e3ebc8014428908f466cbd"
+      "bytes": 1125,
+      "sha256": "c50eb315331f89a9f2b3b2574dae39bf3051803a6806ce913c32f357f01ac340"
+    },
+    {
+      "path": "AppHost/LinuxHost/PerceptrumDesktopLinux.c",
+      "bytes": 7025,
+      "sha256": "5172244b2e7341205783288a64619ae4e99cf98708bd67a0944603bcbe733f80"
+    },
+    {
+      "path": "AppHost/MacHost/desktop-shell-bridge.js",
+      "bytes": 4334,
+      "sha256": "ec72058196a5c3d1b4f3572eba12f0b734ab1546afe3fa815ead4cf0cf125f79"
     },
     {
       "path": "AppHost/main.cpp",
-      "bytes": 2019,
-      "sha256": "b0a3260199baa236fc8b5852635cb8cf9d50a7dda035e55d230cc0047afcd5c5"
-    },
-    {
-      "path": "AppHost/MainWindow_h.h",
-      "bytes": 29316,
-      "sha256": "f9d173eccde03e6b691deca362c9964a1555306d98155232b6de494cdc8c17a0"
+      "bytes": 1886,
+      "sha256": "6c2691aafc044a176bb34f729a19e43a3ad30d8f5ef11876b160bd9d499160fa"
     },
     {
       "path": "AppHost/MainWindow.xaml.cpp",
-      "bytes": 8826,
-      "sha256": "29c94fe56c72ce0dd5adf9a149780f0e2e84b850ba51617d6bcb55759e9194de"
+      "bytes": 8494,
+      "sha256": "dfe3d8294093d5a473fee956c060a4529dd00fa318c73a1f6870524253936c0e"
     },
     {
       "path": "AppHost/MainWindow.xaml.h",
-      "bytes": 1220,
-      "sha256": "a84c2fb4c9f779099cd1032e3329bbf77e7e063c48b6a806e89d18dc4cfb3fa8"
+      "bytes": 1179,
+      "sha256": "35a234aaae570a61b6435791234d7af03bcd425da72259c3e5e11ef4af46c8ee"
+    },
+    {
+      "path": "AppHost/Packaging/build-linux.sh",
+      "bytes": 2024,
+      "sha256": "007cd031727e2da82953f6bbd1634c9f5055d12008f793642fef81c34fc65dd1"
+    },
+    {
+      "path": "AppHost/Packaging/build-macos-app.mjs",
+      "bytes": 12394,
+      "sha256": "d26287d9adb0cd5b04e091cad546072acd5e6e17830efc5607d6de9b75116624"
     },
     {
       "path": "AppHost/Packaging/build-msix.ps1",
-      "bytes": 40433,
-      "sha256": "d1a35184eeef740f6bd1eb62c9e99783589a9817cd8cef75a98b1c310b76797c"
+      "bytes": 35859,
+      "sha256": "898353d6e0f58cb64dcd1319928588469a0dba1a5ec0f475adf2bcd783d5f5ae"
     },
     {
       "path": "AppHost/Packaging/build.ps1",
-      "bytes": 36718,
-      "sha256": "bcf738bd5ae0f32a28e562c1ca9d054e73c09b81d5fa3080fbc4c7152e962de5"
+      "bytes": 27362,
+      "sha256": "3b9b33a5d2f555a92686960c8f66b1164aca60f660a8fe884d57ce6b558fcba9"
     },
     {
       "path": "AppHost/Packaging/download-llm-from-drive.ps1",
-      "bytes": 17875,
-      "sha256": "d3fed92b274f920edbf78259de8667b836de12f2c947b3fa93e23eb19b1cb9c0"
+      "bytes": 9892,
+      "sha256": "ac673b5edde0a9b0bec5124a5ae9822dcd5f212883bab567f7e5bd39eeb8eb82"
     },
     {
       "path": "AppHost/Packaging/Msix/AppxManifest.template.xml",
-      "bytes": 1921,
-      "sha256": "1e8b37cd5feb1b8667a2b639f17121dcbc44a80c863e3ffa5fc33d4846989afa"
+      "bytes": 1873,
+      "sha256": "276bf5c160983440b7c08abe4dbafc6c8eea7476e9c2ef74af0050764bedc116"
+    },
+    {
+      "path": "AppHost/Packaging/native-host-linux.sh",
+      "bytes": 1626,
+      "sha256": "cf2b211cd24f7d5fe343d236543a00f210e0439d359d2db8b46cf997224c12e4"
+    },
+    {
+      "path": "AppHost/Packaging/package-current.mjs",
+      "bytes": 1108,
+      "sha256": "a24bde3ff3ec6a78e6d5ed5f3454a466fa5f6b0468a0f8f3b403e097157d0c4c"
+    },
+    {
+      "path": "AppHost/Packaging/platform.mjs",
+      "bytes": 1446,
+      "sha256": "171a008e9e6f29746a48b546ee148ffa78aa024aeff955c9cb3b7e260fdc60d2"
+    },
+    {
+      "path": "AppHost/Packaging/platform.test.mjs",
+      "bytes": 4949,
+      "sha256": "08904f59168e37e6e2b42de4dc79b6cb8f4d0b35aadefc025e89c3bc41eb11d6"
     },
     {
       "path": "AppHost/Packaging/sign-windows-artifacts.ps1",
-      "bytes": 11575,
-      "sha256": "6dd20dcf2ba0c0d5a3f9a0a30a0d2d6dd26b66df1dd764d87537fb742a28f439"
+      "bytes": 11201,
+      "sha256": "82a01dcb51996604be9b1af338903b69b7b81bab8348985e45f8e035ac92796c"
     },
     {
       "path": "AppHost/Packaging/stage-runtime.mjs",
-      "bytes": 11983,
-      "sha256": "0471bdb5d08def9ad85d1cf2286325dc50d31291e43e84f88f85878f76f21fbd"
+      "bytes": 25933,
+      "sha256": "ad99603e1b3cc701898ea80f87b43018b72496b221dea5facf4354c98eaf2915"
     },
     {
       "path": "AppHost/Pages/AIAgentsPage.xaml.cpp",
-      "bytes": 27932,
-      "sha256": "6df823211982b1d19ee395365a73413b6ae769bfeb32e8845e0f7413778e08b6"
+      "bytes": 27175,
+      "sha256": "a8fee22bd411e96fcdb09382cf6b52852ad30d3799b9308b5fc851f6f302fbf8"
     },
     {
       "path": "AppHost/Pages/AIAgentsPage.xaml.h",
-      "bytes": 2682,
-      "sha256": "6478b542754bc13067447aa1caec3f5165641f9804785f8cc4e99cb210c87f15"
+      "bytes": 2621,
+      "sha256": "899075b4fda5b0ed5dab283f232a53bf92fa51782b31c41099c8e1d34f2a6d73"
     },
     {
       "path": "AppHost/Pages/BillingPage.xaml.cpp",
-      "bytes": 34274,
-      "sha256": "3ef9fb91f11ae5f04cf3cff467d055c8882ad132e27efe1dee9f09ba6c2330c6"
+      "bytes": 33426,
+      "sha256": "40eb0401fec4f10d764fd50d2b7774ce3300633efcf69c19932c92a4be78b8b9"
     },
     {
       "path": "AppHost/Pages/BillingPage.xaml.h",
-      "bytes": 3416,
-      "sha256": "45d08141c8f9692885f28d4084a64334ab92eb8ec775949a36d3ff9914968afe"
+      "bytes": 3344,
+      "sha256": "7ea05279eaaa0bef208ab58f51ecbb38723cc39355c0309222b9cd5916ad19c9"
     },
     {
       "path": "AppHost/Pages/CameraEditorDialog.xaml.cpp",
-      "bytes": 17503,
-      "sha256": "bbc33f8e7cc158089aa021b980a6141b81f5da41600ce1eece1fea7b4be7ee70"
+      "bytes": 17067,
+      "sha256": "6328179c9b56245cc684cd79baa1e9db98bcb98903bebabef60678a314c9cb1e"
     },
     {
       "path": "AppHost/Pages/CameraEditorDialog.xaml.h",
-      "bytes": 2769,
-      "sha256": "12a8753b5860e01d6e9e642f4a4da547fa9c9fb512b29b234f43452d4a1ba9f4"
+      "bytes": 2707,
+      "sha256": "000afb2d55f00ddbf8f64fcc786968ed2f87c67db28a9b8c7d66796dcc355a84"
     },
     {
       "path": "AppHost/Pages/CameraRecord.h",
-      "bytes": 1021,
-      "sha256": "2be8008bc3327de908695bd883ae690987cf5cf4bbaa441670cc157a1c19b6d6"
+      "bytes": 952,
+      "sha256": "3425316d8dfd228fa07ed9381c91a0dee56974043cbc3606b809b3729366f939"
     },
     {
       "path": "AppHost/Pages/CamerasPage.xaml.cpp",
-      "bytes": 26147,
-      "sha256": "4275c53a8341c1eb4744da4e48be1155ea6d9477581a4da214d84ac5c49889c4"
+      "bytes": 24805,
+      "sha256": "e23112e48fa0e6b41ff9dcf7ac61f6d6f9fc7b6088368c99dd45a331a9248cb9"
     },
     {
       "path": "AppHost/Pages/CamerasPage.xaml.h",
-      "bytes": 2450,
-      "sha256": "fb1d0eb4815bb94d3a386b69f6c1232a49874ffc7ebc05cb9fc034e083752a7c"
+      "bytes": 2395,
+      "sha256": "234ec8ffab262cefe2b43212d921fd86f36ae4b3dd67011f80895e06a3d36f82"
     },
     {
       "path": "AppHost/Pages/ChatPage.xaml.cpp",
-      "bytes": 43958,
-      "sha256": "5d209ccedbcc113a1cbde4afecad467ec307322ef5afbd8f37f7c7e079fcd3db"
+      "bytes": 42747,
+      "sha256": "06e378c827a5ca04ec202730312449746cec9790a6d41aa235bec0aac7d20a81"
     },
     {
       "path": "AppHost/Pages/ChatPage.xaml.h",
-      "bytes": 3865,
-      "sha256": "262ef1a34ae7c31ea451e8504e327bd682a77d84e4d1f5174743df755ac87d27"
+      "bytes": 3781,
+      "sha256": "dcff4e4f74569c6690a66b7f29de8f04cd9f1168ebea805b0be3d33eaa87efa5"
     },
     {
       "path": "AppHost/Pages/DashboardPage.xaml.cpp",
-      "bytes": 6309,
-      "sha256": "31dd3d95fdcd4c7eb008a31c45aefd21e015a9807a334bbf2b4ae96cf9029074"
+      "bytes": 6149,
+      "sha256": "ab64c0f96934df6b8679d63b5e5a69ced4b6a47f3215c539008eaddeb771aad7"
     },
     {
       "path": "AppHost/Pages/DashboardPage.xaml.h",
-      "bytes": 876,
-      "sha256": "3fb8aafc614798a9f966c5e2b62ad49d2fbb87dd76906958d7968d0e00d257df"
+      "bytes": 852,
+      "sha256": "180c0b90399150258a640ed51e93f2581d33590b38afc882f4790d9fe0b6a790"
     },
     {
       "path": "AppHost/Pages/DrakonFindPage.xaml.cpp",
-      "bytes": 76060,
-      "sha256": "2ae2cca580ac4d7dde86d484ea18690450cc90c4755bfc8a86d76488ddfb49e2"
+      "bytes": 74026,
+      "sha256": "077e2566876c9da6d099fca88afd1f811d7ad8a0294f5ee61c64d8c09d96c4e2"
     },
     {
       "path": "AppHost/Pages/DrakonFindPage.xaml.h",
-      "bytes": 6327,
-      "sha256": "85b0d8bb5801ac3c2a3ef487eb3150504ec51c75cfd74dca35ce91f6d4beb9b1"
+      "bytes": 6205,
+      "sha256": "cfcfb0b9b2a57774a98964fc9e97b876db436e5ee7466afd163bb84480a4f469"
     },
     {
       "path": "AppHost/Pages/JobsPage.xaml.cpp",
-      "bytes": 62511,
-      "sha256": "2999794cfd38f480c5fb26c447b5ae3c0400fdde74cba97836c8b54fcb68ddb2"
+      "bytes": 60809,
+      "sha256": "acf7a571b2c23c52be63d4278ab396c2b95724fa2276cd6f2802e25af3b3694e"
     },
     {
       "path": "AppHost/Pages/JobsPage.xaml.h",
-      "bytes": 4314,
-      "sha256": "0414c08dd43ec18ac4998a5ed9ed981aac7da7cfdc9ad7df41a97f29556a7b17"
+      "bytes": 4224,
+      "sha256": "9183a59c0045009f18030ecd82e73233c4b2246e61e4b48be74eefa825f69a9c"
     },
     {
       "path": "AppHost/Pages/LoginPage.xaml.cpp",
-      "bytes": 11398,
-      "sha256": "aa72e6c369ea38c27f0884371ba08a096f3e3f16be7eeafe67c4632a62906346"
+      "bytes": 11102,
+      "sha256": "a49db53f2fd421e1413ddc963c5a0ba9d27e8582bfc1e9563806d7d1409ecb9b"
     },
     {
       "path": "AppHost/Pages/LoginPage.xaml.h",
-      "bytes": 1336,
-      "sha256": "fbed1b3f18b4b371c403b388286ae7557ab5f60a5852a9a1a82987857b5060ad"
+      "bytes": 1303,
+      "sha256": "b6b5a48fee029e7b34df3d57c2d186c92d1b9e2f67d40c7930c918bcba411a8b"
     },
     {
       "path": "AppHost/Pages/ModulePlaceholderPage.xaml.cpp",
-      "bytes": 1194,
-      "sha256": "4dc87bbdc928aee46354be931bc0d9df8f0f1ca90f9378a75e86c5ef14a2a8b1"
+      "bytes": 1148,
+      "sha256": "1a391cb2dd7d963a84aab0867eddb74b7f829cc02d3befca15846972b47319ea"
     },
     {
       "path": "AppHost/Pages/ModulePlaceholderPage.xaml.h",
-      "bytes": 431,
-      "sha256": "3aeb2ed6535b907fa9d22c86adcb2cec8a80f9089f68969d5076e010a3e3a00d"
+      "bytes": 416,
+      "sha256": "a1f2ff473ed84ce68d615b1c961a620cfded38d173b3e60165c0fdaef24229fa"
     },
     {
       "path": "AppHost/Pages/SettingsPage.xaml.cpp",
-      "bytes": 67919,
-      "sha256": "c2b11893ad51d248a026bb673afa8174871fdbfd960cf074041dd0cd1ec3c6cf"
+      "bytes": 66298,
+      "sha256": "6796ef627fbd5a317c9a8bdb2e060bc7a21d0e7861c5203f115ad8f5ff43512e"
     },
     {
       "path": "AppHost/Pages/SettingsPage.xaml.h",
-      "bytes": 6531,
-      "sha256": "dd6c7415575e8b37a554c5f82a1354d6df1763a40355fd245ee0e1e1e43b067d"
+      "bytes": 6403,
+      "sha256": "b046b6df1d6ad904fe029832ffbac2561591985b8d024a85d187ecd6f83d1102"
     },
     {
       "path": "AppHost/Pages/ShellPage.xaml.cpp",
-      "bytes": 22631,
-      "sha256": "68b5840f02171976b720c0e3910fde63c0922c981b5f6fdfd67364f64c2bcdc2"
+      "bytes": 22032,
+      "sha256": "37f2df3f19b9f739edd6c77e29cb81b3df9fd0293ae63e580b6e99e20e82c135"
     },
     {
       "path": "AppHost/Pages/ShellPage.xaml.h",
-      "bytes": 2377,
-      "sha256": "13b9a5de3364f7d14f658ec0696901810c69c7a245c50e22ac6b5bfefb84cd7e"
+      "bytes": 2323,
+      "sha256": "b59e187453823f74049413adfbeb6ca9e93c3be39fb09f4013912ae0f98ca697"
     },
     {
       "path": "AppHost/Pages/SiteHostPage.xaml.cpp",
-      "bytes": 34966,
-      "sha256": "f4016314aa05d6b526e764f15fa3e634a7df56dae142d078cb852c8a64e3be28"
+      "bytes": 33212,
+      "sha256": "f68a6646da1d96385764b6a694c4a0d2430baaf989e490b90bfd0f37015612bb"
     },
     {
       "path": "AppHost/Pages/SiteHostPage.xaml.h",
-      "bytes": 3148,
-      "sha256": "1a1f2a2d172996e8db6da30625c03f3629b10bae7fc24d800e4e815eea0a3baa"
+      "bytes": 3082,
+      "sha256": "779dc0be50c6fcd5fad2dc28c02a39603609ff20951b7ae09d32f6cc9aad91e3"
     },
     {
       "path": "AppHost/pch.cpp",
-      "bytes": 18,
-      "sha256": "f1a03d6510be0ca46b84609263a9ca9167fbe905a7c07e40bcc0b07658e1eaff"
+      "bytes": 17,
+      "sha256": "b7cb2190d8f04fa432c3b0af4288f41d8f20a178325887619ebf61d2961228e7"
     },
     {
       "path": "AppHost/pch.h",
-      "bytes": 701,
-      "sha256": "a56695aa41b7d72aa1de4825fbc7b5ab876af97ba5e33b4d88e19bea791bbf5b"
+      "bytes": 678,
+      "sha256": "5edcc3d677e47ea059617c9fe35a080f114aa2c0e2ff826f1a50f8cd7da9c749"
     },
     {
       "path": "AppHost/Persistence/Database.cpp",
-      "bytes": 36646,
-      "sha256": "52088e79fff1bee102d7d2bbe7aa686e9f9bcb49c251be1e7a6c6cab98809f8e"
+      "bytes": 35513,
+      "sha256": "93831a940527ac53ea541434929f9bfb22444d82a04100517f20a135b86c6b3b"
     },
     {
       "path": "AppHost/Persistence/Database.h",
-      "bytes": 2826,
-      "sha256": "4cd4d0780913fb827fbd0163505ea7def91dbd6a09fc5b9dc5f30a0be04d1410"
+      "bytes": 2739,
+      "sha256": "0bcacd24541d782b7046d4b207909c97875cfa3bd512f8d776ef362d4032b174"
     },
     {
       "path": "AppHost/Persistence/TelegramSettingsRepository.cpp",
-      "bytes": 2230,
-      "sha256": "8d8f63c8c7bfa709fb3c79ad705f770999f9962aca315d5ecf1a9b209e045a0b"
+      "bytes": 2164,
+      "sha256": "4e3b44ccd71bb18fc0973c74929625b8a9bab6bbf0c3844627cb79c1d1ecb95c"
     },
     {
       "path": "AppHost/Persistence/TelegramSettingsRepository.h",
-      "bytes": 709,
-      "sha256": "0c71a7e24ff91b06b2c80768e76db2ced62453afd5c1a92f0c1c274a98da6e98"
+      "bytes": 680,
+      "sha256": "17d21a9b126905ab85bb829d416fe03146177025dbc0223e80241cbd1b4a40e8"
     },
     {
       "path": "AppHost/Platform/AppRuntimeConfig.cpp",
-      "bytes": 15177,
-      "sha256": "4c36962addb6562e43e19c01f3fc69ae1f593c96ea4ce73ccb96c1308435c170"
+      "bytes": 14397,
+      "sha256": "e6b707579e370d1f6609c7be56054b0a18ae55feb5ee3ccb2b39b211f12eef7d"
     },
     {
       "path": "AppHost/Platform/AppRuntimeConfig.h",
-      "bytes": 2339,
-      "sha256": "bc1fdf7914219d40e8a4d873f9f607632782bad59ac197afc9f9c7d6d0733e87"
+      "bytes": 2244,
+      "sha256": "4f1467e4035e248110f755fc0b424bb98f76170c82d49537b1ddd98eebe4a188"
     },
     {
       "path": "AppHost/Platform/DesktopDatabaseKeyStore.cpp",
-      "bytes": 3652,
-      "sha256": "7e5a6807163ca435db78377a225de8ef498a0101998da5cf70bafb3190f33109"
+      "bytes": 3522,
+      "sha256": "083f670dd9ed31301a1c9ed8d16b8f1feac1a89de88c4154d3372ad9b52fa62a"
     },
     {
       "path": "AppHost/Platform/DesktopDatabaseKeyStore.h",
-      "bytes": 343,
-      "sha256": "5a8075605b3c00ac1a7fbb504fa66767f88ee98768a236635f749f6074d0c4bf"
+      "bytes": 332,
+      "sha256": "08cbf2ce7f799469294b66b5e1bd00b64e3707f86e41cd836fc7ad4076956c7a"
     },
     {
       "path": "AppHost/Platform/LocalBackendHost.cpp",
-      "bytes": 24017,
-      "sha256": "a6d4250473a17bbda2ac521e1673f22d77c4cd1c17316c151cd938b2d081fa40"
+      "bytes": 22590,
+      "sha256": "11e28d357b799eb9786ff3b3b32179b756c82933ed2d3623165ea4dc90868cb2"
     },
     {
       "path": "AppHost/Platform/LocalBackendHost.h",
-      "bytes": 1495,
-      "sha256": "4818aab3c55446049628d550fb35a86b87e94ec669dbe95b3ec1f95a7ee8f712"
+      "bytes": 1577,
+      "sha256": "c8915dd948a280d7d86ce611b4596dab4701904cae0fa5a06bba60fc090d966f"
     },
     {
       "path": "AppHost/Platform/MobileBridgeHost.cpp",
-      "bytes": 22728,
-      "sha256": "971ef45596be6f6bda6456a985716e558378d70184a499b231f4f20aff5e436e"
+      "bytes": 21654,
+      "sha256": "b034e28f1da4107a40b02e5ef5bdce00edc93b164b0408b40d49aadd3fb636e5"
     },
     {
       "path": "AppHost/Platform/MobileBridgeHost.h",
-      "bytes": 2190,
-      "sha256": "0d47c95f6b6555d002c93a89f2879be856403a201da554b8cc819cfcbe00b78a"
+      "bytes": 2069,
+      "sha256": "5cca02e4723615a193d5ae7e609ec9e9e0bec01feb738d805f454ec5fcfd22f6"
     },
     {
       "path": "AppHost/Platform/PerceptrumRuntimeHost.cpp",
-      "bytes": 19966,
-      "sha256": "5497026cceccc6e5f0c83fc20f559eee6cca19030c725962cffa2170fcb8895d"
+      "bytes": 16826,
+      "sha256": "c9c8d131a835d21035ec9b73f3097ae362f8a96caa89e9bb5127f5a0ada0308b"
     },
     {
       "path": "AppHost/Platform/PerceptrumRuntimeHost.h",
-      "bytes": 2409,
-      "sha256": "b701464f4e406ae6703670cd8bf432d345c89bafd46b59c5ce50c6cf31aaf33f"
+      "bytes": 2242,
+      "sha256": "3f18711d54ce27a8555d8bd65c4794fa03b816946f92769e14cde67e156bb83e"
     },
     {
       "path": "AppHost/Platform/SecureLocalStore.cpp",
-      "bytes": 1014,
-      "sha256": "74efc2915095c6f167750e5effcc86197dacffd3a3d2ef47dd5d79e0c069cbed"
+      "bytes": 982,
+      "sha256": "0d1148d5258c8cb82d262b319dfd2d0b2f758162df4dc819939cf65b4b792e4a"
     },
     {
       "path": "AppHost/Platform/SecureLocalStore.h",
-      "bytes": 588,
-      "sha256": "f8d436da306a7637d78f24277cd8fd198ffeed914ee550b115e8e663f53a9896"
+      "bytes": 573,
+      "sha256": "010eab807a3cecc5f68aa0bf1f6818bfac8b632cf5e23fe0645faf98ba54c620"
     },
     {
       "path": "AppHost/Platform/TrayIconHost.cpp",
-      "bytes": 10041,
-      "sha256": "c31de8bb95d41972ea0b8f18302c4ebddd6489abaf4b98a661af1224e8d5db00"
+      "bytes": 9662,
+      "sha256": "4d617e3201a339f6b55fce79dd3a86d8b3d7bc28c7baa3d16db6ed21ac24ff44"
     },
     {
       "path": "AppHost/Platform/TrayIconHost.h",
-      "bytes": 1463,
-      "sha256": "24bc15ef10c001f824455e91d5752675e1d2813e904b3d94340920bdc1edf7e6"
+      "bytes": 1415,
+      "sha256": "18cd76401251da50a34939c2c19c1e66bb7a41ad3840aaedb579a0ab3bdb0e40"
     },
     {
       "path": "AppHost/Resources/Resource.h",
-      "bytes": 44,
-      "sha256": "a2c1fabaecc6e57bc52eb7df0566f851fa93d23ff2eeafae88c69c396d65df09"
+      "bytes": 41,
+      "sha256": "aff87845d722c45b34dee0b299fff336c8b9cd93f9a6631ab9d1f55853285060"
+    },
+    {
+      "path": "AppHost/Runtime/calibration/calibration.test.mjs",
+      "bytes": 3970,
+      "sha256": "0054fdf595a3ba0673f8e60bd0432b5688da13b6110c9b3f17dad4c408272bd7"
+    },
+    {
+      "path": "AppHost/Runtime/calibration/cli.mjs",
+      "bytes": 5862,
+      "sha256": "19b908a1afef200dc8cfe9e21898a0cdf707fec8a801ce94cbb8d5e1db9964a3"
+    },
+    {
+      "path": "AppHost/Runtime/calibration/contracts.mjs",
+      "bytes": 10751,
+      "sha256": "bd7236a9091950079057c6d66f07cc26dbeffb6d334a0ad09ad5f3ab2cff3782"
+    },
+    {
+      "path": "AppHost/Runtime/calibration/production-pipeline.mjs",
+      "bytes": 4885,
+      "sha256": "6084d476664442a0b02d8bdb335417f2a6e79bc538c838c14fc80f06f2cdc569"
+    },
+    {
+      "path": "AppHost/Runtime/calibration/production-pipeline.test.mjs",
+      "bytes": 1833,
+      "sha256": "8ca897b4ccafb3e057c10c6b550613344c9010e2822816057c426a53481d084f"
+    },
+    {
+      "path": "AppHost/Runtime/calibration/runner.mjs",
+      "bytes": 29651,
+      "sha256": "feb48b43ee72a830cd345bacb1a339d5615773fcf9ab1ea013e170f517c05c6c"
+    },
+    {
+      "path": "AppHost/Runtime/calibration/system-profile.mjs",
+      "bytes": 8363,
+      "sha256": "dee605c9ed8c2fc9123da19df44c44612fd332696be36eff7308dfe72d8b01f4"
     },
     {
       "path": "AppHost/Runtime/camera-discovery.mjs",
-      "bytes": 66397,
-      "sha256": "420c3bd9fb133661ea6c03a4d00419b9d9ba55bd7f9700e1431c0863642910e7"
+      "bytes": 68783,
+      "sha256": "3793ff857d3499e08544f2e30b8886d6f22c2ca60873fbc4c9c978f14e311310"
     },
     {
       "path": "AppHost/Runtime/desktop-local-server.mjs",
-      "bytes": 77692,
-      "sha256": "7283602823da8e0f5fe4195d2b90ec41e830629f51287e0e15087e7d04242cb3"
+      "bytes": 49526,
+      "sha256": "7f7d6a0c75ba4c85cfe356dbbfceff87eb4bc597185766292b9419118e9c848b"
     },
     {
-      "path": "AppHost/Runtime/local-llm-backend.mjs",
-      "bytes": 5980,
-      "sha256": "b9e088750130c0ffc196d5ed5d4c60a9dc0013f878f101a05eb05036cfc24fe2"
+      "path": "AppHost/Runtime/install-aiquimist-v37-models.mjs",
+      "bytes": 7028,
+      "sha256": "657b84475d563f78b62e7f2c0ccfe9dd0e6b34d278ca459dd57e1d7e6dcf80d1"
     },
     {
-      "path": "AppHost/Runtime/local-llm-backend.test.mjs",
-      "bytes": 3949,
-      "sha256": "0fba5850021b538d95db5ca208b595104fe6d899155e56df7e6dc2cc232158da"
+      "path": "AppHost/Runtime/intelligence/scheduler-controller.mjs",
+      "bytes": 2454,
+      "sha256": "e93fa21d46ad7c5e373ba312a7b5a082b876563aed44451b7b03336774ef7d17"
+    },
+    {
+      "path": "AppHost/Runtime/intelligence/scheduler-controller.test.mjs",
+      "bytes": 3472,
+      "sha256": "f3a11e2762f1607ebbb1f2d340a427035764c6637450ba2bc31120175a724ed7"
+    },
+    {
+      "path": "AppHost/Runtime/intelligence/structural-runtime.mjs",
+      "bytes": 2030,
+      "sha256": "f2b3207ab5ebee3d573aa2180ab39fa74d0d9331a28a927b7103bc9f9ad707b7"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/authorization-code-store.mjs",
-      "bytes": 921,
-      "sha256": "db863cfb09fa6a1b9d5834eaf673dbcd733898d967069b97606650477e2c05e0"
+      "bytes": 881,
+      "sha256": "2cc5c01badaea4eb170e5ef10d4422c193c334f56edc1c404e2811cd1ac1dc4e"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/cli.mjs",
-      "bytes": 1275,
-      "sha256": "c4076144f9a28c118310994b57f0e0505ebb3d0b418f73d0dc975f23e58b790a"
+      "bytes": 1683,
+      "sha256": "3840ee442b7a7f299023db05e3159843aff8df2a3d81c5b71412efefb524b549"
+    },
+    {
+      "path": "AppHost/Runtime/mobile-bridge/controller.mjs",
+      "bytes": 7882,
+      "sha256": "c2c5ccdb82fc4134e5bb20daddaaedacdf9ce148e77a243660785dcf6b3ac5c3"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/crypto-envelope.mjs",
-      "bytes": 1655,
-      "sha256": "78438c9e980944b4e8e555ab4e8711361692a01a914316da9d6761a6d9948808"
+      "bytes": 1614,
+      "sha256": "11dad048c7a91795a44f5b780ee8616cab12a31388c9f47dd54c5b4d29701d1c"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/local-perceptrum.mjs",
-      "bytes": 16104,
-      "sha256": "a8f7aedf84ee73c2d6a99a72691bead8c1d93d10c04fd43e9908e42e40f3a1cd"
-    },
-    {
-      "path": "AppHost/Runtime/mobile-bridge/p2p-gateway.mjs",
-      "bytes": 8146,
-      "sha256": "391c20540b70132604c4c6eed54d4d33b3d2476ed01b66c4ad0a22469f81b9e2"
-    },
-    {
-      "path": "AppHost/Runtime/mobile-bridge/push-config-store.mjs",
-      "bytes": 4348,
-      "sha256": "91d4195ba621d843890b4f7c08e8a41930083a8e50911e707c46c1dad876aed4"
+      "bytes": 12419,
+      "sha256": "8f04ea9759b454afc3d8ecc718fa8683835668315610d7c1463d57f067b24886"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/push-wake.mjs",
-      "bytes": 4955,
-      "sha256": "c01431fef7cdf6c0555ca8238e4e3805ac55d67eee1921bd7b131ad2935718b1"
+      "bytes": 2554,
+      "sha256": "06383f7878612da5003796c6c9e8d54fc0512e9e4b10d9d0e143e962f9c28260"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/server.mjs",
-      "bytes": 9402,
-      "sha256": "8fe598e130fd387464b397f1307a032f15563e42a75068ad4e70b6c317329ffa"
+      "bytes": 5612,
+      "sha256": "9ce01f7ceab239f2941eee58704b82e2bda791d1cfd3885a2f0b40f94be0bf38"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/signaling-agent.mjs",
-      "bytes": 4864,
-      "sha256": "f2cc9d9d83a673f4353b65a7deb2b2274f35a48182206c2c3ef4fd8bac6ef45d"
+      "bytes": 4712,
+      "sha256": "1a19a23541a46d2f5fe081b499eeae3c5d767bcf22cfba9c9a2d2cc1c1ba4227"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/test/authorization-code-store.test.mjs",
-      "bytes": 1119,
-      "sha256": "fcf956e142e0efcd0fd52f8607869702f87f441a6c3574db6bf2b6bdb44e82bd"
+      "bytes": 1086,
+      "sha256": "7684fc5865f292883e91c0eaf51a0f130e42f7267d42d635c0160609854103e5"
+    },
+    {
+      "path": "AppHost/Runtime/mobile-bridge/test/controller.test.mjs",
+      "bytes": 2836,
+      "sha256": "35ecdaa7861b807b819267c88ee5b29412628b07d2122ea911ec355aa41fdb6c"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/test/crypto-envelope.test.mjs",
-      "bytes": 799,
-      "sha256": "b15eb54327f322d9c2a757749ce7d4d202dd291b956ed0f32deee7e32cb6be5e"
-    },
-    {
-      "path": "AppHost/Runtime/mobile-bridge/test/p2p-gateway.test.mjs",
-      "bytes": 10589,
-      "sha256": "4a5f84c6a53082a2c03ecb063ea5e52f32800267b84c99aeae1a384d0b79e35f"
+      "bytes": 775,
+      "sha256": "523cd4ac3cc1ce09982fbf3a493574db4af9f32c6f5b512acc6dc4d12d74840e"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/test/push-wake.test.mjs",
-      "bytes": 4705,
-      "sha256": "06d3979e1ae1fdaaa61b2299b977a1fa05717affca05a20fbaea0434d335af56"
+      "bytes": 1831,
+      "sha256": "90a9a5287e9869f31243d76815f8511a78b61a54af66696b5fd639d8fb6504ce"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/test/server.test.mjs",
-      "bytes": 18336,
-      "sha256": "8ba33a0b02fadd5d218264044237b7e4e059342d154bafbadccbb170f9a7b418"
+      "bytes": 12308,
+      "sha256": "f28c26cd7e640c445aabc22fcf3c6386dff073a0b24af97cb29f0a8a33cdd3ce"
     },
     {
       "path": "AppHost/Runtime/mobile-bridge/test/signaling-agent.test.mjs",
-      "bytes": 2454,
-      "sha256": "c8c85cf369a32ba318a23e43b7f51dd1e73e07e27113d3ccae6827bf26f63d4a"
+      "bytes": 2379,
+      "sha256": "7234c59c24825db15e67677e60c87cd76b6af08b8afb7d83cc66ff15895d9fa3"
+    },
+    {
+      "path": "AppHost/Runtime/platform/camera-devices.mjs",
+      "bytes": 4196,
+      "sha256": "db80ea13df6ec03ae00b7e47f8fcfdb2230ee01e17ac0f3d7329789a5ff2b77f"
+    },
+    {
+      "path": "AppHost/Runtime/platform/file-picker.mjs",
+      "bytes": 8077,
+      "sha256": "33a78075a1817c622978a3c1383de0f5dc57ef79856312b7a04a5923f4819369"
+    },
+    {
+      "path": "AppHost/Runtime/platform/file-picker.test.mjs",
+      "bytes": 4775,
+      "sha256": "63cfe5500223e45667a826dac88168ebd81e85cb917e5fbf05ee5edbea45c952"
+    },
+    {
+      "path": "AppHost/Runtime/platform/index.mjs",
+      "bytes": 241,
+      "sha256": "23b291c9ac31d77ce1511147913504ad12dfe9317a4ede945654f5dc92791923"
+    },
+    {
+      "path": "AppHost/Runtime/platform/local-agent.mjs",
+      "bytes": 2909,
+      "sha256": "6a08c89ea5f6c87eac83a7a6705c38864a963cbd9ac6113ecd2c7b1371850f40"
+    },
+    {
+      "path": "AppHost/Runtime/platform/native-legacy.mjs",
+      "bytes": 3896,
+      "sha256": "361088c8f188a407c686dc42ac0d60617ce673cd627d7b131b1a896043d803fb"
+    },
+    {
+      "path": "AppHost/Runtime/platform/paths.mjs",
+      "bytes": 3940,
+      "sha256": "7f7aefe391acf3a9dc4dbd535d807da24b0ef8f8e32ac0fe3ab54afe0a919c1b"
+    },
+    {
+      "path": "AppHost/Runtime/platform/platform-boundary.test.mjs",
+      "bytes": 5648,
+      "sha256": "df8dd1e63425c05c689edbd3480a92ac0608b0b7d018ab31dd34974da7d81117"
+    },
+    {
+      "path": "AppHost/Runtime/platform/secure-storage.mjs",
+      "bytes": 11620,
+      "sha256": "a6e803e405d92b3dd7dc0a1de37eb0367a9d87d881bc063aeb51800395fdf5eb"
+    },
+    {
+      "path": "AppHost/Runtime/platform/tools.mjs",
+      "bytes": 2845,
+      "sha256": "a1d90aaab2550ef65eab6051c5452d1e4d8021c1d671b9f67fb223d366baf4c2"
     },
     {
       "path": "AppHost/Runtime/presentation-network-state.mjs",
-      "bytes": 9465,
-      "sha256": "c9669a67c1708f84acf84feee019d675e678b122f0a2a29ff2dcf513aa1ab166"
+      "bytes": 9193,
+      "sha256": "0fbce7a19b0ed9eee85322b24ea86f770ca427dc808da05c11f23ba1d01d4c34"
     },
     {
       "path": "AppHost/Runtime/presentation-network-state.test.mjs",
-      "bytes": 3753,
-      "sha256": "d0886d8fc105ca8e5c8ce44cf09c4b7e5ff2d80b4d6a65cc2c1b8fbc9ca69851"
+      "bytes": 3633,
+      "sha256": "2d2ad574e711c4822eb9a017e2db4689d5f5c31875f4374899ad3bd6826e6629"
+    },
+    {
+      "path": "AppHost/Runtime/service/common.mjs",
+      "bytes": 23740,
+      "sha256": "3259bd6182831f77b89b81c7027240afbb1ae6af1ecceefc081168e36fd27bfa"
+    },
+    {
+      "path": "AppHost/Runtime/service/desktop-local-agent-entry.mjs",
+      "bytes": 39341,
+      "sha256": "b55a5117d828186a76aee62beee323b6c04d4442c6ef147cbbccebad401eb134"
+    },
+    {
+      "path": "AppHost/Runtime/service/desktop-service-entry.mjs",
+      "bytes": 7530,
+      "sha256": "199c226f91fc1ac99ad40b8bdff1ce7d932a6b4eca1b603a88d4d3830da614a6"
+    },
+    {
+      "path": "AppHost/Runtime/service/desktop-webcam-preview-entry.mjs",
+      "bytes": 13093,
+      "sha256": "16d90f4993d1df5cb723bb5d53d81df5f4941e1badb84f74cf4745b90a45f5b8"
+    },
+    {
+      "path": "AppHost/Runtime/service/install-service.mjs",
+      "bytes": 3170,
+      "sha256": "c853ecf34e9596ee776c346998ae91c40cc91fd70eefc817664b51a19616a005"
+    },
+    {
+      "path": "AppHost/Runtime/service/mac-chat-orchestrator.mjs",
+      "bytes": 96971,
+      "sha256": "aba6d0e458a04096bddb712ddc9acb6b7ef710ee81912258785a4bf5bf8e2ffb"
+    },
+    {
+      "path": "AppHost/Runtime/service/mac-local-runtime-engine.mjs",
+      "bytes": 189254,
+      "sha256": "8ba67942b352d8596dc3f9830456146500e787a4f0976c93e45f38c212fc0b6a"
+    },
+    {
+      "path": "AppHost/Runtime/service/mac-local-runtime-engine.test.mjs",
+      "bytes": 16247,
+      "sha256": "14a28af80020cd708c63840a9fd49679b1d0e39b6bad59718aab62d17408bc9b"
+    },
+    {
+      "path": "AppHost/Runtime/service/platform/darwin.mjs",
+      "bytes": 4602,
+      "sha256": "f8bbeac290387ecc2d00886dc591bca45bb38d2532d03a42cae0b7efd8fe8d30"
+    },
+    {
+      "path": "AppHost/Runtime/service/platform/linux.mjs",
+      "bytes": 3677,
+      "sha256": "7b03afda79f91adf821733f1aaf47e39c6a4bc351db0e93f48e4f5b5de370be3"
+    },
+    {
+      "path": "AppHost/Runtime/service/platform/windows.mjs",
+      "bytes": 1229,
+      "sha256": "02c6bbefb383a5182f38322bca4697a85c6c0b60b2ce5c9e767fd0e520f7ffbb"
+    },
+    {
+      "path": "AppHost/Runtime/service/service-config.test.mjs",
+      "bytes": 3366,
+      "sha256": "48bc4a33b499bba067aef3564ccb106c787c3c5ac920fc0a1f9478755097526f"
+    },
+    {
+      "path": "AppHost/Runtime/validation/ffmpeg-live-stream-smoke.mjs",
+      "bytes": 3816,
+      "sha256": "fc6c10d2dce2a89914cf3c7457d9b7d758d6adf90aa821ad251ae5ba4472bf60"
+    },
+    {
+      "path": "AppHost/Runtime/validation/ffmpeg-live-webcam-smoke.mjs",
+      "bytes": 8300,
+      "sha256": "e94246023a09f8bc3a7836d77e16f6aa1eea5f7127075ecc3daacdd45503bbbb"
+    },
+    {
+      "path": "AppHost/Runtime/validation/local-camera-discovery-smoke.mjs",
+      "bytes": 1614,
+      "sha256": "16d9a15cb49c09295548a6d1853462714235143bb03b8e241e39998cc6d6a7b0"
+    },
+    {
+      "path": "AppHost/Runtime/validation/macos-terminal-runner.mjs",
+      "bytes": 4746,
+      "sha256": "7b3d6247251ec5c78c6cdf1e556c67bba5f514517c95c4ed20f9a409cbaf3f47"
+    },
+    {
+      "path": "AppHost/Runtime/validation/native-legacy-boundary.mjs",
+      "bytes": 3469,
+      "sha256": "d53c9e717156e8c260e8e87d4a95cf01ecb9c102c82db016fd18d987888be9f6"
+    },
+    {
+      "path": "AppHost/Runtime/validation/openai-prompt-enhance-e2e-smoke.mjs",
+      "bytes": 15612,
+      "sha256": "354e4245b4ec465fd1d3de0f0b5485c16d59141992680ad27bfa20539892963b"
+    },
+    {
+      "path": "AppHost/Runtime/validation/openai-provider-smoke.mjs",
+      "bytes": 2569,
+      "sha256": "62dae7a7857d9d8bbfdba1137c415259e5586812f116b7f84f88ee9122a4affa"
+    },
+    {
+      "path": "AppHost/Runtime/validation/run-desktop-service-macos-terminal.mjs",
+      "bytes": 1916,
+      "sha256": "167ef740052969603c1024f0265d7ab2f13cea7dd7116378c495ec0131ef9e95"
     },
     {
       "path": "AppHost/Services/DrakonApiClient.cpp",
-      "bytes": 129279,
-      "sha256": "0350f2490e2ed73fb952a7b4b59585fbc86701b5dc3fca4c58e7fd3730f56c0a"
+      "bytes": 125571,
+      "sha256": "d05f90c3f145baca515b1b073fe827a5c5c4cbf7268521d3011b3e9b97de3e18"
     },
     {
       "path": "AppHost/Services/DrakonApiClient.h",
-      "bytes": 21264,
-      "sha256": "84f47a1111b9c4c327de9114a52755ca8431fbd3959ea7f040848b917cbd293e"
+      "bytes": 20621,
+      "sha256": "88f5d78da55aa6d83eee9ef38de6424f94f35fdbb91fa65577281fece4380761"
     },
     {
-      "path": "AppHost/XamlMetaDataProvider_h.h",
-      "bytes": 25899,
-      "sha256": "795b3b7f97eeb4af49175e0bd9face8c9f67974524e80df84ccd225dce5c706b"
+      "path": "AppHost/stage/brand.config.json",
+      "bytes": 5899,
+      "sha256": "c41d6ecfc6a1d633914f414c74a39d6b7a9d7a40e944de0e4d99e0da3eb47743"
+    },
+    {
+      "path": "AppHost/stage/Packaging/platform.mjs",
+      "bytes": 1446,
+      "sha256": "171a008e9e6f29746a48b546ee148ffa78aa024aeff955c9cb3b7e260fdc60d2"
+    },
+    {
+      "path": "AppHost/stage/runtime/bootstrap/perceptrum_site.seed.import-report.json",
+      "bytes": 557,
+      "sha256": "15dc8a47a279cc04707cc8d8950f2876adf9b3615e393faf39ff9cf18479d245"
+    },
+    {
+      "path": "AppHost/stage/runtime/brand.config.json",
+      "bytes": 5899,
+      "sha256": "c41d6ecfc6a1d633914f414c74a39d6b7a9d7a40e944de0e4d99e0da3eb47743"
+    },
+    {
+      "path": "AppHost/stage/runtime/camera-discovery.mjs",
+      "bytes": 68783,
+      "sha256": "3793ff857d3499e08544f2e30b8886d6f22c2ca60873fbc4c9c978f14e311310"
+    },
+    {
+      "path": "AppHost/stage/runtime/desktop-local-server.cjs",
+      "bytes": 6608047,
+      "sha256": "a15a3aa1aca0bc79b050a75ae4d379acb5898ab760d47636cd4ba031ac8fdfdd"
+    },
+    {
+      "path": "AppHost/stage/runtime/intelligence/scheduler-controller.mjs",
+      "bytes": 2454,
+      "sha256": "e93fa21d46ad7c5e373ba312a7b5a082b876563aed44451b7b03336774ef7d17"
+    },
+    {
+      "path": "AppHost/stage/runtime/intelligence/scheduler-controller.test.mjs",
+      "bytes": 3472,
+      "sha256": "f3a11e2762f1607ebbb1f2d340a427035764c6637450ba2bc31120175a724ed7"
+    },
+    {
+      "path": "AppHost/stage/runtime/intelligence/structural-runtime.mjs",
+      "bytes": 2030,
+      "sha256": "f2b3207ab5ebee3d573aa2180ab39fa74d0d9331a28a927b7103bc9f9ad707b7"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/authorization-code-store.mjs",
+      "bytes": 881,
+      "sha256": "2cc5c01badaea4eb170e5ef10d4422c193c334f56edc1c404e2811cd1ac1dc4e"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/cli.mjs",
+      "bytes": 1683,
+      "sha256": "3840ee442b7a7f299023db05e3159843aff8df2a3d81c5b71412efefb524b549"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/controller.mjs",
+      "bytes": 7882,
+      "sha256": "c2c5ccdb82fc4134e5bb20daddaaedacdf9ce148e77a243660785dcf6b3ac5c3"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/crypto-envelope.mjs",
+      "bytes": 1614,
+      "sha256": "11dad048c7a91795a44f5b780ee8616cab12a31388c9f47dd54c5b4d29701d1c"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/local-perceptrum.mjs",
+      "bytes": 12419,
+      "sha256": "8f04ea9759b454afc3d8ecc718fa8683835668315610d7c1463d57f067b24886"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/push-wake.mjs",
+      "bytes": 2554,
+      "sha256": "06383f7878612da5003796c6c9e8d54fc0512e9e4b10d9d0e143e962f9c28260"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/server.mjs",
+      "bytes": 5612,
+      "sha256": "9ce01f7ceab239f2941eee58704b82e2bda791d1cfd3885a2f0b40f94be0bf38"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/signaling-agent.mjs",
+      "bytes": 4712,
+      "sha256": "1a19a23541a46d2f5fe081b499eeae3c5d767bcf22cfba9c9a2d2cc1c1ba4227"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/test/authorization-code-store.test.mjs",
+      "bytes": 1086,
+      "sha256": "7684fc5865f292883e91c0eaf51a0f130e42f7267d42d635c0160609854103e5"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/test/controller.test.mjs",
+      "bytes": 2836,
+      "sha256": "35ecdaa7861b807b819267c88ee5b29412628b07d2122ea911ec355aa41fdb6c"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/test/crypto-envelope.test.mjs",
+      "bytes": 775,
+      "sha256": "523cd4ac3cc1ce09982fbf3a493574db4af9f32c6f5b512acc6dc4d12d74840e"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/test/push-wake.test.mjs",
+      "bytes": 1831,
+      "sha256": "90a9a5287e9869f31243d76815f8511a78b61a54af66696b5fd639d8fb6504ce"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/test/server.test.mjs",
+      "bytes": 12308,
+      "sha256": "f28c26cd7e640c445aabc22fcf3c6386dff073a0b24af97cb29f0a8a33cdd3ce"
+    },
+    {
+      "path": "AppHost/stage/runtime/mobile-bridge/test/signaling-agent.test.mjs",
+      "bytes": 2379,
+      "sha256": "7234c59c24825db15e67677e60c87cd76b6af08b8afb7d83cc66ff15895d9fa3"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/camera-devices.mjs",
+      "bytes": 4196,
+      "sha256": "db80ea13df6ec03ae00b7e47f8fcfdb2230ee01e17ac0f3d7329789a5ff2b77f"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/file-picker.mjs",
+      "bytes": 8077,
+      "sha256": "33a78075a1817c622978a3c1383de0f5dc57ef79856312b7a04a5923f4819369"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/file-picker.test.mjs",
+      "bytes": 4775,
+      "sha256": "63cfe5500223e45667a826dac88168ebd81e85cb917e5fbf05ee5edbea45c952"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/index.mjs",
+      "bytes": 241,
+      "sha256": "23b291c9ac31d77ce1511147913504ad12dfe9317a4ede945654f5dc92791923"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/local-agent.mjs",
+      "bytes": 2909,
+      "sha256": "6a08c89ea5f6c87eac83a7a6705c38864a963cbd9ac6113ecd2c7b1371850f40"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/native-legacy.mjs",
+      "bytes": 3896,
+      "sha256": "361088c8f188a407c686dc42ac0d60617ce673cd627d7b131b1a896043d803fb"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/paths.mjs",
+      "bytes": 3940,
+      "sha256": "7f7aefe391acf3a9dc4dbd535d807da24b0ef8f8e32ac0fe3ab54afe0a919c1b"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/platform-boundary.test.mjs",
+      "bytes": 5648,
+      "sha256": "df8dd1e63425c05c689edbd3480a92ac0608b0b7d018ab31dd34974da7d81117"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/secure-storage.mjs",
+      "bytes": 11620,
+      "sha256": "a6e803e405d92b3dd7dc0a1de37eb0367a9d87d881bc063aeb51800395fdf5eb"
+    },
+    {
+      "path": "AppHost/stage/runtime/platform/tools.mjs",
+      "bytes": 2845,
+      "sha256": "a1d90aaab2550ef65eab6051c5452d1e4d8021c1d671b9f67fb223d366baf4c2"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/common.mjs",
+      "bytes": 23740,
+      "sha256": "3259bd6182831f77b89b81c7027240afbb1ae6af1ecceefc081168e36fd27bfa"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/desktop-local-agent-entry.mjs",
+      "bytes": 39341,
+      "sha256": "b55a5117d828186a76aee62beee323b6c04d4442c6ef147cbbccebad401eb134"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/desktop-service-entry.mjs",
+      "bytes": 7530,
+      "sha256": "199c226f91fc1ac99ad40b8bdff1ce7d932a6b4eca1b603a88d4d3830da614a6"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/desktop-webcam-preview-entry.mjs",
+      "bytes": 13093,
+      "sha256": "16d90f4993d1df5cb723bb5d53d81df5f4941e1badb84f74cf4745b90a45f5b8"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/install-service.mjs",
+      "bytes": 3170,
+      "sha256": "c853ecf34e9596ee776c346998ae91c40cc91fd70eefc817664b51a19616a005"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/mac-chat-orchestrator.mjs",
+      "bytes": 96971,
+      "sha256": "aba6d0e458a04096bddb712ddc9acb6b7ef710ee81912258785a4bf5bf8e2ffb"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/mac-local-runtime-engine.mjs",
+      "bytes": 189254,
+      "sha256": "8ba67942b352d8596dc3f9830456146500e787a4f0976c93e45f38c212fc0b6a"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/mac-local-runtime-engine.test.mjs",
+      "bytes": 16247,
+      "sha256": "14a28af80020cd708c63840a9fd49679b1d0e39b6bad59718aab62d17408bc9b"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/platform/darwin.mjs",
+      "bytes": 4602,
+      "sha256": "f8bbeac290387ecc2d00886dc591bca45bb38d2532d03a42cae0b7efd8fe8d30"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/platform/linux.mjs",
+      "bytes": 3677,
+      "sha256": "7b03afda79f91adf821733f1aaf47e39c6a4bc351db0e93f48e4f5b5de370be3"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/platform/windows.mjs",
+      "bytes": 1229,
+      "sha256": "02c6bbefb383a5182f38322bca4697a85c6c0b60b2ce5c9e767fd0e520f7ffbb"
+    },
+    {
+      "path": "AppHost/stage/runtime/service/service-config.test.mjs",
+      "bytes": 3366,
+      "sha256": "48bc4a33b499bba067aef3564ccb106c787c3c5ac920fc0a1f9478755097526f"
+    },
+    {
+      "path": "AppHost/stage/runtime/web/_routes.json",
+      "bytes": 69,
+      "sha256": "9ac04b0b988b70aa7a8aeef820ca5653cab83721b0df8013e54a4450f1d22040"
+    },
+    {
+      "path": "AppHost/stage/runtime/web/assets/index-BS6grXLq.js",
+      "bytes": 2644824,
+      "sha256": "c89489ea9aa30554bee50f2a31ee2e826c0b4a436bf5848ed283616828977008"
     },
     {
       "path": "AppHost/XamlMetaDataProvider.cpp",
-      "bytes": 150,
-      "sha256": "4aaf0c1230882b92c0ec5c734843d45a3f5e3cd56e070fd79ed2bfed52f16e51"
+      "bytes": 149,
+      "sha256": "df0da592ad45ce481746ec23fbb62b4f208705fa4e0314df0063a01abe32e28a"
     },
     {
       "path": "AppHost/XamlMetaDataProvider.h",
-      "bytes": 1021,
-      "sha256": "14f770befc528272291df7d2ebbc242d496db9a3fc79aa1ec41784df8e295fe1"
+      "bytes": 992,
+      "sha256": "651aced492ac2578d1f963ad22b27bf808f05d73ffbfc4e83d6dab861eebedcf"
     },
     {
       "path": "AppHost/XamlMetaDataProviderImpl.cpp",
-      "bytes": 1102,
-      "sha256": "7dc257b029672c1a3a0c06c5bcf3dc0f8e1bacd92c6a810636cba2ccc5b1a67d"
+      "bytes": 1075,
+      "sha256": "dced57819d0e5bc6291a957740c8468514c4abd9e09e2e841100369c59c50dab"
     },
     {
       "path": "DrakonSite/deploy_backend.sh",
-      "bytes": 2074,
-      "sha256": "32a299acfed6c81cc70e3594df5bfa45e8859915c6a97cc3bc2eefdc67cab8ef"
+      "bytes": 2005,
+      "sha256": "20f0d719045a7332ba3f8820f9d5f2961f76eeff50bbf65dcb2cbf8bf642d5d6"
     },
     {
       "path": "DrakonSite/eslint.config.js",
-      "bytes": 822,
-      "sha256": "8add6e28ab305df351c760302026d07c7eeeb1268dfc887da379df935f69cd52"
+      "bytes": 794,
+      "sha256": "126339360f15dcc42ebcbc60c56dea2811d1ca0037feb175bf5af0e348b04ab5"
     },
     {
       "path": "DrakonSite/knip.json",
-      "bytes": 391,
-      "sha256": "9e22dc5f44bff36c0a447f87c91b266d9bb951a9840daa91e290b5092a91e49b"
+      "bytes": 373,
+      "sha256": "4c4c6a76911fae6c673a9f459462eae7e7b916bfb3b08f0c378b7c83bad811e0"
     },
     {
       "path": "DrakonSite/package-lock.json",
-      "bytes": 366487,
-      "sha256": "8040727d7725c31e88ed0b1731c32828a330ef361089ed1dcbf2d80b8417d644"
+      "bytes": 357256,
+      "sha256": "aee9455b6fef81420bee3124696d3396207fc217a4fa0f33521bb761ccfcac31"
     },
     {
       "path": "DrakonSite/package.json",
-      "bytes": 3691,
-      "sha256": "e01e4372931dc1300dfbbf112d20714caf78cb25664a22cbc4c50b8067a6ccb3"
+      "bytes": 8648,
+      "sha256": "0332329edb79c2aeef6fcaa6d4c9dd7d3547061c8994a610d074d20af9789d3b"
     },
     {
       "path": "DrakonSite/postcss.config.js",
-      "bytes": 87,
-      "sha256": "98e8d8a143f16216f4b50a2520024f6254987049b2e199026742a96e16ba411e"
+      "bytes": 81,
+      "sha256": "e32657baf631d7c5f4dc67b4b2ee0ec8e7d5b3c41860e09cddce7c0377cd80bc"
     },
     {
       "path": "DrakonSite/public/_routes.json",
-      "bytes": 76,
-      "sha256": "d6f04a64c804029b1e57514596ffd69d0f12a6fca2a1b2647fb8db6d1935751f"
+      "bytes": 69,
+      "sha256": "9ac04b0b988b70aa7a8aeef820ca5653cab83721b0df8013e54a4450f1d22040"
     },
     {
       "path": "DrakonSite/scripts/convert-postgres-dump-to-sqlite.mjs",
-      "bytes": 26293,
-      "sha256": "885c988dcf15d764f49bb3fdf1dbae4efe4b16a2d8b552b275a22657cd06c7bf"
+      "bytes": 25459,
+      "sha256": "a63aa233c09ff438e831c64c2edc06a9ff6362b55a4e708c7f2fdb6a50e4d186"
     },
     {
       "path": "DrakonSite/scripts/deploy-central-auth-post.ps1",
-      "bytes": 1310,
-      "sha256": "768b2349913a91e7cb7b34750893ac710185d053c99bbc06968db19069da8d64"
+      "bytes": 1278,
+      "sha256": "55fe2212e5c9b68d8c2dbb7a7186fd8e72cf326ab97e0396db04244032ff3ecf"
     },
     {
       "path": "DrakonSite/scripts/deploy-central-auth.ps1",
-      "bytes": 2875,
-      "sha256": "891c5d4ad4c09d393b25a34532e42bedbf1e0838bbfb17ecb4f6c8e50a4b84f6"
+      "bytes": 2790,
+      "sha256": "446ffe0f9ebdac60739920c535ffc04caa0e8bf0288a714a58ee958e7b42b3b9"
     },
     {
       "path": "DrakonSite/scripts/deploy-common.ps1",
-      "bytes": 6286,
-      "sha256": "b49967ad39845c6764c8d2d042054fc63656559b9e00f7d3c9905ac5a6b1b00e"
+      "bytes": 5421,
+      "sha256": "6fbc3e33df8d7461c550c2f109225573ef3acb4efcd18623ef34835fcda4c3c4"
     },
     {
       "path": "DrakonSite/scripts/deploy-post.ps1",
-      "bytes": 1236,
-      "sha256": "24ec89694d61fc33b2ba9e2b600b5b53113129272768ad18d60f38317c150c1f"
+      "bytes": 1200,
+      "sha256": "f28c72f1111bc693d3d365874519234e54ab0db9d184875b8d9516297013d24a"
     },
     {
       "path": "DrakonSite/scripts/deploy-server.ps1",
-      "bytes": 2811,
-      "sha256": "e0710fd9ca6a6a250233529aa5ca9fa5a69ada181660e0a28962c7c861e5c306"
+      "bytes": 2722,
+      "sha256": "910a49318b79432c9c8b98fd3afca7cf85c33e0fc14eaa491f027635a7f1a79d"
     },
     {
       "path": "DrakonSite/scripts/generate-central-auth-keypair.mjs",
-      "bytes": 1312,
-      "sha256": "0bc3beb6b65700f36f41bf0d57b32b87b4190079e933520289afa0db3fefd51b"
-    },
-    {
-      "path": "DrakonSite/scripts/test-mobile-p2p.ts",
-      "bytes": 14180,
-      "sha256": "b68433d811b95b70ab2819e1c9c51edfdecc792e7f1aa03de6a1c2c923399f35"
+      "bytes": 1281,
+      "sha256": "1fc55c590f4d6e2458fa31ef21771fc8f195706e4d185a42d09c54b1670823dd"
     },
     {
       "path": "DrakonSite/scripts/verify-desktop-sqlite-encryption.ts",
-      "bytes": 2682,
-      "sha256": "905aa32d376989c604c831ff31be4eceb7557fd186f9c70db2b05c974b628c32"
+      "bytes": 5286,
+      "sha256": "dce080ee50cd8936e5bcd9d2f10146cc595bd75c36dfec03589efcd31afae034"
     },
     {
       "path": "DrakonSite/server/brand.ts",
-      "bytes": 2117,
-      "sha256": "a0d1878ba379e59b0412697ebb6202974c3de9f681fc90e6274bc3c592e84475"
+      "bytes": 2081,
+      "sha256": "20aba59a3d1307c07e600bed55c4048f1263a7dede45e000062ef3322ee5ab9f"
     },
     {
       "path": "DrakonSite/server/env.ts",
-      "bytes": 1824,
-      "sha256": "6a5e1764e5a1688310944804fceddad9c86a4d580e3ea26d79d5db172dcc4ff8"
+      "bytes": 1768,
+      "sha256": "c03ba3a5e4dd641552201d9b8da7e7e4bd9df4135e3f580adfa1c553d338b7ee"
     },
     {
       "path": "DrakonSite/server/index.ts",
-      "bytes": 18430,
-      "sha256": "950041b0aa9bc8ec8a6f1e8be9aa7553562d45192fda09c3c94620d4bd9ac430"
+      "bytes": 18248,
+      "sha256": "ba9fe72d982cb9280f67f95f6f2f278606e8d71fc2ef6bbe5c6f35f64876da69"
     },
     {
       "path": "DrakonSite/server/local-r2.ts",
-      "bytes": 3571,
-      "sha256": "5c94c0ab53e05e4a1e2607422dfef983ac25beabdb926222da4b2eb3c9b80a4a"
+      "bytes": 3450,
+      "sha256": "27d5ac1cd3ef01afb0ede637360d04341730b9b4645304a1d0e0b05c161898dd"
     },
     {
       "path": "DrakonSite/server/pg-d1.ts",
-      "bytes": 5425,
-      "sha256": "c43439a814cefa489de849c70e2547b17f23361746dadd063d241128692481ee"
+      "bytes": 5213,
+      "sha256": "0a428d9e4faac40932ea503cb9086666f8194e60d841530d823c8034ef53e62f"
     },
     {
       "path": "DrakonSite/server/sqlite-d1-encrypted.ts",
-      "bytes": 4814,
-      "sha256": "7e2eb9f4e4bdc6a1e8dccdcf350f44c11505d24db035be3ad6be093515a0bd1a"
+      "bytes": 5996,
+      "sha256": "84003cf40ebcdaeb4c231ac867a6774d6724606181c95122a979af0b0bf2160b"
     },
     {
       "path": "DrakonSite/server/sqlite-d1.ts",
-      "bytes": 3182,
-      "sha256": "30aadbe459842d05d21836826be584fe17040d281c23b857701d1a380aaddb40"
+      "bytes": 3067,
+      "sha256": "b3940fb4550305e5172f0aaec565e205d922c9352972aecf9d36c6d955221211"
     },
     {
       "path": "DrakonSite/server/sqlite-encryption.ts",
-      "bytes": 3283,
-      "sha256": "bcb7f0f9b2aa6953e9f9f5824ef53784d8ba66850d06f077b41ed36acf7e2d22"
+      "bytes": 3166,
+      "sha256": "0cfe666345d0b89630bc06d5923c7e96a9140af56f2e26b3aa764bd25864c84e"
     },
     {
       "path": "DrakonSite/src/react-app/App.tsx",
-      "bytes": 10523,
-      "sha256": "b8bfa437e21a3f08867807eca4374fd8a240a52c55c55af4e8505ef230f444f4"
+      "bytes": 10042,
+      "sha256": "0920a09899999b939e30e6ff2e0da8641b59fdd4ea2e53cdccc9db9aa230a7cf"
     },
     {
       "path": "DrakonSite/src/react-app/billingTranslations.ts",
-      "bytes": 106213,
-      "sha256": "dfeb6db0112a7856798efb19133305bdf3866ffd6af6b987d27642c887bf6f4f"
+      "bytes": 105263,
+      "sha256": "7d68410a4d600c673c55a380f2d5c5e07b43705b41ed8d3e0ff055b7ae356eff"
     },
     {
       "path": "DrakonSite/src/react-app/components/AddChatTokensModal.tsx",
-      "bytes": 10292,
-      "sha256": "af516aa775fe5cb8daa177e8c7f01981402fa18ed1c3437ff268d8b236b9993e"
-    },
-    {
-      "path": "DrakonSite/src/react-app/components/AgentEditorTabs.tsx",
-      "bytes": 2380,
-      "sha256": "97223b4e8eb6c304902ebb0d3c82583e3a59f8d07095d0f1f2603afba58e318d"
-    },
-    {
-      "path": "DrakonSite/src/react-app/components/AppErrorBoundary.tsx",
-      "bytes": 1952,
-      "sha256": "fba11e2198e852dda2f3801f47535a07dd8adf188e85841ec279a6d3361a408e"
+      "bytes": 10014,
+      "sha256": "bc2e94be2f26328ce2c6a576238e77039053d250f878cfe59caf83c357f8cc24"
     },
     {
       "path": "DrakonSite/src/react-app/components/AssistantMessage.tsx",
-      "bytes": 14419,
-      "sha256": "ea02b69fd19d83554964932bfb90cb5b2579f3ffedab07c70023107d79327954"
+      "bytes": 13991,
+      "sha256": "7bc98df0e6114f3e8128b437ab083b8233100dd0340ee2bcf8f2ad9729ebb67c"
     },
     {
       "path": "DrakonSite/src/react-app/components/BrandLogo.tsx",
-      "bytes": 2344,
-      "sha256": "ce521aa05c29f8fc9c69d248f6a6a7f5c949ce05c5317a1793709adc804b8904"
+      "bytes": 2253,
+      "sha256": "75ec2ada6b007b2ed7508cf3e0d2610b001b25de0d6357ea3a72628a9c5acf40"
     },
     {
       "path": "DrakonSite/src/react-app/components/BrazilStateTileMap.tsx",
-      "bytes": 6116,
-      "sha256": "8528f0bc6328988a9093f054c0f90ee6d27cff9221710cc237346120f6902ec2"
+      "bytes": 5953,
+      "sha256": "c0709097f8afefaf8c3dc065cd9b01e6f8c4f157b12fda9f77d22dd3e2abba43"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraBulkImportModal.tsx",
-      "bytes": 52125,
-      "sha256": "2d958cbeb1c81df85803978ad3c199a38f11084eee8c1aeb17b48a8f3be94db7"
+      "bytes": 50845,
+      "sha256": "e54dbe1254032db29f3e9be78cdff9f665ecf327ee27bce3ff6035e125ac0311"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraCustomAgentEditorModal.tsx",
-      "bytes": 189326,
-      "sha256": "9c1b84e48833f887622a34bb93db1594b4e501eba9f01e37a78b76b886e3c983"
+      "bytes": 178233,
+      "sha256": "3a485a60881166854d3f6be84f5a4cb1d5b4b7d6f2336c309be9bbfed409b6bd"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraDirectoryControls.tsx",
-      "bytes": 5832,
-      "sha256": "b75faf94f3c90f69fc53f85191698175280bd7ca84cd87de7e18247314be84c9"
+      "bytes": 5684,
+      "sha256": "6106c3bd95025a95ace2ae31f2be81441c29661712bd20d501ce2657be2893de"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraDiscoveryModal.tsx",
-      "bytes": 37610,
-      "sha256": "c6bb41d06cd840a86a12971a4ba54e2eaf222653384f56faf9cfd942e140686e"
+      "bytes": 36774,
+      "sha256": "3ad6c74150cbcdec78237077f65d9def345878dad320619deaf0fb457a9993bc"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraEditorModal.tsx",
-      "bytes": 93037,
-      "sha256": "41bde324367eeba46fc1c9ae29dc0676da53d4b3004f27fbd7d8b2ea14bacfa8"
+      "bytes": 90664,
+      "sha256": "600d71cebc395e8acd5921a093e2aeda24ae69c2380fe9529c597899dc50ccbf"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraEventToast.tsx",
-      "bytes": 9572,
-      "sha256": "d8d31a50fe9bddbe355a965b548ec3a080a997c6a00b2a4535205b9a811c49d1"
+      "bytes": 9344,
+      "sha256": "0efe9485f4e53dc1463efcf4e5fffab9b750defc1a6f137fbd95040a4d1fe915"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraRecordingPlayerOverlay.tsx",
-      "bytes": 26506,
-      "sha256": "60916372b22fbc4766550eecbde6493c39f4822b5a6eccc6df20fb4f9ef460ac"
+      "bytes": 25920,
+      "sha256": "aad67c3de0094e47ef8c749afaed42b9040e67611140084cd1474be0624f3e4d"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraRecordingTimeline.tsx",
-      "bytes": 7128,
-      "sha256": "d25dd8a7ea8c40cc1d7396c079e6914ab74aacea83003154d1a1e7ef55eec52e"
+      "bytes": 6954,
+      "sha256": "9cae277fb87cf8dc258c81793190351356fbe8a4d3dd5096ca4f8286aab8bd2e"
     },
     {
       "path": "DrakonSite/src/react-app/components/CameraStartAttentionToast.tsx",
-      "bytes": 2564,
-      "sha256": "0c054f0b2a9e04d41c26f8bd2ab1c14cdc1b260a0879f26fa85eac9f03ab4214"
+      "bytes": 2487,
+      "sha256": "2e83ba8ee6da18ae6e59c7ba30784a89a28776e54e4f1ed3992117fa71e30dcb"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraAgentCard.tsx",
-      "bytes": 6347,
-      "sha256": "8a807955043629146e294df48c1f6609458d634158bc9f9e31451ddb7bd62de4"
+      "bytes": 6183,
+      "sha256": "f655826182e2e579daf6608a8f567403e10ce2587b70f99433aee4eb3d2d35a7"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraAgentCreatedCard.tsx",
-      "bytes": 9718,
-      "sha256": "b95b8119b94e1cecf6573763e43c9bea152e8759b944287701a8b038acf93973"
+      "bytes": 9431,
+      "sha256": "3f9526dc295f5aec74c9e19c1bbccf5b3d60cb826b20b65c6e8b45d990640b22"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraAgentEditContextCard.tsx",
-      "bytes": 4270,
-      "sha256": "f987ce40032d80676fea8fef1ce384272c0d24693a7b4f817744ca9bc27f3a07"
+      "bytes": 4150,
+      "sha256": "989132354da29745caf4ff8c6e8411589b0ed74402a2fce3885e4d9252220d2e"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraAgentUpdatedCard.tsx",
-      "bytes": 7363,
-      "sha256": "8b44fbd313d390aecc62fc5e241b3b6931c122ff86802bf26b0622fea5622968"
+      "bytes": 7177,
+      "sha256": "e563c24b487ad0f72643f51366dcca99bd405c5e659e05c4ca31f64e5dc35828"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraBatchEditCard.tsx",
-      "bytes": 12962,
-      "sha256": "72e9d79ed922a35255d5969846f971ea9c6649a926ee04aeec76effa704be7ed"
+      "bytes": 12667,
+      "sha256": "19789b6cd73448b76fb340a0837a22344fbf935bfaa88032d895bda47c2ad3e4"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraBatchRegistrationCard.tsx",
-      "bytes": 12301,
-      "sha256": "a6d6d6094b9203a18663c4847b1278269fb7f188d86ec8be23285e12ffe0cdba"
+      "bytes": 12013,
+      "sha256": "185e684b4d75b7152623ae92b770246d673f9be6bb1387483f5d025a05e40c2b"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraDiscoveryCard.tsx",
-      "bytes": 8535,
-      "sha256": "bb19589c09599b71ab9efcfdea8160478e0dd0fa1990a2945f7e7c0faa82f521"
+      "bytes": 8344,
+      "sha256": "c62c5df77890c5f85ee230ffc6d96be221e0ffa6388fd77b83941ee98e8f8d59"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraEditCard.tsx",
-      "bytes": 6006,
-      "sha256": "def9ba7ec1e4e029f756cf717303ae2fee4241dbaf4ff193cc95f71973d36f53"
+      "bytes": 5864,
+      "sha256": "587c27d30d1f3cb55032c1d88a4e2eceda0e6411be6c14f2fc7993529b41229e"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatCameraRegistrationCard.tsx",
-      "bytes": 30735,
-      "sha256": "78e77c7fa58cebac6ca47358b87cb5a67b4dc85ae40fe79aaf06b5ea1865079b"
+      "bytes": 29913,
+      "sha256": "fc530ceda38ac20bbb919eecaed7485bd5493f9394e58f58482e58d6ffc991a9"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatIdentityCardsPanel.tsx",
-      "bytes": 41523,
-      "sha256": "f3b58e40896502be2ac1dfd0ba827585d4612fb5d2f5f97cfcc29b2f47ab172b"
+      "bytes": 40348,
+      "sha256": "720d230da7a19bd398729a757dd5b225032201c0732337fa02bd942ce2c3d188"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatInput.tsx",
-      "bytes": 21935,
-      "sha256": "0fa2ee84bd30bc1ccc9d94703f736264f3c55e5372a53574229b408e67f8c37d"
+      "bytes": 21346,
+      "sha256": "4f41a03d2723ab16ce5610fe3e883d8b325d528133596d95bbe92e2b1792158f"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatJobCreatedCard.tsx",
-      "bytes": 9820,
-      "sha256": "bbe9be74f11740991999f455fe8cbb1132e42fb322c9220783efa9b5be7d0b46"
+      "bytes": 9534,
+      "sha256": "a770a8bb9b16e4249a6e0f5d223fa9f439418bfaa5df856758531bc4b2e4b35e"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatPlexusBackground.tsx",
-      "bytes": 11548,
-      "sha256": "59591778eb7153384962d408da8c44f617b9def41a956b066eb4d8ac0ea494bb"
+      "bytes": 11244,
+      "sha256": "aae96ed587a6afb0699d671cc214490d560497887d74ed0f94dfe7ba02b64dc9"
     },
     {
       "path": "DrakonSite/src/react-app/components/ChatReportDocumentCard.tsx",
-      "bytes": 6863,
-      "sha256": "1a26b6179178d6fbfab5217a27e85e0c0c4a3d50d786af54c48bb0fa75af7b50"
+      "bytes": 6707,
+      "sha256": "1b5a5905d0e6a3f699707b9223f1c9f5928c3d35d6d4fcd56b5f6273e3c31133"
     },
     {
       "path": "DrakonSite/src/react-app/components/ConfirmDialog.tsx",
-      "bytes": 2064,
-      "sha256": "603bffdec06b5cb7d8f3b534ca1867d337a8a4f975184a3202af6734d3e04319"
+      "bytes": 1988,
+      "sha256": "d27bb7f49dc5a2fdce46e617cd665a0852e3ce0017fd9aaca981484690ae873a"
     },
     {
       "path": "DrakonSite/src/react-app/components/CountryCombobox.tsx",
-      "bytes": 7944,
-      "sha256": "12cac442e3af5dc923b293b26a92721fa96d964a0bd85f2a8e84bcca91155474"
+      "bytes": 7691,
+      "sha256": "da06b69515d7ee6f824fdb5632e632875ec9cd014d08aa08fad61bf349cd73eb"
     },
     {
       "path": "DrakonSite/src/react-app/components/DashboardAlertAlbumOverlay.tsx",
-      "bytes": 21702,
-      "sha256": "5603f05adb9257755c43626e4abbffb124f9b10c8d01f1302136e7c5a4638abb"
+      "bytes": 21254,
+      "sha256": "b530e75c755583edc9415ccc75cc03d8c586a6e295cfd374a7f8e9c9356ee366"
     },
     {
       "path": "DrakonSite/src/react-app/components/DesktopOnlyNotice.tsx",
-      "bytes": 1804,
-      "sha256": "88237e2e1fd93bffff2930485102d7799abaca70a4f9bd86ee530ad79b7bfffd"
+      "bytes": 1763,
+      "sha256": "2490771415e24d20661aca49dcee6f2c2297c2dc7ac7e4b208ceb1d748bcb181"
     },
     {
       "path": "DrakonSite/src/react-app/components/FloatingChatButton.tsx",
-      "bytes": 8741,
-      "sha256": "8462283cbda0c4d194a2a158b5c180d4fdbd0f665bee47759110bd8525454bd1"
+      "bytes": 8471,
+      "sha256": "151e2ac185d3ded432ce9791123389ead75fd41609086f11e992c146159314a4"
     },
     {
       "path": "DrakonSite/src/react-app/components/ForgotPasswordDialog.tsx",
-      "bytes": 6529,
-      "sha256": "ac8501da74e5c08145bec28ab21d27b4da4874dee7601028c220fc235f283f6e"
+      "bytes": 6354,
+      "sha256": "62ad8572a14c9afe34623d44165d9454bbc372b47257e62ac63650cf8c1573ed"
     },
     {
       "path": "DrakonSite/src/react-app/components/HitImagesAlbum.tsx",
-      "bytes": 5065,
-      "sha256": "d83eb0f64d4f155dd955f539ce5c245b4f5b6fe87745f7248bc14a08689e05ef"
+      "bytes": 4922,
+      "sha256": "0be021b32653df16b055451545b64763f356499da7236c4eac76d9a38e14fbc8"
     },
     {
       "path": "DrakonSite/src/react-app/components/HitMediaAlbum.tsx",
-      "bytes": 6452,
-      "sha256": "d7166b75d7ac87e1f57fcac8a2cbb7c80515c2b944d51961a9cd226bbc377ae9"
+      "bytes": 6277,
+      "sha256": "e4c6aa604dd54270d7c8e18c07aefe4f344ca52a4b5ec7f18d0712ef4b021e29"
     },
     {
       "path": "DrakonSite/src/react-app/components/hub/HubPublishModal.tsx",
-      "bytes": 6756,
-      "sha256": "f592df9182a79ea97205b8befcae538d5105a8818aa43e28b43e35b8c78cb51a"
+      "bytes": 6580,
+      "sha256": "6b72c09a8899fc04bdbd0c10c8893f88e4c0db8982fe6ebd549127e20e8a191f"
+    },
+    {
+      "path": "DrakonSite/src/react-app/components/IntelligenceNetworkShowcase.tsx",
+      "bytes": 69593,
+      "sha256": "6fd14c7372696e68b2690b17de2f65fc6fed5e4cd3b3cbd06f7f589eac10b0f7"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/CameraTargetCard.tsx",
-      "bytes": 2938,
-      "sha256": "03af7deb09250836b112fb83e3c3f405157d269726768266adb0bbd016b92a64"
+      "bytes": 2854,
+      "sha256": "aadab20dd05dfd911a258663f58aa65e549acfd72b6d8e9f4eaf1bfd0685bcc8"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/JobCreateModal.tsx",
-      "bytes": 8179,
-      "sha256": "8cbfed3eeb5bf5347d1b82381facf078016ae2b6c43cb44d53f10ab9dfbf97e8"
+      "bytes": 7997,
+      "sha256": "fe9910b9e982113419b1daa8383917c6a08cb0844e892d79c3bc8da9bf9bc008"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/JobCreateView.tsx",
-      "bytes": 8310,
-      "sha256": "fb07a80a57712c420225458b91cd867c35c0a407cd598b08733af8c62ab2b88b"
+      "bytes": 8115,
+      "sha256": "adc6c1613f7e992db0d66fdbbf6cbdfb1e2164d33d04245866fff7b9612e98cc"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/JobFlowView.tsx",
-      "bytes": 8269,
-      "sha256": "911627dfc6c8c921b86c74db93268ae2b195cf38e87aa664e5896abf400d636e"
+      "bytes": 6874,
+      "sha256": "10b3b0672d782d9a55ce3a6908268c718b91ef4dce165f66b29796ce030c7586"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/JobPipelineBoard.tsx",
-      "bytes": 40746,
-      "sha256": "e416ad9e4f074d582b4a96f7934a2d94afcbff26c28cf382e078f67d39c54fda"
+      "bytes": 23265,
+      "sha256": "cc02553f1e1b91fe83704dffc9fb0f6513897a3ad4aca5e1fff46f181b305f70"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/JobsBoardView.tsx",
-      "bytes": 10879,
-      "sha256": "02d8a78fd9ed87e2807a14f586cc4243c127fe43d23e148973c352b8c136cc46"
+      "bytes": 10638,
+      "sha256": "68e9faa15a53fbf3860da8215c8945e193ee80f03626b72fab89a663d95a4f4d"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/JobsTabs.tsx",
-      "bytes": 2089,
-      "sha256": "4b4c2890cd22ab8e4138b4746449fd37dd8a74227b8db720cb40a50152193291"
+      "bytes": 2013,
+      "sha256": "37b7dd1b9d307fcb8f9f14485875da0ba1f0635a6e39b9d62033f65dee74286d"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/KnowledgeShareCanvas.tsx",
-      "bytes": 5082,
-      "sha256": "37d13a320a956bbc5244770d5b09f4b3ec45a46217ce6b72e71aa786bd0b441d"
+      "bytes": 4929,
+      "sha256": "e19a8b344edc548395aea89f949ad8037af8ebea05b6d52dd21bba4e86aeb646"
     },
     {
       "path": "DrakonSite/src/react-app/components/jobs/StepFlowCard.tsx",
-      "bytes": 6653,
-      "sha256": "400b9deb648eb7e50e204fc5f2440cc70099b05a818176628901aac1321ee94c"
+      "bytes": 6501,
+      "sha256": "6e7ace7db0e6b56a3d12e161225e3edcd6218abfe6a1667260d8c88b67491b51"
     },
     {
       "path": "DrakonSite/src/react-app/components/LanguageSelector.tsx",
-      "bytes": 5293,
-      "sha256": "aaf79534008ef65e4574174ff6e7da0ea553602fa5da71f3e03d62191d079802"
+      "bytes": 5148,
+      "sha256": "1e682f8bc345376bed377f002e16b03c015737b6fe996358dd2860a484a98127"
     },
     {
       "path": "DrakonSite/src/react-app/components/Layout.tsx",
-      "bytes": 94360,
-      "sha256": "c90cc7eb77edf573fb7deb0b1c34e4ae8e77eeaad3a39b774a53a99490277ef2"
+      "bytes": 85124,
+      "sha256": "3bce6f4b9f773b69b17b8fba357cc2b929818c706f24d527a300d9a719f980f5"
     },
     {
       "path": "DrakonSite/src/react-app/components/LoginHorizonScan.tsx",
-      "bytes": 7097,
-      "sha256": "2e5a7cbdf4469af6c4fa1731671096c96df64f0c3dd57574f0848f9f9ac69d2e"
+      "bytes": 6868,
+      "sha256": "267efece3e97c676a10964f3e3eef9107745c7e151ba7e661a8a28d520a42527"
     },
     {
       "path": "DrakonSite/src/react-app/components/LoginMatrixRain.tsx",
-      "bytes": 6682,
-      "sha256": "e4b678397b4a0f132b53fa9e65abbfbb8c48f51dddf497d91aed1122008634f3"
+      "bytes": 6472,
+      "sha256": "42a14483254d1df4362921896eaff222449805d00a4dd152ed536ae49163feef"
     },
     {
       "path": "DrakonSite/src/react-app/components/ManagePlansCardsModal.tsx",
-      "bytes": 15186,
-      "sha256": "f8f4f90730909e6b4fb2b3f5c4e759429bd49cd4a07c6249bde9425c532a03a8"
+      "bytes": 14793,
+      "sha256": "23060503bbd19a26f717420c318e8ee716dfd4957a297c34d064fcf4785d63a2"
     },
     {
       "path": "DrakonSite/src/react-app/components/MessageCopyButton.tsx",
-      "bytes": 4709,
-      "sha256": "eaba005f2b3821bf9257704afdfffebbbc24c87e737f7a0c7ed3b6b4343d80de"
+      "bytes": 4557,
+      "sha256": "85b4aead439f52017f1e38c135bace7762cfc7f30414241371ce8aee55cc9ce8"
     },
     {
       "path": "DrakonSite/src/react-app/components/MinimizedChatTabs.tsx",
-      "bytes": 1651,
-      "sha256": "b0deaeddf25ab3742170cdef515230836719670591c8389575d59e8388130635"
+      "bytes": 1610,
+      "sha256": "c1fc479c83f9204da56b28d387ebc78d819859ba36f39785197c8d13e6514c81"
     },
     {
       "path": "DrakonSite/src/react-app/components/ModelHostingBadge.tsx",
-      "bytes": 2878,
-      "sha256": "cdcf8b2add3af5cd865331573dd4295d6c0a11c82a815adbbe70b5eef6a6f85f"
+      "bytes": 2784,
+      "sha256": "8f1f23bea234076aed71276af19dc829d5ab12c47eb25efaed411033951cfb93"
     },
     {
       "path": "DrakonSite/src/react-app/components/NotificationsDropdown.tsx",
-      "bytes": 29593,
-      "sha256": "5d69d395c050d1de622fd0f7a7edbd72bc0bcd243700cf9064f624ed7dc4132a"
+      "bytes": 28848,
+      "sha256": "8b6396d072a4da45991d0d4668f98d4db9902f6156c42171b350f4a87272804e"
     },
     {
       "path": "DrakonSite/src/react-app/components/PendingAssistantMessage.tsx",
-      "bytes": 5139,
-      "sha256": "850828e19f5f5254f0f68d21fd7912988afd050f35854bfa71b0271d7da9d077"
+      "bytes": 5026,
+      "sha256": "4dc287464498d90bc0290770c9c9ec1d5a107bc0ff6ece61b8eab74f6736d4a1"
     },
     {
       "path": "DrakonSite/src/react-app/components/QuickChatOverlay.tsx",
-      "bytes": 48672,
-      "sha256": "ad1a77e2a3fb5229c827827af183e9c9a28b1d70791d616f4525fc06943ec925"
+      "bytes": 39976,
+      "sha256": "4a1ccbdd6129780433a47a705aba0f2c16488988521d664a146bc414fb9660f3"
     },
     {
       "path": "DrakonSite/src/react-app/components/ScheduleBuilder.tsx",
-      "bytes": 43429,
-      "sha256": "f47e14aa74aadcd5906c1687e5d6cea6eea22c795755120243f2d27e51cba186"
+      "bytes": 42302,
+      "sha256": "82cfa5d71b0fd4be5601064d5fd029cc4c7f980eace697e9767800f11a2d3805"
     },
     {
       "path": "DrakonSite/src/react-app/components/SecretRecoverySetupOverlay.tsx",
-      "bytes": 10287,
-      "sha256": "1af8abe99c5571871ec174ce19dea7d64c5832dfc0391b5b4da920b9fa0b9e1a"
+      "bytes": 10052,
+      "sha256": "58eb839ba6b7bb127ef5f0b66fc851c202e8a822af020f7bc44e3ff882e13c7d"
     },
     {
       "path": "DrakonSite/src/react-app/components/settings/AccountUsersPanel.tsx",
-      "bytes": 65551,
-      "sha256": "4fc10d298ff39e8be733e60b0fb16fddcac02ffcaedad02f9280bfc63c8159d9"
-    },
-    {
-      "path": "DrakonSite/src/react-app/components/settings/MobileAccessQrCode.tsx",
-      "bytes": 2028,
-      "sha256": "0106a32f029f159881b8f3a9f2a344b06631b543942b330c4f73524a0ad363a0"
+      "bytes": 63793,
+      "sha256": "c5fed4bd5f6fb8f15e995e4725bc9d7125ac81e8c9ccefd7ead4460a9869cc1a"
     },
     {
       "path": "DrakonSite/src/react-app/components/settings/SettingsTabs.tsx",
-      "bytes": 2924,
-      "sha256": "1128ffe07a67fef0ff81e421a0b8d31d434be317010395301a8a35ac59771d90"
+      "bytes": 3048,
+      "sha256": "3e48b11ebcd71f454a3774169a587ccda7a4ad45e602a46875cd3be15d998b06"
     },
     {
       "path": "DrakonSite/src/react-app/components/settings/WorkspaceAccessPanel.tsx",
-      "bytes": 66168,
-      "sha256": "2e3d5fd19c4738aba15f3c6bcd36fd57d518deb1d3c10be07554e58331bcd3e5"
+      "bytes": 64489,
+      "sha256": "3ddccf32a66ac90c8b8b3a6a8964ece7c69693e6c9565f9ee63e2386794406c7"
     },
     {
       "path": "DrakonSite/src/react-app/components/SystemActivityModal.tsx",
-      "bytes": 50153,
-      "sha256": "263dbfa0932511a74d332923f2502fea546d96f011220a9dd944870a28e2356d"
+      "bytes": 49151,
+      "sha256": "0891948d3841b7cb45fd6c0d65d13a2815bfd95f39234a08751b8675b66d9277"
     },
     {
       "path": "DrakonSite/src/react-app/components/Toast.tsx",
-      "bytes": 1831,
-      "sha256": "94fef624c151c1c5ffb43badf15b9e22906c36b65d5f05182eecedc5a5403fbf"
+      "bytes": 1774,
+      "sha256": "d685d750a010fefff2c066abd924146e2eb69692cd44809a29bbe713e76f741c"
     },
     {
       "path": "DrakonSite/src/react-app/components/TutorialOverlay.tsx",
-      "bytes": 59245,
-      "sha256": "71548924615f88a2492422e252caebb79ff200f8393c9273d0df2e4cc7c31332"
+      "bytes": 57742,
+      "sha256": "2c9d468447b0b0014469f386ac7bbd46eb9eda668f81354651c1baf71f60dd94"
     },
     {
       "path": "DrakonSite/src/react-app/components/UploadedVideoAttachment.tsx",
-      "bytes": 4823,
-      "sha256": "28773969b6d54bb6016a9019180fecfe689394f4781b55f5b82a9799e829cb4b"
+      "bytes": 4706,
+      "sha256": "b520a03600011f79486064e45758eefd774ac3c0d87d803049847d74c5097eaf"
+    },
+    {
+      "path": "DrakonSite/src/react-app/components/UsaPursuitNetworkAnimation.tsx",
+      "bytes": 34565,
+      "sha256": "ad6cba8f66cca783133f1526efc970ed6af73bb054b66ccfe92d8c780fc2d76c"
     },
     {
       "path": "DrakonSite/src/react-app/contexts/EventsContext.tsx",
-      "bytes": 28447,
-      "sha256": "982910406cbf319a1f1b9b0db71cf2b54ac80d76b6872d7d778384aed7cf7fd7"
+      "bytes": 27275,
+      "sha256": "9c180fcdf0f1026c2e0981f95f92c9934068e7823b5d3bee0f74c5ac485ab9d4"
     },
     {
       "path": "DrakonSite/src/react-app/contexts/RemoteWorkspaceContext.tsx",
-      "bytes": 10834,
-      "sha256": "178aa3a92f291cb03951cb1d87f3131ebbe808d1c15683df162448ecac0672e6"
+      "bytes": 10460,
+      "sha256": "1b6802bd8183663ed60b9a6cca998e84a7e80c0bb5924e2a50646c0c7c98f6b3"
     },
     {
       "path": "DrakonSite/src/react-app/data/brazilStateTiles.ts",
-      "bytes": 1918,
-      "sha256": "650ab87131620164d418c01e04a424fb96802061ace641273ed0329f9f180186"
+      "bytes": 1874,
+      "sha256": "486b119dd1340d67fc57629bd15bc1a1cc109b665048a25cc88f27aedf70991e"
     },
     {
       "path": "DrakonSite/src/react-app/data/countries.ts",
-      "bytes": 7287,
-      "sha256": "826378e9faae72706bc89288feffc196b550ee50354cb3b6c329b3d72ca7373a"
+      "bytes": 7088,
+      "sha256": "cef3317ac504af551fc1c647e2aefa01146fe4a5007c830067fb6324cd8e7247"
     },
     {
       "path": "DrakonSite/src/react-app/drakonFindI18n.ts",
-      "bytes": 93883,
-      "sha256": "62e7aec8163d993f0332edec8934fb5a677ce0eca07e0941bcb5e202f93921f0"
+      "bytes": 92867,
+      "sha256": "ee981b75ec3c0dffc943a7c7a0aae7313f150cf433a6721f5784e9ef30b2b85a"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useAgentCameraDirectory.ts",
-      "bytes": 5658,
-      "sha256": "6bcca7f888c285d2ca8e6e4e0611bb3e201d1184204bf9105bf0518c1fc3f397"
+      "bytes": 5466,
+      "sha256": "9ea3f12f3ffae174ad1a025955fb6ded36429b1d69be83ec973a25862ad75955"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useAiProviderSettings.ts",
-      "bytes": 1569,
-      "sha256": "5266915830160991769757db31a1011ad67801951357cc4ac4833a11b2b1866f"
+      "bytes": 1523,
+      "sha256": "6f3181ece7b4bca0e3885d6175f04ac711cac1758aca43539a1b0f52dc1e3e75"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useBillingCheck.tsx",
-      "bytes": 1541,
-      "sha256": "86ed4ab39ef9c09b6a76815b24c2751c9ef1764b3bb1dc087025597dae8a9524"
+      "bytes": 1487,
+      "sha256": "d974f9daa70bbe5b8e4339e581f088a9541e7b19310f65564b0b17a754b00ae1"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useCameraDirectory.ts",
-      "bytes": 9545,
-      "sha256": "85407292572aeab00b777955c710717c9dc424864628e43d498b3606bd5b654c"
+      "bytes": 9192,
+      "sha256": "a33126668f5c41dcc130d3478d155659394424b3bb1f04c6b1688c3262e40c33"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useCameraEvents.tsx",
-      "bytes": 22744,
-      "sha256": "cccf32a95d58b5d49b687c9b0dc386119ef6f86f1ffd36dd0284aacea06a0c5f"
+      "bytes": 21741,
+      "sha256": "1b0474b95e493be60e2f29d93845b9cb7864190af6ff7c57b55f23957993ec8f"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useCameraRecordingTimeline.ts",
-      "bytes": 7278,
-      "sha256": "568cb4e6dbfa60e6e0508d7fa3e0f1d3f0212a01f83540c3c964e17bda508a1a"
+      "bytes": 7005,
+      "sha256": "b00b19c374b7b7b1b60c2c0080c46f7b6a8e0e4c0bd202b53c4315e8f4ab0602"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useCameraRefresh.tsx",
-      "bytes": 1255,
-      "sha256": "f484960dcc79d4139d21690460a495c5e4223c503b498198c6d039689086ee9c"
+      "bytes": 1211,
+      "sha256": "fd4ad36be15a768db7a2590ee352d655e517b15f226b7ecf7f4a1ba9b7238b88"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useDashboardAlertRefresh.ts",
-      "bytes": 4867,
-      "sha256": "4717d4eebf73971ce58dddf3e39f952a25422d76d3d3d1f7f514dbae1a179c3c"
+      "bytes": 4975,
+      "sha256": "db51ef4f613e5140424e0402cb26d8dc67e2fc93d65fc52e9422cf92b81af98d"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useDashboardAlerts.ts",
-      "bytes": 15000,
-      "sha256": "e80eb6603261d5f03b7f701cc8525cacf0cb1ab6f1d768880873dfaa1ecb54ee"
+      "bytes": 13071,
+      "sha256": "017d3bfb0270d24c6613c53f699e4bcd677e58a2f993091ebe76152df14834e5"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useDashboardSummary.ts",
-      "bytes": 1044,
-      "sha256": "0d6be60dedf4832efe2440dd2a8ac8347b4b27ea46a72e053b0811877e66b717"
+      "bytes": 1010,
+      "sha256": "42854165e1317e18cf781c284c5aca07d33ed8a2b7f5c2397cef4482ef22dc8f"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useEffectiveUser.ts",
-      "bytes": 469,
-      "sha256": "7048bd402ac5a9af712d8ac8a4b2bfced790bf88f488eba37244ef1cfcc7bc29"
+      "bytes": 455,
+      "sha256": "01979dd5bd073639851c5027dc7a263aaf57e06367b7541b36682872b1a4a1af"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useOnboarding.tsx",
-      "bytes": 23578,
-      "sha256": "4a6440a52ca8c8914b02397c27d416a0d8d3b90e0bb2ce492baacf4c97b62dde"
+      "bytes": 22802,
+      "sha256": "5410823f59accbcab72c43aaadfbaba57c913e2097c04c7982fdd7b547121094"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/usePerceptrumChatSession.tsx",
-      "bytes": 31817,
-      "sha256": "267b089d337e70dedae648821c3328f945eff5e9c86c8d77e7537b9d25dd14df"
+      "bytes": 30900,
+      "sha256": "60b13a24b3619c0772861407168f70cb1d7ae7f810f9ab30f39e9c1f26c4beca"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/usePrefersReducedMotion.ts",
-      "bytes": 910,
-      "sha256": "2d42ca05f0d9d6a079be0860d4d8a0a59f365db90b8fa181c0f535bc3e6db76d"
+      "bytes": 879,
+      "sha256": "60d32016faacce540a5f56bd5018be0fa29803e49d47fac81bb4b1389f714da5"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useQuickChat.tsx",
-      "bytes": 3909,
-      "sha256": "be2444edc8a8027a174cb29549b47b232df6c204686805720487aed1851dfdf8"
+      "bytes": 3789,
+      "sha256": "362c435bd4797828205d68420796c48034060e6785723d7cb66ae21ef1c7aaa0"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useTheme.tsx",
-      "bytes": 1901,
-      "sha256": "82add130248fe93fdd8e92622842b37a29874f218608f9fcc1b58d7540666882"
+      "bytes": 1832,
+      "sha256": "21cb9ca2d43464ec8757accfacf384c8adff908dc23ccb06e30f0d528d9715d4"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useThumbnailPolling.tsx",
-      "bytes": 3241,
-      "sha256": "c6f1fa2698e4dbe7bffdfe68229969a6f9f263fdd7d822549016e1b9e54e778f"
+      "bytes": 3143,
+      "sha256": "93882dc8b44ed5c036c3eaac6b4878724e98cc54ef134d696d6de6de37f2529e"
     },
     {
       "path": "DrakonSite/src/react-app/hooks/useThumbnailRecovery.tsx",
-      "bytes": 4454,
-      "sha256": "b425d45a000021901ea1303a9d9954ba589d8fcdbaebfbc2eefc0fa6233bf6a8"
+      "bytes": 4326,
+      "sha256": "7857fa83bf990070ca50d8a8e90a9e9f6643282c03f3a7099115f277031248b5"
     },
     {
       "path": "DrakonSite/src/react-app/i18n.ts",
-      "bytes": 394541,
-      "sha256": "6a7cefbc9f456765662a88507fc7fc24e8c772291571849addedf29e872711c1"
+      "bytes": 384540,
+      "sha256": "4258ee7f984e464601f43a4eb80156dc72c8261be1a38b6418570d2538ecb22b"
     },
     {
       "path": "DrakonSite/src/react-app/lib/accountAccess.ts",
-      "bytes": 8323,
-      "sha256": "5b9442a0baa795f5518e957b5296894ca4f9ea07b8b12fcde2b37dc8883accb2"
+      "bytes": 8007,
+      "sha256": "eb76313283f99a81f940fe2ff8e36769f3c19ec61bf319e6a2a118abe683d57b"
     },
     {
       "path": "DrakonSite/src/react-app/lib/aiVendors.ts",
-      "bytes": 7082,
-      "sha256": "d1da543eaf77de3b40ad9df30190d8d0aaa53f1403273489fd4ea86686430ba9"
+      "bytes": 6849,
+      "sha256": "0a9ab1cf2646894d897b8054bc368314b25676eefd04f8915d23c9cc003eca4d"
     },
     {
       "path": "DrakonSite/src/react-app/lib/cameraConnectionFailure.ts",
-      "bytes": 3238,
-      "sha256": "332e1b0c4928b4eb46e099c21157fa4072ec8c6ca08ea11de21edff9a2723e46"
+      "bytes": 3140,
+      "sha256": "49e26e8bb751b3922bcc13d8e5591f293dda2d090d31858aea7583d078f2b7a3"
     },
     {
       "path": "DrakonSite/src/react-app/lib/cameraRecordingTimeline.ts",
-      "bytes": 4007,
-      "sha256": "6b0ef500a74f2720eba4aabc8b00c8c7e341c15c77bdde023c886eff6f66d5ec"
+      "bytes": 3849,
+      "sha256": "5efccbd10d62052e71d48991494f0b5911be19935e0c341ef32e0c5b52181fcc"
     },
     {
       "path": "DrakonSite/src/react-app/lib/cameraStatus.ts",
-      "bytes": 1127,
-      "sha256": "1899eb7b206f85c7a7df54e6ca841791224b596013f3ac36f5c0b65f147d4161"
+      "bytes": 1093,
+      "sha256": "745c28596df4edcc57a38a459e926e5613bf6d0a8d4111bd73fedfb3688f4ba8"
     },
     {
       "path": "DrakonSite/src/react-app/lib/chatAssistantStyles.ts",
-      "bytes": 207,
-      "sha256": "1a5dd1ec699ffc5eeb012ef5c3530b92cb4d08ab25e127f8112e520284e9c3c9"
+      "bytes": 205,
+      "sha256": "08088600cb0eff8a0b6473e6335f648d7358d397ddc8ee22298becec51388b84"
     },
     {
       "path": "DrakonSite/src/react-app/lib/countrySelection.ts",
-      "bytes": 2192,
-      "sha256": "6deae3370df9eff701b871af0ab946a1db252dc20c6cc62803c9a047c5264956"
+      "bytes": 2113,
+      "sha256": "657a8f6373b6be9e8e35e332680d32af912a4c0981cf15fc81ab293b5518d605"
     },
     {
       "path": "DrakonSite/src/react-app/lib/DashboardSummaryStore.ts",
-      "bytes": 14938,
-      "sha256": "c78c6745e8b8d617cc372268f684810b9abc4b8af886054ac73054fe95afaf3a"
+      "bytes": 14554,
+      "sha256": "f96c704a9d196a4e1cc3e122cbf767271d3bae77ee76ea361da6c738219802c9"
     },
     {
       "path": "DrakonSite/src/react-app/lib/onboarding.ts",
-      "bytes": 16066,
-      "sha256": "c0751b56ca1eed37f1250ceafe1a0e23dddb1c1308abd6bf6f25b42bca016e96"
+      "bytes": 15552,
+      "sha256": "f3cddc0ddd55075455fbb6426a873b41f17baa470f167950eeb4afc3d2bbef74"
     },
     {
       "path": "DrakonSite/src/react-app/lib/onboardingChat.ts",
-      "bytes": 1498,
-      "sha256": "f370d11d3755c8f54660724924637d70f6578a5896ab6dfd798e51a3aa121551"
+      "bytes": 1455,
+      "sha256": "6d0aa2a0c5cb8c94d6786c28e55eef790f35b34c36f73540bdc2d15cf52c6792"
     },
     {
       "path": "DrakonSite/src/react-app/lib/perceptrumLogoAssets.ts",
-      "bytes": 3113,
-      "sha256": "3a7e76be1d3e72be1fc29c767a97abf66e401b5a124f9caae982deb3e9374a2a"
+      "bytes": 3017,
+      "sha256": "600b5b2fd28b30522431951c2e7a8d2606bae4fc268e337fa64a4f6103e29222"
     },
     {
       "path": "DrakonSite/src/react-app/lib/PollingManager.ts",
-      "bytes": 7587,
-      "sha256": "a6c97dc62170ca7487b1ba613782f0215318c5e023639de55d659bcf9a613e41"
+      "bytes": 6783,
+      "sha256": "5593063a10e8a2f5c6f08f5710794cc842217d08e09a393862a2c632690ea83b"
     },
     {
       "path": "DrakonSite/src/react-app/main.tsx",
-      "bytes": 487,
-      "sha256": "922f73d9a3ddfd163fc1d808c7b1bc2388d54d6056f04ec2f8682e20fb57807c"
-    },
-    {
-      "path": "DrakonSite/src/react-app/mobile-p2p/MobileP2PAgent.tsx",
-      "bytes": 25835,
-      "sha256": "2aeabdc52c87a5540980844750d92bebec8ad256dbcae8ab17e72c16088a679a"
+      "bytes": 350,
+      "sha256": "23c129b58ca86c06db57e4d35ff40e7a3d4ba2cb2917414d273b745611eba97a"
     },
     {
       "path": "DrakonSite/src/react-app/mocks/getmochaUsersServiceReact.tsx",
-      "bytes": 7512,
-      "sha256": "bbe555291e3302c38fae894311e9e7db6dafb5cdd5d96026d37f5b9cd62ea69a"
+      "bytes": 7251,
+      "sha256": "ad8df96be9cd079e690ba2dd1d7463c48bcab4ca290ed7629cce6d69fbea65bc"
     },
     {
       "path": "DrakonSite/src/react-app/pages/ActivateEmail.tsx",
-      "bytes": 3382,
-      "sha256": "b0c70e9f0342b7107ece26652c0a187eea67c956f8e725dbd32043f223dd0d62"
+      "bytes": 3293,
+      "sha256": "0750d43496c94a29f7552c1378b6eca2882470f98e33a98ab08cc6250cd170b5"
     },
     {
       "path": "DrakonSite/src/react-app/pages/AIAgents.tsx",
-      "bytes": 49882,
-      "sha256": "eebf84e6adfc89b040af44b891fd449484feb3ae8710d9c8fe627553a9a290cf"
+      "bytes": 48619,
+      "sha256": "d33c81fc8081fb8b3873b482257c4a83f7fe0c2091a135e0e194a122fda1ad5c"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Algorithms.tsx",
-      "bytes": 98154,
-      "sha256": "4d5295f20daa4a8769845be394307bfc6d26b8538f1d0afa58f199c084e8c09d"
+      "bytes": 95711,
+      "sha256": "1ce463c9fa4e21fb77e2eb1b9ac7597b31b25feb64a76cb2a6fd50d2599c1a75"
     },
     {
       "path": "DrakonSite/src/react-app/pages/AuthCallback.tsx",
-      "bytes": 2957,
-      "sha256": "bc4f701d0edda911453ca398f78531109dda28342ad6cd5dc191d9701ae63ab4"
+      "bytes": 2861,
+      "sha256": "189caefbcedc269ea6922a98e92ec37cb3e9dc6e15ee1171dc4712d9125326ed"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Billing.tsx",
-      "bytes": 68448,
-      "sha256": "2d6030e9e1ebd21e7abab96ade4d766f463787e9cfc499b8a3f29c8457686c2b"
+      "bytes": 66814,
+      "sha256": "f89a691ebbba65ba958ae1d2278bfaed51dcf76a2b3cd15dfbc10b03795f517e"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Cameras.tsx",
-      "bytes": 45879,
-      "sha256": "41f4049e1d09c79ce6d593877e5d4dbcc96bf1c90279cd7b62fca99d6f70f73a"
+      "bytes": 44686,
+      "sha256": "2546f202ec58f04c9be4f63641ac83cde0d9f5b2991dfd576717df7d6cb9ce41"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Chat.tsx",
-      "bytes": 63752,
-      "sha256": "7a97ad0293e1845aeb7e97ef4edd2d9eaa1f53f69fc080f7e6354beb02586105"
+      "bytes": 62189,
+      "sha256": "457555e8925ad9fdf1f953999d0b42ccbf7a6a70b09465602ee44730b4fff873"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Dashboard.tsx",
-      "bytes": 178656,
-      "sha256": "69bdf55041c905cd50b35991ead97823b79a9df194c67d860d86d45386998f78"
+      "bytes": 186212,
+      "sha256": "f17b5edb609341cf0b6d7511490ba2bbe139fc44e171f66a53b4c6e3868ce533"
     },
     {
       "path": "DrakonSite/src/react-app/pages/DrakonFind.tsx",
-      "bytes": 89521,
-      "sha256": "bbd9907503e0f294f8d3da9dc909bd6e5664aaed59288ac5cb43d842a3448224"
+      "bytes": 87874,
+      "sha256": "986e9510e0d845d90ae6236b67b81a0197e486c258fab9712bf739b6e8bdbbdd"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Events.tsx",
-      "bytes": 29662,
-      "sha256": "caf4df4869886982189d1a6299053d50c16479a067b8c40d48eee9513b68b669"
+      "bytes": 29042,
+      "sha256": "1d0046d0ae1ded3b011198c3fd603d0afaf533975cc888d1e9cedb8d9fb01a38"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Home.tsx",
-      "bytes": 282,
-      "sha256": "12c951731badd4161f82afb0a176b32d8f6219912f0854672fede71df636c147"
+      "bytes": 271,
+      "sha256": "fdbc6872c145b3cd0b5d6fe3f0ea5c97880e5eb44f57ee2e994d49c9a475faa5"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Hub.tsx",
-      "bytes": 34784,
-      "sha256": "bb5f3933c73722eb12e69d2e6177b0633e1cb211614be1738dab095f5c94cab8"
+      "bytes": 33160,
+      "sha256": "4b542eb9561c5ccb3302458ffe2ce51af151a0d449342895f3b247fe13e6390e"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Intelligence.tsx",
-      "bytes": 246555,
-      "sha256": "e3f3fdb5c6fc817414a4691b691f08aadf35ddce73e27baee94dd3602ed159b3"
+      "bytes": 241945,
+      "sha256": "0f99636c231c2a89a269c287c2bf7e75073f880f574975b9f7ddc5532628eea3"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Jobs.tsx",
-      "bytes": 612740,
-      "sha256": "092592e6222190ae2f1aac92d7d60997c9a5c369e1622a076173ff1d22b4a56b"
+      "bytes": 586517,
+      "sha256": "444e84642d234f327ff8433ced59c07f3a1d648ee8f2a1ce754034bbf62bed04"
+    },
+    {
+      "path": "DrakonSite/src/react-app/pages/LandingPreview.tsx",
+      "bytes": 9785,
+      "sha256": "fc609a6f031a58b849fbe99b3b059e08012efe62c2201b6f516b34305640a9c8"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Login.tsx",
-      "bytes": 36693,
-      "sha256": "36c2d41efb2f503e3dee59ab20839a9ecfc600446794c98b6f0d65aafc646762"
+      "bytes": 35464,
+      "sha256": "ca41f10ef34218bb1c0c55bdea8aada0285755e456d75d383025fe986416287a"
     },
     {
       "path": "DrakonSite/src/react-app/pages/ResetPassword.tsx",
-      "bytes": 7528,
-      "sha256": "4598e3a0b9ef14f5c7fa4eedd6be3515cd52881128b61494748559ae77d037d6"
+      "bytes": 7345,
+      "sha256": "c1fe400c77135f0bdd3f60f7f1dd27241e8a0e4e8a48a2901be35f4be94b6426"
     },
     {
       "path": "DrakonSite/src/react-app/pages/Settings.tsx",
-      "bytes": 108420,
-      "sha256": "1ce50834878fe117c8fb117cf11f4bd668aaa7294f63aa5388bf56554eb06b62"
+      "bytes": 122997,
+      "sha256": "0c03376a3ecd38bb0e453eab9e6aae4a6638abb6ab5e4ff9eb616edb4ab7e9cf"
     },
     {
       "path": "DrakonSite/src/react-app/securityRecoveryTranslations.ts",
-      "bytes": 6401,
-      "sha256": "278f71b7a61bb014e541930964b1562380fff763b0da6f2e7e18ab5d48ec96cb"
+      "bytes": 6317,
+      "sha256": "cfd705d70aa110ab49ab87c175949a41e9a7e9777b604e2094db0bbee1c87a46"
     },
     {
       "path": "DrakonSite/src/react-app/tutorialAgentStepTranslations.ts",
-      "bytes": 41334,
-      "sha256": "c89b0b235f64d824bef5d40c2de0b38655070ed26ca3292865337ee678a3f4b5"
+      "bytes": 40493,
+      "sha256": "861bdd48e68296d159b632369f87def13d44bbf6c1694e9aff176c0021d3243e"
     },
     {
       "path": "DrakonSite/src/react-app/tutorialCameraStepTranslations.ts",
-      "bytes": 23099,
-      "sha256": "0facae031a9f6880ccdc78696ba7729f5d296c339dfd492b9d9d9e09f562bce4"
+      "bytes": 22822,
+      "sha256": "82159f21fbafd48a9705015d6c0cad88cacb2431d6293ca49ad09f4719f658a7"
     },
     {
       "path": "DrakonSite/src/react-app/tutorialChatStepTranslations.ts",
-      "bytes": 18385,
-      "sha256": "b3799a2e2e5f240f18e4fb257cbab00fa405a8b6e2190624be57d1484610661b"
+      "bytes": 18147,
+      "sha256": "f9e9b3901d9fcfd9096c1e0e02c6d02c0938f6f8d15ab2e13cf380e1dab08b8a"
     },
     {
       "path": "DrakonSite/src/react-app/tutorialTranslations.ts",
-      "bytes": 63611,
-      "sha256": "5b52dda3adc5d20717e7fe2783caa0a832771d9252f4784642a1517bfe5af41a"
+      "bytes": 63167,
+      "sha256": "f8d3f4828e95dc2c1fd57c1f1440ae2cf95b4aa68bf194930ac81ac46907431d"
     },
     {
       "path": "DrakonSite/src/react-app/utils/agentBilling.ts",
-      "bytes": 40,
-      "sha256": "545912c18862ba938286e54077132ee038270227758b02b863d5764b03a7603b"
+      "bytes": 39,
+      "sha256": "f40eb4688cc013d17ee94bd056e11cd50f9ea08b3c2106c47b2dfaa356219779"
     },
     {
       "path": "DrakonSite/src/react-app/utils/billingI18n.ts",
-      "bytes": 2921,
-      "sha256": "d0e2269a95804ec5a329c2518807687f6c6645d0a4c26c56e570c0f445307e62"
+      "bytes": 2825,
+      "sha256": "f3fb37e34c3b3c2fe396a86eb89415928554edc3ff2317a80344e3f96632fbec"
     },
     {
       "path": "DrakonSite/src/react-app/utils/cameraCaptureAcceleration.ts",
-      "bytes": 3425,
-      "sha256": "ea26f506b6367833530324e62be145217838da0fa9c8ad06bd332f5f926f8584"
+      "bytes": 3322,
+      "sha256": "6d3f51f0c36ba1799eeba988c709fa616566a4b6da031435c8ff4a0d3308cdc3"
     },
     {
       "path": "DrakonSite/src/react-app/utils/cameraDiscovery.ts",
-      "bytes": 13581,
-      "sha256": "97c433d3ecd684b2ae680de8d7b8730a3c53eeca7fb00d59bbb8a23e0d80e853"
+      "bytes": 13170,
+      "sha256": "17599fe1a67073bd98af12f6c8ef2db0a059c9b881bc783a04cbb2805e11221b"
     },
     {
       "path": "DrakonSite/src/react-app/utils/cameraService.ts",
-      "bytes": 5398,
-      "sha256": "06a289b157536303bb6cb43fefb47185f47d34eb95f824b60658ee4f01aa581c"
+      "bytes": 5221,
+      "sha256": "db99696a36df400d0e325e14e9c1f9679b04b08ef61a29a10089955df48cdbbe"
     },
     {
       "path": "DrakonSite/src/react-app/utils/chatRevealPlan.ts",
-      "bytes": 21379,
-      "sha256": "4575c57d2d9f9915914db7cf98836cf84d3e438100f103011ba7f3e917c36e4f"
+      "bytes": 20630,
+      "sha256": "1943f38bdb3bd0b596daede8daee6db73d260f6730c1a709878b8b54a7fc259a"
     },
     {
       "path": "DrakonSite/src/react-app/utils/chatUtils.ts",
-      "bytes": 57390,
-      "sha256": "c81816f4783147f0e80c237342ca57c883ad31aa7f429291a75932067ffecbba"
+      "bytes": 55618,
+      "sha256": "2815c7ca4ca7f326dbfad3e1062ad5dcc884dbdaeac8b00e05432bce59b3e182"
+    },
+    {
+      "path": "DrakonSite/src/react-app/utils/clipboard.ts",
+      "bytes": 1340,
+      "sha256": "8f2213d476e82f19a773be636e73cd2090218a85695ec36110c239c745c63ae0"
     },
     {
       "path": "DrakonSite/src/react-app/utils/coreModelNotice.ts",
-      "bytes": 1887,
-      "sha256": "0e438504c954593bf998e467ac02396fafec577639a76cd759b00e007222be46"
-    },
-    {
-      "path": "DrakonSite/src/react-app/utils/dashboardMediaUrl.ts",
-      "bytes": 1422,
-      "sha256": "1fad334721c69e97295f71b1159bb6d4ecfe7c6af587bc762e091d0791cae109"
+      "bytes": 1859,
+      "sha256": "8afbc798f1a37d8f3e464183d9eeffb898eae14ea0a5fed17b80b06df6b12da7"
     },
     {
       "path": "DrakonSite/src/react-app/utils/eventToastDedupe.ts",
-      "bytes": 4157,
-      "sha256": "a5f95ae24b8a0e4b22a641fd4bc69c6b3055120e6d2297466bf481b364c919d9"
+      "bytes": 4028,
+      "sha256": "33705e2fa7b3483d1e681a85e49cca09cd66ba22a4e2a85ba1bdb408a07f5557"
     },
     {
       "path": "DrakonSite/src/react-app/utils/faceIdImage.ts",
-      "bytes": 3816,
-      "sha256": "7c719399430d2c8c7c400ba6fa7755597c0303fcbf18e8d5159556fd97655f0a"
+      "bytes": 3695,
+      "sha256": "9bc8b52862b5f029e1b195ea51b782ec8d58c5bd066fa994a0e0ffdda0062898"
     },
     {
       "path": "DrakonSite/src/react-app/utils/localAiRuntime.ts",
-      "bytes": 4228,
-      "sha256": "dae8771e40a032b54b9bd5a44ac5e8340695db72f9dc7b5d5978a05aee3bb518"
+      "bytes": 3492,
+      "sha256": "f48d2f11149a9e85d8fe5a7dc55a7de058645424f1c14ed342a47ce5e7918c7f"
     },
     {
       "path": "DrakonSite/src/react-app/utils/openAiKeyGuard.ts",
-      "bytes": 2157,
-      "sha256": "84ce183c8594f614dc0cfce4398507a3daf69e8b67f83e8026bb97bc66446195"
+      "bytes": 2194,
+      "sha256": "fa72c2512c5a71798a93ef3e2ec2b345a442adab89e31a6be4d3525b4ba0148c"
     },
     {
       "path": "DrakonSite/src/react-app/utils/runtimeSurface.ts",
-      "bytes": 1037,
-      "sha256": "f768301e66fb5396a90cd5df24db725b34936b052c1ba8a960677caab9061b23"
+      "bytes": 996,
+      "sha256": "ead5aaf10acd00b07ee7b2dc570bdb5afdfe3173e9cd801612bed237db9f8a20"
     },
     {
       "path": "DrakonSite/src/react-app/utils/savedAgentLibrary.ts",
-      "bytes": 8478,
-      "sha256": "d8fbbaa406f985a39265d974051359e2ec3af8bd07fc8e203cd8fe8cb45ca575"
+      "bytes": 8240,
+      "sha256": "b73e8d528c91392bca73a872b9eff3036bf0cc5a6403afcf1eb3fba6986ad18d"
     },
     {
       "path": "DrakonSite/src/react-app/utils/scheduleUtils.ts",
-      "bytes": 22687,
-      "sha256": "85371f7c5177a8ead4ed527c3110eb12f719c76556a908e9037b3a0545745237"
+      "bytes": 21943,
+      "sha256": "277ffc3c8c9d00d3de5014ae54123cf016df4795c154b3f754411277fd4d7822"
     },
     {
       "path": "DrakonSite/src/react-app/utils/sharedCameraPresentation.ts",
-      "bytes": 2850,
-      "sha256": "ac3a0acadda76250b4c6709ecaa817f0c0aa104853cd5e734f79884bd5c83630"
+      "bytes": 2762,
+      "sha256": "ae0b466a03fcb7b86f4a6b40e21aa70a798594b03f68261807bf41a17f5001dd"
     },
     {
       "path": "DrakonSite/src/react-app/utils/videoThumbnail.ts",
-      "bytes": 6526,
-      "sha256": "100f97fea155333946a1935c231be71cfda342f50b74ff67a4218b17cce8ae75"
+      "bytes": 6319,
+      "sha256": "86940e6ddc2fc205e5ead776f287450546261eeace3d200c245eb4a0835a462c"
     },
     {
       "path": "DrakonSite/src/react-app/vite-env.d.ts",
-      "bytes": 39,
-      "sha256": "424faf9241dd699dda995b367ed36665732da1e6ec1f33b2fd40394488ecac92"
+      "bytes": 38,
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5"
     },
     {
       "path": "DrakonSite/src/shared/agentBilling.ts",
-      "bytes": 9095,
-      "sha256": "35e4f55c0ab5ee44dd6facb0280e4cc25ebe8cf7a72706852fab9170f9cb6159"
+      "bytes": 8805,
+      "sha256": "3bba39a882eb6bc5f427e07ba8d36e73e55166d7472ca0afa6f062ec52eda072"
     },
     {
       "path": "DrakonSite/src/shared/aiApiErrorDisplay.ts",
-      "bytes": 4468,
-      "sha256": "9e686c3f670a455562e11689fcddb4554c45113cf90adb7c4676abf32aac95a8"
+      "bytes": 4326,
+      "sha256": "e88f91c9c28c6f2502fad62a53458acbefc3e2c001c7f3f1fcdec7317352014c"
     },
     {
       "path": "DrakonSite/src/shared/brand.ts",
-      "bytes": 4065,
-      "sha256": "c9c340d1c431b642e4f1826df5c51549b7d1bad9397fa03484e9097ada411c89"
+      "bytes": 3935,
+      "sha256": "4ca85dd3671bd0aad90cd7f86cc9f72ecb79ebb6595fe3bc40e4af7bd3f4edb7"
     },
     {
       "path": "DrakonSite/src/shared/brazilStates.ts",
-      "bytes": 4157,
-      "sha256": "aae7cfedd7db52b075b5d6b058caa2048c2f6f28c1e54f2ac0f9595948232122"
+      "bytes": 4039,
+      "sha256": "bf6f5a96c53e8ce54388c419c223d09540a52b59323ffed957a40ca396c5cb46"
     },
     {
       "path": "DrakonSite/src/shared/cameraBatchEdit.ts",
-      "bytes": 1115,
-      "sha256": "2cc408834c33d70d5aba942ead7f07da8eaa31f8d9a5291bbf55b389061ac2db"
+      "bytes": 1074,
+      "sha256": "4bc147109375924db613694c10109a11de44179b2be996ddbddd55edd25f1bfa"
     },
     {
       "path": "DrakonSite/src/shared/cameraDiscovery.ts",
-      "bytes": 10711,
-      "sha256": "3a4c4699f6b024969baba5f4fb2ddd2da9eece3fee5b344d7db0db7c3fd77f5e"
+      "bytes": 10369,
+      "sha256": "f9eec6e7262e29646842b84959636ddb7cae12cbdf9eb97087e3d5f0467209fb"
     },
     {
       "path": "DrakonSite/src/shared/cameraImport.ts",
-      "bytes": 2846,
-      "sha256": "a3c43ee7248e0135b5fc1312ef3612b4f81f84592a106bd4fd6daa6c462a0cec"
+      "bytes": 2732,
+      "sha256": "ea83a83d9cfcc2d296248dce8ac32e7013a839073f01735a149ad470ce9bb8d9"
     },
     {
       "path": "DrakonSite/src/shared/cameraRecordings.ts",
-      "bytes": 3866,
-      "sha256": "9c9887d30b6af53e1b8c025edf7ab774cb42a0e9b6a286339445e763b617c679"
-    },
-    {
-      "path": "DrakonSite/src/shared/knowledgeSharing.ts",
-      "bytes": 6944,
-      "sha256": "361c772828d86626ef8ecf72594651b48e030a0ad37660b3a6e5a118eb238b1f"
+      "bytes": 3722,
+      "sha256": "a609e374719f4f6e950aecf366c6eff6a20ae8210dc9d739ce3f091f5d2ab650"
     },
     {
       "path": "DrakonSite/src/shared/perceptrumAccount.ts",
-      "bytes": 3370,
-      "sha256": "ddbae1000abe23e3c8e3320067673beed6ea06070f58f080855e0449c7f168ce"
+      "bytes": 2793,
+      "sha256": "69d70735375c4a752b3ccdf162cf4f97123f360d19fde75baccd13dd4fbff134"
     },
     {
       "path": "DrakonSite/src/shared/securityRecovery.ts",
-      "bytes": 1876,
-      "sha256": "fe40b7a63bdf2eaa64245fc75e021e6a583d249dd104fc3c2aff95f1cee943e9"
+      "bytes": 1809,
+      "sha256": "e88c010dcc6451d5d72846f4688a4bb9bd461c40b24be032de6b5b5d0206bba8"
     },
     {
       "path": "DrakonSite/src/shared/types.ts",
-      "bytes": 22227,
-      "sha256": "4f33f1f1e6e14fa94eb869700d7a5d1e3f627d452717d5fafb00c9d1158f2386"
+      "bytes": 21479,
+      "sha256": "f482aaec95c95271e12fb5ca459aed282547cba8aa680df702d22c40cbb1b405"
     },
     {
       "path": "DrakonSite/src/tests/centralIdentityBrandHint.test.ts",
-      "bytes": 1512,
-      "sha256": "8304e27d95c8f824dc82d12dcad7380a8f79ca9ff633ada369bff10eccf84562"
+      "bytes": 1459,
+      "sha256": "b999f506d488a817865144f78cc6d1f8331b6ab4de7a1f419039b2f0a79373ed"
     },
     {
       "path": "DrakonSite/src/tests/chatRevealPlan.test.ts",
-      "bytes": 2670,
-      "sha256": "b4560ea44d153133f5b4a3143b0f62b4a233c0c8d77bdb823dc16a6c1d951477"
-    },
-    {
-      "path": "DrakonSite/src/tests/dashboardMediaUrl.test.ts",
-      "bytes": 1199,
-      "sha256": "51e7d70e1d6821fd13eb730556f3d51829ae1c4954261f1161561305f48efe2b"
-    },
-    {
-      "path": "DrakonSite/src/tests/intelligenceSchema.test.ts",
-      "bytes": 2179,
-      "sha256": "6e02646668090e8a8ec4dfeeda2d5d9fca30597ca01ca5f010b5fb8ccefd0797"
-    },
-    {
-      "path": "DrakonSite/src/tests/knowledgeSharing.test.ts",
-      "bytes": 4784,
-      "sha256": "f884912fc994db31c7967b71c89f45d3c4595c1d6cd3db02f2491f03d5acb40a"
-    },
-    {
-      "path": "DrakonSite/src/tests/localAiRuntime.test.ts",
-      "bytes": 1343,
-      "sha256": "04463ba03330b654ade5e09bc322d67f2359013638cc43dc661fada38d3a70a7"
-    },
-    {
-      "path": "DrakonSite/src/tests/perceptrumAccount.test.ts",
-      "bytes": 510,
-      "sha256": "66e49b80d08bf859871a589a4257f9696aa2d1bfd9f3f0c443245f68a1789cad"
-    },
-    {
-      "path": "DrakonSite/src/tests/pollingManager.test.ts",
-      "bytes": 2151,
-      "sha256": "2c4c287de16e70dee0c49beb5257c50595198a732e7c07755b9e5debf8003678"
+      "bytes": 2607,
+      "sha256": "4dd1f8e7d93ea6a60ee497c5265accaf7b8016596fbcd9b6145099cf1747c376"
     },
     {
       "path": "DrakonSite/src/tests/scheduleUtils.test.ts",
-      "bytes": 1589,
-      "sha256": "71ce6070d560317d1f3b7f11a19b22d41cd746e5b11004d5d852181662a35161"
+      "bytes": 1536,
+      "sha256": "d66071d33550e7a98c8690fd23e812717c3f9ae1953db0c0bf03cc0a2df7d909"
     },
     {
       "path": "DrakonSite/src/worker/accountAccess.ts",
-      "bytes": 35622,
-      "sha256": "84763061a4224e26a7b60f4f6cd9dff83246d900c3a0a9318446962971e57c20"
+      "bytes": 34479,
+      "sha256": "8a1f29f8fa3878c3916f3303e580bff5e4493a003ee5d0162527721d480e50a6"
     },
     {
       "path": "DrakonSite/src/worker/accountDeletion.ts",
-      "bytes": 31664,
-      "sha256": "92c936e1f542e37336ce0176250d80bb8322f06720982c50875ee779149d505e"
+      "bytes": 30699,
+      "sha256": "d593864da4afc8b7e59ce7880f6aebad36db0a2d78c3fa0621cbef5a205fc617"
     },
     {
       "path": "DrakonSite/src/worker/authEmail.ts",
-      "bytes": 10798,
-      "sha256": "6ec5d2400ec7d3f4e9cb93344abf4dbaa9b5c23f099ffc54653f657ec776a632"
+      "bytes": 10454,
+      "sha256": "7c9748c2201ccd75e0edfe7d264005351e19bb39ed932a971bcaf26c547e3158"
     },
     {
       "path": "DrakonSite/src/worker/cameraAlgorithmsPayload.ts",
-      "bytes": 31620,
-      "sha256": "373dbd75794cbf4cc99ec987bc95609e8ae1c21df45c53738666e2803ddca1f8"
+      "bytes": 31739,
+      "sha256": "3a0860fc845f48852c9fd9b309a86f33af82ed22d0d3f49bbfaba0f5a5cccc72"
     },
     {
       "path": "DrakonSite/src/worker/cameraImport.ts",
-      "bytes": 46416,
-      "sha256": "4c049956f7597e95c0f3ef1c8007b75bac61701b07016d3e44d172858dab5eb2"
+      "bytes": 44864,
+      "sha256": "608d1c50a005dd0fafa20ae7ff3a3917f6e4f5444a087e0e64444aa141a42efa"
+    },
+    {
+      "path": "DrakonSite/src/worker/cameraRecordings.test.ts",
+      "bytes": 515,
+      "sha256": "8a435b99fc04f655060a33062446729efd3d6eef75d40140e5276bf01b17a099"
     },
     {
       "path": "DrakonSite/src/worker/cameraRecordings.ts",
-      "bytes": 35095,
-      "sha256": "f1f0947323773925c40fc7e2729de2747fdc00a36631c77a9a3250ea20d04bf4"
+      "bytes": 33884,
+      "sha256": "5e39643b874ce61a23e1bfdc064edce55c69f3352adc2e4494acc7a71eac825d"
     },
     {
       "path": "DrakonSite/src/worker/cameraResourceAdmission.ts",
-      "bytes": 5849,
-      "sha256": "8106790e4e8c1755d1880c137786c8e4205bdd0c88c4671ca038968013206be1"
+      "bytes": 5659,
+      "sha256": "fd3117fb6f27539d31f599d768a049e103413a237f8f0d58bc503cecf6737c9e"
     },
     {
       "path": "DrakonSite/src/worker/centralIdentity.ts",
-      "bytes": 71990,
-      "sha256": "bce902cd1a2e63d4e1667c39042278ef3ef7b97f2cb2a84c28e4c76362249a01"
+      "bytes": 69978,
+      "sha256": "d9b05a27c0a7eff425a106589aa83d5ffcf676be433b7e5825db1b82982b8e05"
     },
     {
       "path": "DrakonSite/src/worker/centralIdentityBrandHint.ts",
-      "bytes": 2350,
-      "sha256": "02ce40ad0acd41e60dca26f441310dc22fe56e46f38eb1d5e35fba2cedd0fca0"
+      "bytes": 2262,
+      "sha256": "6e91c7214512de49bdf776d0a33ef2e2299da68e5ed29a7b09fcb72215e5bb9e"
     },
     {
       "path": "DrakonSite/src/worker/desktopDbKeyRecovery.ts",
-      "bytes": 6665,
-      "sha256": "99a941c662b8aa2ad94a31a0cc5bf98999926eb98b92b365cd9124899dff2bed"
+      "bytes": 6443,
+      "sha256": "e8417a34c373bce53df3963408cc56a5e5bc3edd1c2e8774d82d851ea1a13420"
     },
     {
       "path": "DrakonSite/src/worker/env.d.ts",
-      "bytes": 3429,
-      "sha256": "539e8555190c4f732b6709671c2b6cbcc138caa259bd220b54b67c8d10c0f220"
+      "bytes": 3399,
+      "sha256": "e5816dc14ac059b7895d481d6841a8453bfdaa6315495751cec837bc153973ae"
     },
     {
       "path": "DrakonSite/src/worker/index.ts",
-      "bytes": 2871394,
-      "sha256": "e5dbabea251e16f62dbd9d1da1c8dd2327ca220650f2e2f60874e3503f756336"
+      "bytes": 2713483,
+      "sha256": "d8bdcca96298421d1266d9ac4b85ec5d8be1d5f2754df19cb48a3c85f47902d1"
     },
     {
       "path": "DrakonSite/src/worker/intelligence.ts",
-      "bytes": 290928,
-      "sha256": "a11757d38035707f017c399fa28410d53019059b0fb88297c17c2082d3de0743"
+      "bytes": 289649,
+      "sha256": "367ef20db04610f1107a5c823d9642f6bd8fe813f6c46aa23b19339971deb22d"
+    },
+    {
+      "path": "DrakonSite/src/worker/intelligenceQwen.test.ts",
+      "bytes": 4191,
+      "sha256": "1da6fab312037e0ee1883fe08c4faca41481ea8a8bb55f9f0098364d9abdff21"
+    },
+    {
+      "path": "DrakonSite/src/worker/intelligenceQwen.ts",
+      "bytes": 15321,
+      "sha256": "8f71d38b14864543875179913e03578d566b0d92f9604ac7dc51acc0261088d4"
     },
     {
       "path": "DrakonSite/src/worker/jobScheduler.ts",
-      "bytes": 155722,
-      "sha256": "9c5873d98150c095aba7d02342bb2acb586dc994529dad69956d623baab946f9"
+      "bytes": 150775,
+      "sha256": "9e7015078401dc17bc35c04bd6135939cedf5ab1d8b183d3f66946c870501b5e"
     },
     {
       "path": "DrakonSite/src/worker/localAgentIngress.ts",
-      "bytes": 31658,
-      "sha256": "69d978d0c1721bee15dcd75587a51c27a839b2098ec4ffb20b5e21cfaebdff8b"
+      "bytes": 30613,
+      "sha256": "72e85220b28670deaafbcca4bc0c04b3223a434c6ccd97f632dafb6699d9aacc"
     },
     {
       "path": "DrakonSite/src/worker/localAuthMiddleware.ts",
-      "bytes": 3590,
-      "sha256": "3906424c869228c5992b1d73327fb53a3ae6c15b5357cfc9d77a4cf9d51b5cd0"
+      "bytes": 3470,
+      "sha256": "4c4adf92dd2dbcb3c0dd0fadb27d290b7cbc1a6dc9cb48449e0870a536478377"
     },
     {
       "path": "DrakonSite/src/worker/localIdentity.ts",
-      "bytes": 27271,
-      "sha256": "d496147290b4618ae1208ee6aa872ea08852a7a0f7c76f1f467f99c81ab9ae1f"
+      "bytes": 25201,
+      "sha256": "63a2a60d24772d4ef53a60b695c5668e86801034786f811695f60e5ba2976a6e"
     },
     {
       "path": "DrakonSite/src/worker/operationalPersistence.ts",
-      "bytes": 65082,
-      "sha256": "14fbf1f34011e593ff74cdab1b8146155c358f0d26159c9ef8002b4f43cc1e41"
+      "bytes": 62946,
+      "sha256": "bef3cfdb1b72226d3570ab11cb73f46b960ef377b2ac001472bf6fd710cf406c"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/__tests__/db.test.ts",
-      "bytes": 6417,
-      "sha256": "69379ec8a40bca49f0e10b12cd6e012cf95e6a499e9717ae2534355c993f0ae5"
+      "bytes": 6201,
+      "sha256": "ac8a525c077ad5d8fae66449f7111aed524caa8fd98f52756684a5bfcb5cc0a6"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/__tests__/executor.test.ts",
-      "bytes": 6570,
-      "sha256": "16ed7cad8f829a28a5bd4669f25b8aa82a00e54a1561a1c8bf96dc68d61cf4e5"
+      "bytes": 6333,
+      "sha256": "911434610f61dcc8ed1c93faef3e739a9c2c800f75d183873444d057d687b0ad"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/__tests__/planner.test.ts",
-      "bytes": 1822,
-      "sha256": "ce503db4892ce6751dca99a1cf9ce0fd9eb00cf528bb621aef9145228d2f018f"
+      "bytes": 1761,
+      "sha256": "2a01fa871e356099660aa724e48ac129c305ce8a7e2cf0468387fce5004e6fe4"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/db.ts",
-      "bytes": 66448,
-      "sha256": "83d664521042dc42905f580d17743008cf3c5fbfa3d552d879162ebae0b176be"
+      "bytes": 64740,
+      "sha256": "e3d5fa2a0e8424cb1daff91c846f9f455374abf729dc2cfa8a4ef3fb36884862"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/executor.ts",
-      "bytes": 23840,
-      "sha256": "d515e9de0f30abf0dfd10d6a7ea5a59a43eae25bf3f91ca52f9972bf34846a34"
+      "bytes": 23195,
+      "sha256": "01a5a5f4fcba421b9f295ce941fe9e521e300b0707af6aa93050693560f0386a"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/grounding.ts",
-      "bytes": 10759,
-      "sha256": "ef36c2fe9c6b69e9bb5748949c0b1249ca4da0cf88f55a20d77aa4a51456cea7"
+      "bytes": 10406,
+      "sha256": "fb727062333dc8ac156c4d91e93a9117c2729d604653a248750569bfab0760b8"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/planner.ts",
-      "bytes": 7199,
-      "sha256": "6c5ed3afb9abc90dae88c4ac6ab84ad03425840b503e38369d7f41180d983d59"
+      "bytes": 6936,
+      "sha256": "85ca14855845c926eb38996384f66d7a2e5723fe1d83d7f00fc21a07d64df674"
     },
     {
       "path": "DrakonSite/src/worker/operationalQuery/schema.ts",
-      "bytes": 4659,
-      "sha256": "28d229442d7fedbb9789ac10469b07c673a38ca1a0a53b04ca41c02833e4655f"
+      "bytes": 4468,
+      "sha256": "1f5c17ba243e27f7da15ae34bc7ae3df375642f07b4dd64bb45b564d1dd46264"
     },
     {
       "path": "DrakonSite/src/worker/reporting/reportBlocks.ts",
-      "bytes": 41244,
-      "sha256": "682ba6460880f07d1e5af976a8936aeadd73b11dd49f631a4213179a6e7d174b"
+      "bytes": 40113,
+      "sha256": "a3f362eca35f155937bc66632eb24fd10d3f9c29caf5bba266b8c02ad70181b8"
     },
     {
       "path": "DrakonSite/src/worker/reporting/reportCharts.ts",
-      "bytes": 13853,
-      "sha256": "5ee741ce2692127f1e01354405f8badc86acfab2615f0fb04ec988bf7201e0f4"
+      "bytes": 13429,
+      "sha256": "9a7bd236c31160917223bbc3bcea4dd8d75dd3ee9521004c84663bfdd7c1d54b"
     },
     {
       "path": "DrakonSite/src/worker/reporting/reportDocx.ts",
-      "bytes": 51566,
-      "sha256": "03be5ba921d1449adf9f0348eff28991d20e474f650a250c8c82ee1a12fcaa5c"
+      "bytes": 50437,
+      "sha256": "8a5f90ed67014bd47ac6cdf6730311d0772a4b125e26eb4272fd633149156a88"
     },
     {
       "path": "DrakonSite/src/worker/reporting/reportEvidenceLayout.ts",
-      "bytes": 2558,
-      "sha256": "3d2be007acd169e72041bf1abb541f0ef62faaedc9a2070567f179c99feffd11"
+      "bytes": 2489,
+      "sha256": "2474ab88b650ca2fcf54c184d422580ba1b5faa9a0e44c2f7269f36c6194fb32"
     },
     {
       "path": "DrakonSite/src/worker/reporting/reportTheme.ts",
-      "bytes": 2172,
-      "sha256": "6f6e6034d925e7c7ef4eb707247e49cd75251bd831ad12954e4427e4d7350f8f"
+      "bytes": 2088,
+      "sha256": "0e0bb344257a59da6db255f12b4ae7111dbcb6e3b3a0978c16eec36910b4693c"
     },
     {
       "path": "DrakonSite/src/worker/semantic/__tests__/conversationMemory.test.ts",
-      "bytes": 6786,
-      "sha256": "c1879c0492056358a615a9861ae3126aac39670d3f5e96f0f0cca486d1ab2efb"
+      "bytes": 6537,
+      "sha256": "100cd36a5846936778db7e82ccaa24cbacb44ff6797bea84c24b510f5ce08de8"
     },
     {
       "path": "DrakonSite/src/worker/semantic/__tests__/multilingualFixtures.test.ts",
-      "bytes": 1617,
-      "sha256": "987da431c5dbd94459ebc12f02ea945ff26d07bd9c0e7bdc7eacb7e46c49b29d"
+      "bytes": 1558,
+      "sha256": "2cc0b0d5fb8044011d85ae2596feb61a90b3f58d7a621a95344109c01672c151"
     },
     {
       "path": "DrakonSite/src/worker/semantic/__tests__/planComposer.test.ts",
-      "bytes": 4305,
-      "sha256": "5b5eb6e455b21350a80d1ee86e0fe2c6282aea370705cfcbbbaa146e7d9c23ec"
+      "bytes": 4144,
+      "sha256": "de91ef2dd9fe34cee800bef627e4a8cf44672fe08a79dcabc594490238616407"
     },
     {
       "path": "DrakonSite/src/worker/semantic/capabilityRegistry.ts",
-      "bytes": 6074,
-      "sha256": "bce8e1565a4237b2205b9f94f962b32f01e3fc9d270e5ca9575c1bfc7a386bd8"
+      "bytes": 5872,
+      "sha256": "7213488266c0597d60e90e2ffef4f641fa60f68615f0b7bd527b298e36305eb4"
     },
     {
       "path": "DrakonSite/src/worker/semantic/conversationMemory.ts",
-      "bytes": 14811,
-      "sha256": "690b5be465a12715059aff23c9a9e46595a8dfb80e687478dbed490b27499c14"
+      "bytes": 14327,
+      "sha256": "fecf17b28cbbf098b62887343f2487dd53cad1e26785043ff8a2aac71385525e"
     },
     {
       "path": "DrakonSite/src/worker/semantic/fixtures/multilingual/carryForwardCases.json",
-      "bytes": 962,
-      "sha256": "3a67c5f05ef7d9d02b4b661a5672d0b25d685a3a4db5e6d9a5669ee8f1bf42b3"
+      "bytes": 920,
+      "sha256": "125518e5238a5e1fcacb1fc346ddefb7f26e5b4179ffb64e78efa1e69c1e7b77"
     },
     {
       "path": "DrakonSite/src/worker/semantic/planComposer.ts",
-      "bytes": 7791,
-      "sha256": "14efc78bdd58330d07dd29766f793984a74c35817bf8964c91934d2303d56b8e"
+      "bytes": 7589,
+      "sha256": "7f46c882b40b9d3f0e5196b5a0e65963a30b9a935a0047c05472697b7dcd07f4"
     },
     {
       "path": "DrakonSite/src/worker/semantic/schema.ts",
-      "bytes": 3832,
-      "sha256": "a1a62a16a99e862491265dab218b3ba6463173c328935aa1914b2dd43daf9e5f"
+      "bytes": 3686,
+      "sha256": "22a1261074102b6463de6dd29db59285ce76c463eaa146ad755ce10597de2342"
     },
     {
       "path": "DrakonSite/src/worker/semantic/shadow.ts",
-      "bytes": 2159,
-      "sha256": "0b06bdab36bc42550329deaaecd5ae47dfeb1e6b4f4747b083aa2c7307e1fd52"
+      "bytes": 2103,
+      "sha256": "03b7019352cdf3ec19379764fefb441f8e3f4712fdeb62ead239327118abd914"
     },
     {
       "path": "DrakonSite/src/worker/sharedCameraAccess.ts",
-      "bytes": 7874,
-      "sha256": "18f2b8a771c00ac9d4ca654214aa3f4aa2fbcb1e2847ea0ad5d459c8d604b5ae"
+      "bytes": 7621,
+      "sha256": "a59836bcf96ec0244d161a6cd23db57242f687883bd647d6a4f65a5ec56e0e82"
     },
     {
       "path": "DrakonSite/src/worker/sharedFindRelayClient.ts",
-      "bytes": 8029,
-      "sha256": "60e2722e553d91dd19b63544396334d0f5d57584753e1bdb96006e598e08c107"
+      "bytes": 7760,
+      "sha256": "b2df60f91c19426f04bfdff2dd31c268e32b9db279a3399c19fae4eb33163200"
     },
     {
       "path": "DrakonSite/src/worker/sharedFindRelayState.ts",
-      "bytes": 18453,
-      "sha256": "06ce8ee00fad7f64071ccbd35d037dfb5c457631cea846c159c1c59bc99df6dd"
+      "bytes": 17825,
+      "sha256": "898f744c994707b4168a4da67906101cd819d92c47b45cff7c663df1b7966d6d"
     },
     {
       "path": "DrakonSite/src/worker/sharedJobPlan.ts",
-      "bytes": 20543,
-      "sha256": "5a4d9e4fc91cc252d5e3d81588538ae2d9f6acbc4b5c35a0f9f4981e82a9cafb"
+      "bytes": 19966,
+      "sha256": "4faed7cd9379e20bda40172d3c74fd0792d6e04026a847e0ccbe7dc79fc6ca27"
     },
     {
       "path": "DrakonSite/src/worker/transactionalMailer.ts",
-      "bytes": 37614,
-      "sha256": "f50cd0ec0bf9b06abd676fa3008b338ab1bc5de47aef3d780f6fad765ec8c431"
+      "bytes": 36832,
+      "sha256": "2ab22128a0ddd97fc266aa1623d1bd329c2a6f5a1a250e32de40ae4f64c92251"
     },
     {
       "path": "DrakonSite/src/worker/userHandle.ts",
-      "bytes": 1080,
-      "sha256": "7554cc8951465c544f8833c7765649c292a4db6435ffd877f2c1e92073b4c790"
+      "bytes": 1041,
+      "sha256": "bcb59eefdf6c8f408e0c7f82c287e7a09259bb180914e7fb9461ad3235c9eeb1"
     },
     {
       "path": "DrakonSite/src/worker/websocket.ts",
-      "bytes": 1829,
-      "sha256": "84299d03f213c7dcfcab887a678bb35bf03fc10220c364d2a64dfe10d67311bf"
+      "bytes": 1771,
+      "sha256": "983ac8e1997852fc429cf1485c3fcd640dda1ed368013a00c1404844d4ed29ca"
     },
     {
       "path": "DrakonSite/src/worker/workspaceLocalState.ts",
-      "bytes": 5160,
-      "sha256": "3f3ee8290ee0f41c08e06ea6c8956026fdd9bcec71a67acb7ef7afc16a239640"
+      "bytes": 4992,
+      "sha256": "9bc58955f29f41a493c6a4f23df5000cd63145760a49f293a2be20279a506a7b"
     },
     {
       "path": "DrakonSite/src/worker/workspaceRelayClient.ts",
-      "bytes": 7972,
-      "sha256": "457c06c7e18fa009de8aeebed0d83aa87d311da9fc904c44b2b488fbd6abe6bc"
+      "bytes": 7703,
+      "sha256": "89f812bc23462a18600b4c49bcc8b3f3ceac7d1fd11ae04d043aeb747205aab9"
     },
     {
       "path": "DrakonSite/src/worker/workspaceRelayState.ts",
-      "bytes": 8130,
-      "sha256": "50a7b9726dafa648a112b82760b611d5be7a7cf143753a98c219f974ac12c765"
+      "bytes": 7844,
+      "sha256": "c52ea7dfceb994fe357f69805c65882405c973acec603c00d30ec441541f9eab"
     },
     {
       "path": "DrakonSite/tailwind.config.js",
-      "bytes": 1727,
-      "sha256": "0af11fc14b6cfe7465a2ec436cdb383b0a392a455cb61b810e40f4409e2b4cf3"
+      "bytes": 1657,
+      "sha256": "b60997984aa04b7b38405ce254e9431cb77c6d22992ca57eec254c49f53a9a7b"
     },
     {
       "path": "DrakonSite/tsconfig.app.json",
-      "bytes": 889,
-      "sha256": "acc6b6fb8947f96b57a133cb60bdecc24f25342782d84876476c7208d6273d91"
+      "bytes": 855,
+      "sha256": "f957c0b1cde7cb3dbd1116b787c1a4f37f892df8bfc2dd3eb3e85af7a6c8abb5"
     },
     {
       "path": "DrakonSite/tsconfig.json",
-      "bytes": 169,
-      "sha256": "d3d95a4bd643aee31a7de2a2817a807185332a84fb3a6ed925f9805b268019d2"
+      "bytes": 161,
+      "sha256": "13c8b3dea02616c7c4239eeab9d72242810263c202c3f5b1814554a4a4adc1ff"
     },
     {
       "path": "DrakonSite/tsconfig.node.json",
-      "bytes": 617,
-      "sha256": "9bf16b3df7247f6a466517b622ecee891ccecf01cb6167637ce62e29ea38a3e9"
+      "bytes": 593,
+      "sha256": "d417b0be3b2264c26a4865d3a9ef788e8e7229da62ef2a88ed41a81e04eff668"
     },
     {
       "path": "DrakonSite/tsconfig.worker.json",
-      "bytes": 322,
-      "sha256": "37bbc13fa64572110c0002cdb76fa68982a3deccb93f437bc13946497fd6f1c0"
+      "bytes": 309,
+      "sha256": "d2da94d039203eeaa697305325e01560ad3ac19d52a6f08730a4ec88935a7196"
     },
     {
       "path": "DrakonSite/vite.config.ts",
-      "bytes": 721,
-      "sha256": "f05edaa2d7bef8f8e94df2f663f53e24e5ec44900cdbf125f70a5127553c2087"
+      "bytes": 688,
+      "sha256": "b9efe87e0e89b0bfecff865acdd63afe1ea1708200a88d0f499d3f2261183210"
     },
     {
       "path": "DrakonSite/worker-configuration.d.ts",
-      "bytes": 443,
-      "sha256": "15b1eb160b54f68abfe2d442ca332e2122b224d409c5d77547da0ac81cef4e31"
+      "bytes": 428,
+      "sha256": "54d724c042c70b36cc0bd81bd2269888e2e58d7061bf785996627e35454deea2"
     },
     {
       "path": "DrakonSite/wrangler.json",
-      "bytes": 709,
-      "sha256": "22904f4a0c48cda5089e610309c34bca325ce7b4fbaaff04c9e205a754897ca3"
+      "bytes": 682,
+      "sha256": "5935afa46ec32075ce00318a93c3b10353cb2917903224e14299859ec3745f1c"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/DrakonIntelligenceRuntime.vcxproj",
-      "bytes": 7481,
-      "sha256": "da987c7d89a722043f00d1a71392d4d35a6a22c8714edbc2dca63898b2354538"
+      "bytes": 8081,
+      "sha256": "31a97aebd8c2236bcb94570b240f56e8edb3ffec9ff40aa1f2159d0cf16a94a9"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/include/CentroidStore.h",
-      "bytes": 627,
-      "sha256": "2a0304297fc6e7f9678f2b6f7fa11eb121c94abda29b16ff8bbdcc51ef8e1003"
+      "bytes": 604,
+      "sha256": "b674193f00762ec11a7f069742b4a9eb2eba690988293cf6de907d6d1ded255f"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/include/CropFilter.h",
-      "bytes": 245,
-      "sha256": "10e09f4facc57827c4d4a345685d9fbcad5763f574785226507ccc2bc25d01ea"
+      "bytes": 234,
+      "sha256": "c8ea5da767f6aae76cc2883b67cb370229a48d34360810daf2e49fb0d0c7f092"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/include/EmbeddingMath.h",
-      "bytes": 523,
-      "sha256": "2eb50fc147696e96f49064bfdd95f570cbd3cfa134f40dce6498d446bf21713d"
+      "bytes": 508,
+      "sha256": "51c639b6cbd0619fd69d96eb59d01b3d6b89ebbea05f5be899006d5e5047413e"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/include/IntelligenceTypes.h",
-      "bytes": 1866,
-      "sha256": "2f6a012d6a7e6a4ec3333f5d40b16777ef30caa1fc8b0d1251a50dd8d289c7bd"
+      "bytes": 1787,
+      "sha256": "2c02c4326df7a6eca5e4d1a231ac4b7ac86f30065098b761289dd2cf4bf3a440"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/include/RuntimeReporter.h",
-      "bytes": 493,
-      "sha256": "7de10fb0f2c6f8cd53f2940028f429a59738784aa0a250aa94dd432e8d3d0274"
+      "bytes": 472,
+      "sha256": "8c16e845f8dc72c1c330a26be07277bceed6e7de12224f4ff9629f31c0b0d5d8"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/python/intelligence_python_bridge.py",
-      "bytes": 20277,
-      "sha256": "a7c670b7f7b8444fd58ab1a927623ad7d773df745b2f2e60caab69f5d7fad544"
+      "bytes": 19742,
+      "sha256": "260329346b7e1e640feee3d8c5d1e4e8917764d0e29d16ef218576180005e84f"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/src/CentroidStore.cpp",
-      "bytes": 1533,
-      "sha256": "49a2148c901d7c460f2a24643779f06f56d8b188f5b7c9c5690f492351a6e3c8"
+      "bytes": 1478,
+      "sha256": "6d88fd788b62af9e876346b204d1d013a5dcfcb60a0fd9f9316fe61c0ff4853a"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/src/CropFilter.cpp",
-      "bytes": 1596,
-      "sha256": "0262c6985ce98afc9f2070729a0aa3954b41c77fcaa51c2cac651a561f4ec2f7"
+      "bytes": 1545,
+      "sha256": "ff5cd3fdc88ab37c30f95cf91c426ab828eade3034763ccdac3e63c9929a7be2"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/src/EmbeddingMath.cpp",
-      "bytes": 2683,
-      "sha256": "bbf884704e64dbbf67675c7627a36a602f01abb08fd95f5a004d55c9630ad9eb"
+      "bytes": 2599,
+      "sha256": "b1daa441295b5b62d04743d2640cdf420ac6527942f99c5b74b72073d4295105"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/src/IntelligenceTypes.cpp",
-      "bytes": 478,
-      "sha256": "be73d1c0d0221c40a1fef6769e4d2d587a9e0e704c3d31572e050198980f16d3"
+      "bytes": 452,
+      "sha256": "f5c473033fdbfbb8a91d584e214b737d4173e8e4e674a15c2c2019f9ae6a0bb5"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/src/RuntimeMain.cpp",
-      "bytes": 135269,
-      "sha256": "9fee238f2e90dcde1c9f0a88cfd763f90244ff5d93822a93041954875cfad8ff"
+      "bytes": 131806,
+      "sha256": "ebdbaafbdcf7e4255e9186048674a7cbca8f6da81b6e15d1a956959d123853a5"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/src/RuntimeReporter.cpp",
-      "bytes": 1777,
-      "sha256": "ad3cdb4b038ebc0b79526f5c1c392203c8405f97f1bb5922ad6915391db019c4"
+      "bytes": 1714,
+      "sha256": "dee811525432a43bc65b5be649e565747ade01dc1e97ab923841a8ebaae70289"
     },
     {
       "path": "Perceptrum/IntelligenceRuntime/tools/export_ocr_models.py",
-      "bytes": 1092,
-      "sha256": "77a4a40751ad91f337f1f8167cb4b40904b5c350e6a0c37fc9d52d202f292968"
+      "bytes": 1051,
+      "sha256": "f4b4c9e5ab001a4090fdf137e30877878643edd9e6621600b0ed0199a335a4e6"
     },
     {
       "path": "Perceptrum/Perceptrum/app/PairingDialog.cpp",
-      "bytes": 2496,
-      "sha256": "b829ac8ed6489b6ae63aba4859b87ba8a96eaff64c006f97d98b59933a4bd004"
+      "bytes": 2413,
+      "sha256": "8ebd241164eba6be55576616127dbb6ae2f9ce145404d64eeeb996b966e947aa"
     },
     {
       "path": "Perceptrum/Perceptrum/app/PairingDialog.h",
-      "bytes": 780,
-      "sha256": "5846aec575277e5a6b75292637429269103ae546b4df9fa944b46df7dc4eda14"
+      "bytes": 751,
+      "sha256": "8bde811f92b442089540a35cb3226b40386fd8e25d9c864dd181ae180453d8a3"
     },
     {
       "path": "Perceptrum/Perceptrum/app/TrayIcon.cpp",
-      "bytes": 2295,
-      "sha256": "897e8c6d3f8705d244ea05c71f07a028000164d2f3eb0738f6dc3c141f6ebe6e"
+      "bytes": 2215,
+      "sha256": "a19830a9dd59ffc257fd1a5ee6629e5376040c31081628f7abdbcb36d01cb679"
     },
     {
       "path": "Perceptrum/Perceptrum/app/TrayIcon.h",
-      "bytes": 613,
-      "sha256": "e225984f9c58da0f048d0dc997a3a504da0f37d621e81ee0ee9abef23c3ba7b1"
+      "bytes": 584,
+      "sha256": "6be0fbeb6aed48a9b7536605112cc7c21dfb5071f509fff8e12f1e866b2045a2"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/CameraConfig.h",
-      "bytes": 4224,
-      "sha256": "c72a23b519588889bcdbae855adfd54268a5a43876465b9bb8e89aabc270f5df"
+      "bytes": 4083,
+      "sha256": "ca6c318f92ba8536d237b8052744e07c0d4b2d49045eb230209ec2b8038de80d"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/CameraSession.cpp",
-      "bytes": 456565,
-      "sha256": "268055bf354e96e48fd461156b57e4477e30030e738dc9de37371e41fa862d44"
+      "bytes": 439595,
+      "sha256": "8841dde2aee98fd48903885a834f2833e4eb9f53de0efe87afa38eed15a31255"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/CameraSession.h",
-      "bytes": 10055,
-      "sha256": "442f9f9b3c224c4ee0617841d535f6924172ff256d1f332e33e9b781f672c21d"
+      "bytes": 9498,
+      "sha256": "b6fd9fd54ecc3aeb7dcb865429e00c8024d31d985d972e59f4f5596749075bb8"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/Frame.h",
-      "bytes": 284,
-      "sha256": "b35d5fa57371e2e5b52956547f5b271cbb731475e5eecfad44c999e69e55b3bf"
+      "bytes": 272,
+      "sha256": "753db6e71028626a67a9b99e3fe9f1e7e6924df07692cd01c52ab5ce19a15589"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/FrameBuffer.cpp",
-      "bytes": 3295,
-      "sha256": "63e0e99b3d10e236894851921da5d05809bea1b96fa8ac85e007b9f9a9ac96bf"
+      "bytes": 3160,
+      "sha256": "1f05b40e6bf462677f32d9686b30dfbef7a2d3e86e4edc4fa93c50f9564bd7fd"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/FrameBuffer.h",
-      "bytes": 1168,
-      "sha256": "e3bff23a3e8bff9535950c0229ac89f764e190cb1620cc6a5aa446b89552695b"
+      "bytes": 1123,
+      "sha256": "972dfc0929b42bb502f496e3f7c2b04ec0bc4ce6752289f3c685e003cd3c1c04"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/FrameDiskWriter.cpp",
-      "bytes": 116073,
-      "sha256": "b78e4e110ff0538d0542f52d833eea49a25dc667bbe623152259649615c78442"
+      "bytes": 112439,
+      "sha256": "d5b7379a741dad2fb73946319b850d01b0f78d8c6eca7b2794783d1895fa2498"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/FrameDiskWriter.h",
-      "bytes": 12050,
-      "sha256": "0f442f7abaff4c49cfd56778b11313b88202ee093e051167e93f02cd373ffe44"
+      "bytes": 11728,
+      "sha256": "abc0f8652742af9113a2b46fe448ec584e10b8e81ed25c8ce916ed10fa41a30c"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/InferenceStub.cpp",
@@ -1910,638 +2335,598 @@
     },
     {
       "path": "Perceptrum/Perceptrum/camera/MotionDetector.cpp",
-      "bytes": 6572,
-      "sha256": "bfa3b1df10994a51336ec10262b8fa4f93ed2f2b2f924fac75d912dd4d7c18bd"
+      "bytes": 6363,
+      "sha256": "30f631ec68ba47cf93170f9458985cc8a9b6acaa2e17ac650511f8f4bd68611f"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/MotionDetector.h",
-      "bytes": 2123,
-      "sha256": "de46d5b6ded84a29d91b1fb9f0a2d1792aab7011e35de3768b260af836ec7686"
+      "bytes": 2058,
+      "sha256": "4259fc728563e5df4bde0bd01ec4954b528de2e0a2317259173dd0ddefab0ed3"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/PerfMetrics.h",
-      "bytes": 1537,
-      "sha256": "a2858a62b6079b07cb28b90885212eec93784c635e97c209fa9eb9196c42b6bd"
+      "bytes": 1479,
+      "sha256": "492932de6505a268a298a0ccad4815c19e8a513ba010d3ff0a4d6e862cd4d391"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/PortalCounter.cpp",
-      "bytes": 65863,
-      "sha256": "d0398c1dad5048bb927418634a41f019c3c17186bf2bfc169243503923b0a25f"
+      "bytes": 64111,
+      "sha256": "2d65259da1d45b7b1ea15a6ddeaf9c98cc97269e7b67553bbfecea3dd7f3abc5"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/PortalCounter.h",
-      "bytes": 770,
-      "sha256": "e2286ed0dd852c47cc06a434c201a7e71e459823b9f570fd533944946d953088"
+      "bytes": 743,
+      "sha256": "661a384835d2298f6d3125b7fc1d6fa80f8b9e25ef846a6bb1f7c66772cbd6e7"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/RtspCapture.cpp",
-      "bytes": 33161,
-      "sha256": "c0b7fd599566602705254032926fcc096f6a23f6361563538b65548e66178124"
+      "bytes": 32187,
+      "sha256": "517b3e91e77e07ae3dc36caf99edeabadb64de1d52d1fe80b1abf8930f7d19b2"
     },
     {
       "path": "Perceptrum/Perceptrum/camera/RtspCapture.h",
-      "bytes": 3714,
-      "sha256": "c654c9991be1227dfd2a73fbefe70c47d73fe61b71d6b0a6e1fbc17603cc9af6"
+      "bytes": 3608,
+      "sha256": "2ee2a2ac68e07fede5e4359dddf05a8fef514a3b2881f742f2477b3168ff1a95"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/BackendConfig_old.h",
-      "bytes": 1550,
-      "sha256": "5ad698effd41e4d876c166c812ccb9eb93e0a4aec08793009c0f0d4f47b2b699"
+      "bytes": 1492,
+      "sha256": "f21e6e8c283a4284c876627d7b37fe7673d82b770f44947496f35fe23dea369f"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/BackendConfig.h",
-      "bytes": 2657,
-      "sha256": "e86a75723fc580294121d7e43008fe4769300c608bb403e3b265e30ef3eed086"
+      "bytes": 2560,
+      "sha256": "356263cd44cd4cb43c4dd08b3cd0c66f256b030ef8bc80142b5aa4e886ed60a7"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/PairingClient.cpp",
-      "bytes": 12158,
-      "sha256": "b7021403c31856371963ad51a6e16ef8e67a7496234d6585cdb86de42f1c36a7"
+      "bytes": 11827,
+      "sha256": "dcb146fbfdd611e402cfb47f86109b1d7d31659024b79d997d708fccfd04b57b"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/PairingClient.h",
-      "bytes": 1166,
-      "sha256": "21221e8e44de3a2d13eb20c39ae37d4d59fafb7b94f6aafa21178d3c382257e7"
+      "bytes": 1124,
+      "sha256": "1679753d8822f71795c12b82eeb0a326ee2851aeabd4adf755b6ae975985af6f"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/PgClient.h",
-      "bytes": 741,
-      "sha256": "79ec23bf5e096ee0847e4293738f83160421fd123b55035f1f5cf002439070bf"
+      "bytes": 712,
+      "sha256": "7504369d101a5fd751e4fec8138f58e0a710fc3572e463e1e239aaa95c157e68"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/SecureLocalStore.cpp",
-      "bytes": 469,
-      "sha256": "4ba28f7918ee45d4bf5c0d7a1c05477c7ce37733b471b2f4a94c1c2f050364aa"
+      "bytes": 453,
+      "sha256": "27b8bdc7cff68396c4717f20041f12a1afb6b295942b63c0db0bc01321b90667"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/SecureLocalStore.h",
-      "bytes": 319,
-      "sha256": "c2d77cb2929f743ab024e511551d8f4e8a535b451b18908d68457a90e61a365d"
+      "bytes": 307,
+      "sha256": "68ebfade05cc21490baffc7a65e0bc7330363c32a4b95a004e8938f198429cde"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/TelegramNotifier.cpp",
-      "bytes": 6428,
-      "sha256": "e1cfdf57312456ac44188bdfe5a68ae9943685a631b2b17dadca65b870bedce4"
+      "bytes": 6220,
+      "sha256": "ee0de304c206c65b122dfde6bb143cee8b1adaee8f2cd6e0489c9222f5c80a86"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/TelegramNotifier.h",
-      "bytes": 750,
-      "sha256": "50378977ff8921ea08fd3d1d34bfe2264cae8fea2dc5ab5daaae467d6dcc994c"
+      "bytes": 725,
+      "sha256": "fb6bb4893d9efb1bac18976906a065dcad48d05367a1b888f74f5c06c9e2ab9f"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/TelegramNotifierSendVideo.cpp",
-      "bytes": 4092,
-      "sha256": "b8914a943d53a939f18b026a111aec5c03b09ddf8c830bb40bc14dc5551bfe60"
+      "bytes": 3965,
+      "sha256": "589d35f198d5779fa48e52e8af75ff7c7d77494e74878f1b10246da891790dae"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/TelegramSettings.h",
-      "bytes": 173,
-      "sha256": "3ac4de072d0bef9b53af9c5c6504835c6deb19ccbfc13fb671e720eb6ae9134b"
+      "bytes": 164,
+      "sha256": "09f260f58af8a3a0fb618755d4e586156dedbf8bbec942988d251a67a7d878ab"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/TelegramSettingsRepo.cpp",
-      "bytes": 2551,
-      "sha256": "64e86d7f04650dc185f476a8be95d49e2a329f2e6cc28a6f0ba2fbbcd3ab9f1a"
+      "bytes": 2471,
+      "sha256": "b62725ab9f3559757fb6d87739dda5788634f6882a20c2e1cf05b90c73bc0545"
     },
     {
       "path": "Perceptrum/Perceptrum/comm/TelegramSettingsRepo.h",
-      "bytes": 432,
-      "sha256": "4e951b81a2825ef9fb577040a3b79d177f1701c2b94ed959c149cbf7c4ace1f9"
+      "bytes": 415,
+      "sha256": "1f17a882d2ebf8562263dbd64b7ec3ee0850c2479660ee82145e69594c4319ca"
     },
     {
       "path": "Perceptrum/Perceptrum/core/AgentCore.cpp",
-      "bytes": 1618861,
-      "sha256": "538d2b566f025d0f4872fbfcb274228a165149d9f09005c4955e0e4f513262c2"
+      "bytes": 1524431,
+      "sha256": "8fdb07e95ad250f759d99feb95076fda94e7e16860c228dc9a6ec33659b5f63b"
     },
     {
       "path": "Perceptrum/Perceptrum/core/AgentCore.h",
-      "bytes": 37867,
-      "sha256": "7dd47a4151742643359f5896ee5dfea1599d348a1692555a85c39c26505d1a48"
+      "bytes": 36761,
+      "sha256": "d9a63cfad87a46ffc8313dcd9b6eaa86448c646fea6f28430a6a03c55ef74043"
     },
     {
       "path": "Perceptrum/Perceptrum/core/AnalysisRegionGeometry.cpp",
-      "bytes": 10671,
-      "sha256": "1996a972c2298733e7d0e6421338ed5917fbca04ee19e50c5cda9ebba708f60d"
+      "bytes": 10362,
+      "sha256": "078eca96bc3681f43fb6b5c6551f81f2a5745e0296508d9ec57303524b733a8d"
     },
     {
       "path": "Perceptrum/Perceptrum/core/AnalysisRegionGeometry.h",
-      "bytes": 1747,
-      "sha256": "efae485531b106123c053e4622e0bfff9d7deca4062f827677f99a77765129c6"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/core/BenchmarkMode.h",
-      "bytes": 1183,
-      "sha256": "bedb9a929fb875d0ee9178c21712381d4795d704363681fb57274fc6b60efcc2"
+      "bytes": 1687,
+      "sha256": "dcb921586482e21e7ca890f3b8906ec8977e225f23efb6ca44dcd213fd105630"
     },
     {
       "path": "Perceptrum/Perceptrum/core/ContentCoverageTracker.h",
-      "bytes": 4602,
-      "sha256": "aef72a17beb4c586d245ab0a7e31147cef33d0235917d60000e10134bc171c68"
+      "bytes": 4436,
+      "sha256": "27ea3634ab339cc7ab34506230729875a92f28695def8b98c857401c4270e75e"
     },
     {
       "path": "Perceptrum/Perceptrum/core/Localization.h",
-      "bytes": 2948,
-      "sha256": "0d6d767925f788f263833e9798eba369352a7f07a71380852c95b4a228c47f2b"
+      "bytes": 2854,
+      "sha256": "2ed451c2c6aaafe9395620b49e5f0d2b694f51ffd6171d2c46450df95cbbbc5b"
     },
     {
       "path": "Perceptrum/Perceptrum/core/TemporalEngine.h",
-      "bytes": 482771,
-      "sha256": "79ad2e870b30ce47fffdcdcdec478aec7a3d99a73f1cfcc6c45817a3890d0029"
+      "bytes": 472335,
+      "sha256": "e0b83f37e2b13bbdca2e9d36a2daae390e4dbacfb86ef0ed4d762ccc84548405"
     },
     {
       "path": "Perceptrum/Perceptrum/core/TemporalEvidence.h",
-      "bytes": 414,
-      "sha256": "077e2e5e10b8addec77a7c68fbda304037e1669140c85c8039c5a5b17f6f1af4"
+      "bytes": 397,
+      "sha256": "22158fed84bcee38e53a83094807fc882eef98729bf329485bcb593451dd0b49"
     },
     {
       "path": "Perceptrum/Perceptrum/core/VideoPolygonOverlayRenderer.cpp",
-      "bytes": 16885,
-      "sha256": "615fa0fc476379f4198790a852968cdbff46da34805a8cc473e57099b3f047c2"
+      "bytes": 16329,
+      "sha256": "fccba26540ec1657a3f31374392b4e5b8bf08b70ebc96052c68596b377408952"
     },
     {
       "path": "Perceptrum/Perceptrum/core/VideoPolygonOverlayRenderer.h",
-      "bytes": 1314,
-      "sha256": "f0b94e2ee238aa5cb18c7c77c5d4cd3d23d948540e4a34e9e7246ae63e3df618"
+      "bytes": 1271,
+      "sha256": "21d0aeabacbe253d55ae5ae849f9b814733f1849623e20fb9d5b5970e2b243c8"
     },
     {
       "path": "Perceptrum/Perceptrum/framework.h",
-      "bytes": 395,
-      "sha256": "7fcd13c0b0aa53324c362e3570139eb63f64ef8cda87c2358eb4ae545e5d4241"
+      "bytes": 380,
+      "sha256": "bfa5ed70f396e54fea20add744140a3f060ae4335b450bde0d2b04641dd2a2dd"
     },
     {
       "path": "Perceptrum/Perceptrum/jobs/JobPayloadParser.cpp",
-      "bytes": 64504,
-      "sha256": "584bd50650482b76147e60d782bb1d2eb2e7a2d5268bd1b71ebacc8bc4f66a0b"
+      "bytes": 55061,
+      "sha256": "9cce61f3113297e8c16370e3f7381bc4486ac9e27a4bf935031c675d601762cc"
     },
     {
       "path": "Perceptrum/Perceptrum/jobs/JobPayloadParser.h",
-      "bytes": 175,
-      "sha256": "af4c9858aeb67dc094fb63c1fbc307a5a15d8028dcd3bafd8b851dd17e0a9807"
+      "bytes": 167,
+      "sha256": "b56b6b0ad104e03d124c42737da8e9be0448b592541a89d5e9683b0d232b73c7"
     },
     {
       "path": "Perceptrum/Perceptrum/jobs/JobRuntime_old.cpp",
-      "bytes": 93512,
-      "sha256": "d69e054a99ce92b7feab227b6068b7617af4002b14524b69e5e776bed2e10c4b"
+      "bytes": 91013,
+      "sha256": "25ac7a43a857358eaaaa21bd9f8c26824d7bb9c41c9ddea30cdd0600a9903d62"
     },
     {
       "path": "Perceptrum/Perceptrum/jobs/JobRuntime.cpp",
-      "bytes": 675864,
-      "sha256": "b07af1eda5e313ad581540aeead2a1c6281fc388c43de4a10d592669bfb588c1"
+      "bytes": 660091,
+      "sha256": "176f64e421e46bed1da365d0e55b79fa72466d27b96ba660a9dbc7ff43a0a4fb"
     },
     {
       "path": "Perceptrum/Perceptrum/jobs/JobRuntime.h",
-      "bytes": 11274,
-      "sha256": "49d22bdd7bc99dbacc60dd4f46c39576a1ea455ebb7220c07d57d15d225c70d0"
+      "bytes": 11021,
+      "sha256": "70b6665e59ac963cb5c79ae05d95c191bf40839a43f26cf81c76d32f10068cdd"
     },
     {
       "path": "Perceptrum/Perceptrum/jobs/JobTypes.h",
-      "bytes": 10832,
-      "sha256": "b0389aa453319185628bfc8ef06b40bbabb1bfa5abb71dc892ce61844a0bb69c"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/jobs/tests/JobPayloadParserPolicyTest.cpp",
-      "bytes": 5837,
-      "sha256": "9daeaa85166cadef4018a9bfe4703fc286cd0c165474a2461db44809e0b1dd9c"
+      "bytes": 9302,
+      "sha256": "a80321ff143fac829d890a8e0ad1606749a1ec454b26fca51b91cb794cf7ef6c"
     },
     {
       "path": "Perceptrum/Perceptrum/logging/Logging_old.cpp",
-      "bytes": 9437,
-      "sha256": "b6c6042fb5bee758ac1a345d042b0eabd813746f4249ed1858a03166cdaa7560"
+      "bytes": 9114,
+      "sha256": "8a37033032dc0b40c7047aa3971f245762d2bbe88f807370f8db76794796c15f"
     },
     {
       "path": "Perceptrum/Perceptrum/logging/Logging.cpp",
-      "bytes": 34402,
-      "sha256": "94ae9f6a3f2b76b57ebb2989b13372b51f72470e772ff7c142427d5000b94a65"
+      "bytes": 33287,
+      "sha256": "6529af5f60875964b81ac5c96dc3de6e5d1f222425232d5f5fbf90cca03ce6b1"
     },
     {
       "path": "Perceptrum/Perceptrum/logging/Logging.h",
-      "bytes": 3932,
-      "sha256": "1e4083cf8683421160016f6f6b71e6787ed70ec654cdb6ed3a2e8d2640c5fa08"
+      "bytes": 3799,
+      "sha256": "7f1c0310f8c450065cf0ff2bddbb8810d00c97961e4f162a01560d2d398cfe6d"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/ChatModelConfig.cpp",
-      "bytes": 5430,
-      "sha256": "48af5575d456779a1ff4dc8f3135e84bdc78a4c984014ccc73eb3aca597e059a"
+      "bytes": 2886,
+      "sha256": "da41316d18be34782e4ffe0ee69ec7be14d13815e7ee7ea481b268a47098de3f"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/ChatModelConfig.h",
-      "bytes": 461,
-      "sha256": "1b1a4e26ca69cbf2429114437944a68045c87bfa25c7a835b0368ade75bdf51b"
+      "bytes": 443,
+      "sha256": "0e6c114a479c6c9c89cb22dd9171af3ebce3f929fe6a4aa2ae1eb0efdce041a0"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/ChatV2Orchestrator.cpp",
-      "bytes": 138365,
-      "sha256": "9c1b0daa89c1e5509855eefc6bae628c5a114e3cd1681f6c10f6851e85fdb056"
+      "bytes": 133734,
+      "sha256": "32d6effb8fc602dde20da372b2261b39160af29a312cbc964edc8c6704e13bef"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/ChatV2Orchestrator.h",
-      "bytes": 3083,
-      "sha256": "bf183680e6af3a4ddd6638ca91261d781158cd9e4a1583cb7de36e0153883db3"
+      "bytes": 2994,
+      "sha256": "56abcdbc52cd215acaeb0588097bc19f60a9c7f113a535d97b10077dc36d314d"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/ConfigUtils.cpp",
-      "bytes": 6773,
-      "sha256": "3e959cb31e8579560ab17f73a1264e51b91c682e3b8c6f3dd938afdd3db39fd7"
+      "bytes": 6527,
+      "sha256": "cf31a8676c33f78e3c01888700dc146346e90614080978f4f5c3676f3b57844d"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/ConfigUtils.h",
-      "bytes": 957,
-      "sha256": "e3552d4a04a7fdef4fa85134af11fe3764d2287690cdeb443e00432ea66a1e0c"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/orchestrator/CoreQwenRuntimeManager.cpp",
-      "bytes": 31917,
-      "sha256": "3440ac1da651e9e10b40f2c6cc3d3c3433fdaa6a40901e03c5655e82765fcb9e"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/orchestrator/CoreQwenRuntimeManager.h",
-      "bytes": 4432,
-      "sha256": "cc9d2ed5d5729b88b439ebcc3efd3a804bcfe5166cb7ad3c1fa07e7b0fcd7969"
+      "bytes": 924,
+      "sha256": "e72dfdd0e63210fa8f905fb357154776366d1261cccb44afd8cc567b2860e45f"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/HttpUtils.cpp",
-      "bytes": 7305,
-      "sha256": "c68d2a42851bb1f81f4310f511c17ab1f55d0c66f4ad669eb0470e89d93340da"
+      "bytes": 7088,
+      "sha256": "1427ac45f27853e1ccf6b22fcf13fce4966e1e3c565d2f9ef1106b171d8ad0aa"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/HttpUtils.h",
-      "bytes": 1138,
-      "sha256": "6bf3e0964ebe5be64ccb369a131dc047d14f813be10231773ffe810aa292917c"
+      "bytes": 1093,
+      "sha256": "f0b02cc40547c31c2bcaebbeb36085c81eb4d76f210f48943259744172adcd76"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/KnowledgeBase.cpp",
-      "bytes": 18560,
-      "sha256": "04d1187606df11d997110d859fc932d2fa94d483eaee0851a85d8305ec88ec28"
+      "bytes": 17990,
+      "sha256": "5870218a587c187630e04aea8761f6cb437f65ec3b8f0ff3d0fa14ce9277e462"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/KnowledgeBase.h",
-      "bytes": 1167,
-      "sha256": "118bdc537f3c056375812d66193863f65d1ae42ea1c4f46a582e864f543ae975"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/orchestrator/LocalAiRuntimeBackend.cpp",
-      "bytes": 14539,
-      "sha256": "3fc3fe5012a2f8cacca099d9723117f26bdecfed6d3ea80254f3b936d58d0213"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/orchestrator/LocalAiRuntimeBackend.h",
-      "bytes": 1599,
-      "sha256": "65eefb4327fd7f35b678e085a121b7399740ef974986ede7dcb745b3a14ceed8"
+      "bytes": 1117,
+      "sha256": "79c096e76779e26ed79f742b07e2aefa0de28832bcca018cfae36894167d4a65"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/LocalLlmClient.cpp",
-      "bytes": 57971,
-      "sha256": "bb0516b1971c924eecf4cf074628a881762bafa886f537e63a92a33b2a78c686"
+      "bytes": 56233,
+      "sha256": "a2966e16539e45f65f3689dd00444ff4d934fcb70fda01c4d744a2eb82691cea"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/LocalLlmClient.h",
-      "bytes": 3571,
-      "sha256": "d17a28ecb59fdd10cb7c23ee3ff86afe0dc22a123592199f3d62f8606f903a38"
+      "bytes": 3456,
+      "sha256": "7b1b482229b219e56fd5fbd0b9d9656a4bb7f37883c79a8297eb56ce48245ee3"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/LocalLlmRuntimeManager.cpp",
-      "bytes": 12563,
-      "sha256": "b759dd19a3e5403e61da7f3a43623d41547fca3ec9d7f7520d83ce3c4a148c1c"
+      "bytes": 9017,
+      "sha256": "15c0cb05627215f3e784e563a52103e99a5510f2ce7ca88a86a80c5e5eb56945"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/LocalLlmRuntimeManager.h",
-      "bytes": 1753,
-      "sha256": "261bbba8d7bfd34bd0480ff5129994d0ed520afd7720ccf42cfd531b9b2b02dd"
+      "bytes": 1392,
+      "sha256": "75bd6cf528546fe528e2a95cf431c7ba59d9c9617aea0a75f4eff56b97830ce3"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/OperationTaskState.cpp",
-      "bytes": 9159,
-      "sha256": "02f44f74df32ad42c042dc12dae1f5845cd4e73a402a863c349bb28b664df9e7"
+      "bytes": 8872,
+      "sha256": "cc8edba497f46abda3a20f0b0a5658e613e8cdd4db303c35f0dc4b1fdb1c5bd3"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/OperationTaskState.h",
-      "bytes": 1326,
-      "sha256": "aef3bd183cfe6e9954938c0fe9307a011bd846e8a45056ef0d5030c81c8f3388"
+      "bytes": 1287,
+      "sha256": "13f684ced6277ca84a578a4f4d04ea9dd184615467158f7babcd09a80c79aa28"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/ProgressUtils.h",
-      "bytes": 24883,
-      "sha256": "70de725585bcbe6b3f2bfc681b2de011e1b6024564be550f883a1b5b20d3d04a"
+      "bytes": 24342,
+      "sha256": "0b5d3f9107070919a2a2758c18e30bfffb65d3acccaef912842c1051f354d188"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/PromptBuilder.cpp",
-      "bytes": 51003,
-      "sha256": "c25f846653dceaa261cec1f33228701501ba53a805aad94e0a507a524a58a253"
+      "bytes": 50503,
+      "sha256": "1eed4e72833ef38766d1bcd3d5ab2da56c6cbaf6584bb928df9b7378849e1b19"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/PromptBuilder.h",
-      "bytes": 1694,
-      "sha256": "19a78b9e8e859e54be39709526c55b3438677befd8cbde5f8bb3a2dfbfda7c2d"
+      "bytes": 1647,
+      "sha256": "2cd2b2764776cc190f7be352d9347114d0607aff23a21bb134044ab4e0bb62a0"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/RoutingLexicon.cpp",
-      "bytes": 9754,
-      "sha256": "60a3a28e1b6c5abb4161e08242aa6b074734e4504987383340d1f283e09296c7"
+      "bytes": 9472,
+      "sha256": "aae0ed9d2faacd1fe57cca24e7c2daa767a432ea4d043d6662c1216a0b5353e0"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/RoutingLexicon.h",
-      "bytes": 647,
-      "sha256": "8b38c7c1b561332b3d7161dee6f0cde042fccd8b6eb07b8a2afdb86063afe015"
+      "bytes": 622,
+      "sha256": "26df85b73caf1eae0121337d8fa8c7b7834bf9a7e5655783c2c16afe4c47e892"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/SkillRegistry.cpp",
-      "bytes": 2679,
-      "sha256": "99de4faee07bac323eaada1c94c26d886cedaaf44046f1d06445ee51d6989512"
+      "bytes": 2605,
+      "sha256": "1082eae159df3a4061ad292bea263d0e761d80fe1bf39199dc99f3c032cfdcc6"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/SkillRegistry.h",
-      "bytes": 764,
-      "sha256": "e955eac1973032031199823f03caf24df7c53df49f0f856e5d7385b93323a2e1"
+      "bytes": 732,
+      "sha256": "8f48426d31819555b7eb317f7774965541a105666756c8eaf14a055c3081d7a1"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ControlCameraSkill.cpp",
-      "bytes": 23793,
-      "sha256": "d966ecd8db95d5a70e5b6483c926f6cab443f643fc3e31af00c7192698ca19fc"
+      "bytes": 23129,
+      "sha256": "fee46444b2c3e392ecf77898665070b277c8c54bcbf3fc6635817ceeeb2fbcfb"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ControlCameraSkill.h",
-      "bytes": 354,
-      "sha256": "097a910c9d6ed9f77f2e7922a6c9b7706d77dc1b1b30ccaebac114ffebc851e6"
+      "bytes": 338,
+      "sha256": "75a13a6bf138c4c7d50ae1e33f5a9db5627dfbf815dcb67d798123d465b40d99"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ControlJobSkill.cpp",
-      "bytes": 27260,
-      "sha256": "682f9ca37ee34c4e47d627233bb180b4eb0a58290da2a801909711670cb988fa"
+      "bytes": 26500,
+      "sha256": "910061d5f97ce807a9b5233e54187c5e18db71a87e32020b5c80b18450df0266"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ControlJobSkill.h",
-      "bytes": 351,
-      "sha256": "01c88fb45fae90d471ca3fe92af5cc66a2a8abe6336630506f55a95e59f63adc"
+      "bytes": 335,
+      "sha256": "fb19c021e0e6b62b5e3b199ed04d39d2b3d0f6671428dc72d2e0fdbbdc8449da"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateCameraAgentSkill.cpp",
-      "bytes": 172945,
-      "sha256": "e3a2b19d3214a2700bb321534e4d5c81198c5843cbdd7802d1cacac158759945"
+      "bytes": 168761,
+      "sha256": "6cdd5fdb258eb3a4635c7ee30e6806bb53239c4cd172564ddc92d10936b4c1f7"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateCameraAgentSkill.h",
-      "bytes": 358,
-      "sha256": "6eeb24efbe54d894a4994b1c49ed8e53de5a88f7f2e23e3cd8f55a3f43f55fa8"
+      "bytes": 342,
+      "sha256": "5989435561b2e39a461dfe3c344e73d81291b3397cad0b73325ca828c54ce4b5"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateCamerasBatchSkill.cpp",
-      "bytes": 36627,
-      "sha256": "e2568b13a9501a9f8e2aa1a14098d8eebff5725fc04a86927111fc85e1195fb4"
+      "bytes": 35568,
+      "sha256": "dbd29cac3c134d8a649490b83dc422f63f9bb06ae5ff27eef1b3f4b6ef634872"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateCamerasBatchSkill.h",
-      "bytes": 359,
-      "sha256": "175fe243d6e857c61d9a97434cdf46485f8a7da132eff2c4ca34f4a6bb4ced1c"
+      "bytes": 343,
+      "sha256": "85b1208cda7d3356ac8e5f259f4383e0200031641a4d70f0f8ddc75e68fbc739"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateCameraSkill.cpp",
-      "bytes": 112357,
-      "sha256": "b0c5a185bba6f48b01a4f49bba51b1996b54a04d326ffe7c4343701969113b6a"
+      "bytes": 109159,
+      "sha256": "b282dcf14f6ca9f31fea0e6307a21d640c60c4a4af4485daa03c131bbf99a1a6"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateCameraSkill.h",
-      "bytes": 385,
-      "sha256": "80060e6a7e5aba51220c023fcaf78ae3f9dc89ff349d5437198b2779c4d5c041"
+      "bytes": 368,
+      "sha256": "27b8fb2dce127d4cbd5ebf368ee795080de0c59528e8a4428f203eb8a9b91872"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateJobSkill.cpp",
-      "bytes": 105284,
-      "sha256": "083a0c50776f2514929ab4fe9562c449d9b6d3222830df6fe6829973bf31838b"
+      "bytes": 102553,
+      "sha256": "5180de0ea7bc52f1fd3827c3f522e74daa2d3a0509b564f45344953c2c3f8cb0"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/CreateJobSkill.h",
-      "bytes": 350,
-      "sha256": "7ba43d6f5e85437808707697932804c446a720c1df0dc2763e092880528ae2c8"
+      "bytes": 334,
+      "sha256": "a9af2bf417221ebf26a4eb71297c1b3d6dfb6b15ef3b80043fb46fc1d7abd9e6"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditCameraAgentSkill.cpp",
-      "bytes": 76571,
-      "sha256": "89cde84b74a281b6d21648e09f86642435fe08dbb34d6b6d9844c98a675f6b9d"
+      "bytes": 75288,
+      "sha256": "a8c07ad4cac935962da9e8290b38d26aaec28a9bb47a9306c86723d92c2af803"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditCameraAgentSkill.h",
-      "bytes": 356,
-      "sha256": "eea1551eb6bdae154c5f7e2b74af6eaba5bf4a32e0435484f66611f2ea342420"
+      "bytes": 340,
+      "sha256": "ac3532b9a431fce366173df11e3c583595daf75588407e554369f6ab42eb033d"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditCamerasBatchSkill.cpp",
-      "bytes": 57900,
-      "sha256": "e6dfcb34b91a6bd916601ba6d5e0eab28c124049a35f3576bb4d566aa514933f"
+      "bytes": 56249,
+      "sha256": "2a3086c9340dc3f6919f01d5f0542dcce40e99c609066bc09fc957616312fb2a"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditCamerasBatchSkill.h",
-      "bytes": 357,
-      "sha256": "d4fd64af984c63c84fe4c21c7187e94924d9195e4f844d4631d3981ff2e8c2dc"
+      "bytes": 341,
+      "sha256": "2ebf82153298c3a8223e97711db017c1073465f9a680378ab5d6304a168066c6"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditCameraSkill.cpp",
-      "bytes": 106623,
-      "sha256": "10c37f29d733f21fb50a90a8f7035a65abe7116779baac274948d00a5a929fcb"
+      "bytes": 103761,
+      "sha256": "2a5421a601f20651214e5c0b073ac3b9e8e1fc24a955ffb294352039c42c65db"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditCameraSkill.h",
-      "bytes": 351,
-      "sha256": "dd89ed85c0198c44f2f919ca0ee9958892a4aad16e16605be9bf3160024dab6b"
+      "bytes": 335,
+      "sha256": "dbcf25fca02ecba6edcaed29f59ba106f7eeaf42e8eb14411507646afb61d1c1"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditJobSkill.cpp",
-      "bytes": 32586,
-      "sha256": "1c4a6fa3fe52662ff4e9b68a6a8852fae4c2fc7855cec7eca5853aab25168c03"
+      "bytes": 31671,
+      "sha256": "d9b3b58d10d4539fcf485deb3a6a809a23a7efc62e84fa65479b21d20093137b"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/EditJobSkill.h",
-      "bytes": 348,
-      "sha256": "a110e280b34ed68ae1433e2c9ea45fc240add96cfe23c3feb1df363e1666d2a0"
+      "bytes": 332,
+      "sha256": "0185715b0d14816253630f5fbea9eb75cdb64f66dbe4b845bab5b8ff8474cefe"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ExplainAppSkill.cpp",
-      "bytes": 33113,
-      "sha256": "7f321d8b13b5af2ebfdec77b54008c1f1da5623705909b1a22025346ad8a20b2"
+      "bytes": 32157,
+      "sha256": "e886f1f144e74f701fc525363e068265cd4b0aad435ae958c153d0d60401717a"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ExplainAppSkill.h",
-      "bytes": 351,
-      "sha256": "c0cc5b7a4eef883b67caa29e695d246d0d6b4059ad5d8b12bfecc51e6775e00a"
+      "bytes": 335,
+      "sha256": "b3eb4bfc5f5d4cee26d7aa32a8369a01d52c6e1f3ac5726bf6ec1f69a47b0dfc"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/GenerateReportSkill.cpp",
-      "bytes": 25509,
-      "sha256": "eab9e79dfbef99bfca307c8ad501e4ea07151cb77ae972cdd615375f1d3cc337"
+      "bytes": 24833,
+      "sha256": "506c5ba74f46bcf40dab49451785c90baddc3d161171c97a069703d502804140"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/GenerateReportSkill.h",
-      "bytes": 355,
-      "sha256": "60ae51f7ed03c3c646d05d02100295551b3dd633b790753871dbf8a8e9e739b2"
+      "bytes": 339,
+      "sha256": "c428c0ecd692e9367fdfdf3a84b1189a5fa70425251546811f436430b99fe2e4"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ReadStateSkill.cpp",
-      "bytes": 52118,
-      "sha256": "2b493f2d9bf6d02c75e33d56b9b2510c190c002e976c8db6af3a8bdedcb82732"
+      "bytes": 50787,
+      "sha256": "4dcf1ed73fd1a97945de2ffdd158d408e148b4c42e821b7c5edf7c97cf0dab39"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ReadStateSkill.h",
-      "bytes": 350,
-      "sha256": "19b8209f81d851364710d589f06a63d8e1210dcfff4e34cefe5f48496b75a34a"
+      "bytes": 334,
+      "sha256": "7ac344b21ff633c5d6b64495d0c4e60c3a1f047ce472f2b4c1faa0a4853f8525"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ScanNetworkSkill.cpp",
-      "bytes": 21808,
-      "sha256": "3a97f9df57071438fd1a8de091f43d441ecfc9b9164fbdff7ce5e9f640d0d720"
+      "bytes": 21191,
+      "sha256": "c0ae5b017bae5495139604494d6edaed39d808ae378918bd5c626c946f4041e0"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/ScanNetworkSkill.h",
-      "bytes": 352,
-      "sha256": "b6f4ae79115976842382bdbbee7a9bc680aadba1a6fa8bc159e14c3c1005668a"
+      "bytes": 336,
+      "sha256": "4db080598d6ed537f24051ccbf6c1bfc3fef0817b361db6004bcad757ddfb769"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/shared/AgentAuthoringShared.cpp",
-      "bytes": 50806,
-      "sha256": "3e4acf8668756bc185a80bf8b6368cccfce346c268cc22b5c28b31f8ef5c5825"
+      "bytes": 49354,
+      "sha256": "32e5ffb58123d7501b5ecf94059107bc8ca5b45ef5345d644c059f3764015b4e"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/shared/AgentAuthoringShared.h",
-      "bytes": 2942,
-      "sha256": "20f450b9c2d6303deced98ab91e976bb243d21d3b4a12aaa83417d79ba3070b4"
+      "bytes": 2863,
+      "sha256": "ddbf6d5bc1c1c934ed0dc12953fbea169a256aa63a19f3cd80400475e7fc1656"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/shared/JobBlueprintShared.cpp",
-      "bytes": 83336,
-      "sha256": "e4c4d9515db39fb6dedf6166e816574d61166ff2f1381355442fb3fb810d0784"
+      "bytes": 81528,
+      "sha256": "8c9864c3397b62315f9ab5e912dbe03b27abbfefde60a97e0260e81d6e6cd13e"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/shared/JobBlueprintShared.h",
-      "bytes": 1346,
-      "sha256": "e49bde2c3fd16bdbf2f37539a492cf83fcdf8908f17f95d7a63132a22b6c33d4"
+      "bytes": 1308,
+      "sha256": "1020ea6054c3ed6d8313934ec7ed7f596a0f5349bfc6e426e737e4af4a77f4c3"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/VideoSearchSkill.cpp",
-      "bytes": 1198,
-      "sha256": "4cb61c4e6d6edde64778cf9710e4b9b95e1f1d7fe71ba0a25c3763758e938816"
+      "bytes": 1157,
+      "sha256": "ff53b2d2b963a6ea5e15f94527973291b3f0eed26d82d70bd6813eadadf10a57"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/skills/VideoSearchSkill.h",
-      "bytes": 352,
-      "sha256": "64bf0682d4054415ffd6432bb135abc8b40db27c22098eab4dc9b0165880e61b"
+      "bytes": 336,
+      "sha256": "05589eee079762d9b6e4c6f1d965fb02fb812c84e74f8507837a06274bfd9145"
     },
     {
       "path": "Perceptrum/Perceptrum/orchestrator/SkillTypes.h",
-      "bytes": 1838,
-      "sha256": "932e40955e5963cbac196678c02e582e005bce468368cc71ab6f44340a7a6eb9"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/orchestrator/tests/LocalAiRuntimeBackendTests.cpp",
-      "bytes": 1449,
-      "sha256": "215c51f4765d18fe3a4876d92ac15d0a731989509a35b7553c1681bc1a2a53d3"
-    },
-    {
-      "path": "Perceptrum/Perceptrum/orchestrator/tests/LocalAiRuntimeBackendTests.vcxproj",
-      "bytes": 2238,
-      "sha256": "4d7cbb43c216a843d0c72a9e0ecc668fefbe64115010ac2365a055e3e3f7bb14"
+      "bytes": 1767,
+      "sha256": "b5752e54a1f3bbebc70eb49d31812f628b83a4b9b7d33e9f240a8168a636a995"
     },
     {
       "path": "Perceptrum/Perceptrum/Perceptrum.cpp",
-      "bytes": 12377,
-      "sha256": "4cc028ce89110502a5228cbea1b1c8de696883e372daed2c70f2345992630fde"
+      "bytes": 11948,
+      "sha256": "082e30fd1e9d5d93666464a70af1d6b24cb2cc31c9a85d9e2ecda7e1d85eae6a"
     },
     {
       "path": "Perceptrum/Perceptrum/Perceptrum.h",
-      "bytes": 39,
-      "sha256": "245ff9031a96ef2ffade37bd506c2cf3e602747e29b80a41cb2be9f3c9691154"
+      "bytes": 36,
+      "sha256": "005051c1e7e6305d567e92b02a84a198201d3479f924b9ff9f49410b67664231"
     },
     {
       "path": "Perceptrum/Perceptrum/Perceptrum.vcxproj",
-      "bytes": 20384,
-      "sha256": "215d13734a71d4cd3ec87bddb56cdcbf3d73d4f6243774da2b54d2213149d091"
+      "bytes": 19782,
+      "sha256": "013962b2758894ba13dff64810af9975cb92201f1a82683040106717e2e0a957"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_common.cpp",
-      "bytes": 13252,
-      "sha256": "31713782a89e068d5cb89657878bd6ad497a19dfab240f36db5d1a54b8961f85"
+      "bytes": 12752,
+      "sha256": "a4449b04e5ce9bcb2bb269061bede57eefee77e5373b170d207a15b31045ca58"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_common.h",
-      "bytes": 917,
-      "sha256": "7b526422bab67266e616950d8170fba2dbfcce730758d6759e4a6beeaea4f98d"
+      "bytes": 887,
+      "sha256": "fb18df380ee85037ad077e3e9ce3ba4156e6f90037f78dd0d077dbd3229159ab"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_process.cpp",
-      "bytes": 18075,
-      "sha256": "e480858bd792f09162d63307760828a0d22d853529fd6f72ffe6f26dad7d6f06"
+      "bytes": 17443,
+      "sha256": "d6269544e532620ab407a495ec222e9c6bd57c07cea20128059af1567a8b4b4a"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_process.h",
-      "bytes": 1415,
-      "sha256": "59c86ca31348ffc962339c150ecb910cba54f58a9299940669d47490ff383616"
+      "bytes": 1359,
+      "sha256": "0c4b5b01c6d89d771dfcf1002068e9ede53e538764bbb44c6d8cd19be1195c23"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_secure_store.cpp",
-      "bytes": 11322,
-      "sha256": "53694c1ddc81fa45c7206d0323275210aaf5e20dfd0f8fd542f43bce03fcaf76"
+      "bytes": 10939,
+      "sha256": "7c52b4b6e63de71de831b73d00d889e42bceac283debc6b6979a2886a175e1fb"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_secure_store.h",
-      "bytes": 656,
-      "sha256": "9b14eec4f29672cfe47922cb7f3017eb3d51759f231d738ff1c490f9f33be191"
+      "bytes": 639,
+      "sha256": "878669717237caf0d2b688c1f707327fae9f92a9daad6c71a271bcddb23ec067"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_shutdown.cpp",
-      "bytes": 2093,
-      "sha256": "788f75eaec9a4340a71b507577ce675f5d08d8442328821d877d01d4c4055846"
+      "bytes": 2004,
+      "sha256": "86cb4c7d2bdf1dc11946faaac6379116e7acbe7ff35df73f404063060eb401c3"
     },
     {
       "path": "Perceptrum/Perceptrum/platform/platform_shutdown.h",
-      "bytes": 500,
-      "sha256": "40bf79b19c9cca01269cf5c2146537a971c6857d2567ad365a7a7a1740b3c7a4"
+      "bytes": 476,
+      "sha256": "2f049f3fd521170a6a92bb9163bad05ac2527c5ee462e8587c3a3bf3aab7e0c4"
     },
     {
       "path": "Perceptrum/Perceptrum/Resource.h",
-      "bytes": 1034,
-      "sha256": "99e528c3c07e7a78006d949842e06dd88f4e25931aed03a4634f9b2c95de247f"
+      "bytes": 997,
+      "sha256": "44136a83ba631a5ab4610a7a1e6895e5ec6a95712af429681fef3252903a2822"
     },
     {
       "path": "Perceptrum/Perceptrum/runtime/BrandingRuntime.cpp",
-      "bytes": 10333,
-      "sha256": "53d42ce30d37b66259a66754a2d5a89cc6f6290152b0407c42af71639eecb37f"
+      "bytes": 10115,
+      "sha256": "0c7fd9d1355230ba2a139f22a8fdac6922f7c9151897ffe11ce9b2503692a1c6"
     },
     {
       "path": "Perceptrum/Perceptrum/runtime/BrandingRuntime.h",
-      "bytes": 8961,
-      "sha256": "ccb3a3fcacd3582e160b810f03a98557e25dbe757703c567a8c8c3c58d7671e0"
+      "bytes": 8779,
+      "sha256": "7690a73a366a026eab39aabb53245f162fd67d40eb008d228764909e60e9704e"
     },
     {
       "path": "Perceptrum/Perceptrum/runtime/HeadlessService.cpp",
-      "bytes": 4301,
-      "sha256": "969334fbcb092307b6d9f97ae989cfb300e798960188f105ed0d65675be40bed"
+      "bytes": 3631,
+      "sha256": "b355d60ec2fd3c954d76ffecd420025acdf5cda1dccc585a0bc6fe29234e93b1"
     },
     {
       "path": "Perceptrum/Perceptrum/runtime/HeadlessService.h",
-      "bytes": 242,
-      "sha256": "cd0be08ad00a0ea275a99775aef9497b8b4ee14a83d1ede40178012a4843eb0f"
+      "bytes": 197,
+      "sha256": "2ef6131be9044dce3b8f6b64d201cad3a218ab4d34480e9985da0762346e95c2"
     },
     {
       "path": "Perceptrum/Perceptrum/targetver.h",
-      "bytes": 313,
-      "sha256": "98488711a351764d005e8c3d3fd40aaed28396870a660c28abd81ac2a53d4b90"
+      "bytes": 307,
+      "sha256": "a81336c05e2659e95984b2b3b4fe64a689f2f966467257284e11c3c6a2b121f1"
     },
     {
       "path": "Perceptrum/PerceptrumCore/PerceptrumCore.vcxproj",
-      "bytes": 13219,
-      "sha256": "bc96f3afa6e1a684a032387507b31034513520fc48f0232987bbac3d63c450bd"
+      "bytes": 12779,
+      "sha256": "3c891b7dbd352c3a21718969e01f550040f655b355ab7e51ef1becfd114b8887"
     },
     {
       "path": "Perceptrum/scripts/copy-msvc-runtime.ps1",
-      "bytes": 4199,
-      "sha256": "3014d2a8efdce2145532cfdcace7a4fc407b10fd3a5a707a4b0b687b1481c581"
+      "bytes": 4070,
+      "sha256": "beff2882874a6fd25e98a0d6ffedf3470c85df8ed0b57b500ef146d4821412bc"
     },
     {
       "path": "Perceptrum/scripts/sync-release-artifacts.ps1",
-      "bytes": 2513,
-      "sha256": "1e8e6f3bdf5509373cb7e574f41ecf90a2e1bf8ceb9bf4f8998d36d24c51cfb2"
+      "bytes": 2435,
+      "sha256": "b89ec6ac6aa2d6ee33947af5033a39ff7ba647416520e9f1d05159a057334919"
     },
     {
       "path": "Perceptrum/vcpkg.json",
-      "bytes": 244,
-      "sha256": "cc741d798e0a1043a72b78dc430b1572f6efdf119468645ac666308f600c88ef"
+      "bytes": 250,
+      "sha256": "3c978865e35a29272b2f5f855f284dba09c2bd3d59889708d16f2385272a5bd9"
     }
   ]
 }

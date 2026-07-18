@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { extname, relative, resolve, sep } from "node:path";
 
-const repository = resolve(process.cwd(), "..");
+const repository = resolve(process.env.PERCEPTRUM_SOURCE_ROOT ?? resolve(process.cwd(), ".."));
 const roots = ["Perceptrum", "DrakonSite", "AppHost"];
 const excludedDirectories = new Set([
   ".git", "node_modules", "bin", "obj", "dist", "build", "x64", "artifacts", "generated",
@@ -27,7 +27,15 @@ async function visit(directory: string): Promise<void> {
   }
 }
 
-for (const root of roots) await visit(resolve(repository, root));
+for (const root of roots) {
+  const sourceRoot = resolve(repository, root);
+  try {
+    await access(sourceRoot);
+  } catch {
+    throw new Error(`Missing ${root} under PERCEPTRUM_SOURCE_ROOT=${repository}`);
+  }
+  await visit(sourceRoot);
+}
 files.sort((left, right) => left.path.localeCompare(right.path));
 const aggregate = createHash("sha256");
 for (const file of files) aggregate.update(`${file.path}\0${file.sha256}\n`);
