@@ -7,9 +7,10 @@ import { createDefaultScenario } from "../src/shared/schemas.js";
 import type { ScenarioRecord } from "../src/shared/types.js";
 import { jsonReport, pdfReport, xlsxReport } from "../src/server/reports.js";
 
-const scenario = createDefaultScenario(25);
-scenario.projectName = "Validação - 25 câmeras";
+const scenario = createDefaultScenario(24);
+scenario.projectName = "Validação - 24 câmeras AiQ";
 scenario.customerName = "Aiquimist QA";
+scenario.cameraGroups[0]!.agents[0]!.model = "aiq-3.7";
 const timestamp = new Date().toISOString();
 const record: ScenarioRecord = {
   id: randomUUID(),

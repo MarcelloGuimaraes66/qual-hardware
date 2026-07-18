@@ -191,13 +191,11 @@ export class SqlitePlannerStore implements PlannerStore {
   }
 
   private seedBundledCatalog(): void {
-    const count = Number((this.database.prepare("SELECT COUNT(*) AS count FROM hardware_catalog").get() as { count: number }).count);
-    if (count > 0) return;
     const insertHardware = this.database.prepare(
-      "INSERT INTO hardware_catalog(id,template_json,updated_at) VALUES(?,?,?)",
+      "INSERT INTO hardware_catalog(id,template_json,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET template_json=excluded.template_json,updated_at=excluded.updated_at",
     );
     const insertQuote = this.database.prepare(
-      "INSERT INTO price_quotes(id,hardware_template_id,quote_json,observed_at) VALUES(?,?,?,?)",
+      "INSERT INTO price_quotes(id,hardware_template_id,quote_json,observed_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET hardware_template_id=excluded.hardware_template_id,quote_json=excluded.quote_json,observed_at=excluded.observed_at",
     );
     this.inTransaction(() => {
       const timestamp = now();

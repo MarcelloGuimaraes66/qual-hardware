@@ -5,7 +5,11 @@ export type WorkloadContractVersion =
 
 export type Market = "BR" | "US" | "DE";
 export type Currency = "BRL" | "USD" | "EUR";
-export type InfrastructureKind = "workstation" | "rack" | "either";
+export type InfrastructureKind = "laptop" | "mini_pc" | "workstation" | "rack" | "either";
+export type OperatingSystemFamily = "windows" | "ubuntu" | "macos";
+export type CpuVendor = "intel" | "amd" | "apple";
+export type GpuVendor = "nvidia" | "amd" | "intel" | "apple";
+export type MemoryArchitecture = "dedicated" | "shared" | "unified";
 export type Codec = "h264" | "h265";
 export type DecodeMode = "cpu" | "gpu";
 export type InputType = "video" | "image";
@@ -80,8 +84,12 @@ export interface ConcurrentWorkloads {
 
 export interface DesignConstraints {
   infrastructureKind: InfrastructureKind;
-  preferredCpuVendors: Array<"intel" | "amd">;
-  preferredGpuVendors: Array<"nvidia" | "amd">;
+  preferredCpuVendors: CpuVendor[];
+  preferredGpuVendors: GpuVendor[];
+  /** Omitted on scenarios saved before desktop catalog 2026-07-17.3. */
+  operatingSystem: "auto" | OperatingSystemFamily | undefined;
+  /** Restricts sizing to one existing or preselected catalog machine. */
+  requiredHardwareTemplateId: string | null | undefined;
   maxNodes: number | null;
   budget: number | null;
   requireEcc: boolean;
@@ -139,15 +147,21 @@ export interface HardwareNodeTemplate {
   name: string;
   kind: Exclude<InfrastructureKind, "either">;
   generation: "current" | "previous" | "two_generations_back";
-  cpuVendor: "intel" | "amd";
+  cpuVendor: CpuVendor;
   cpuModel: string;
   physicalCores: number;
+  /** Conservative sustained factor until a matching Perceptrum benchmark replaces it. */
+  sustainedComputeFactor?: number;
+  /** Explicit pipeline limits for thermally/power-constrained computers. */
+  ffmpegProcessesPerSecondCapacity?: number;
+  inferenceRequestsPerSecondCapacity?: number;
   motherboard: string;
   ramGb: number;
   ecc: boolean;
-  gpuVendor: "nvidia" | "amd";
+  gpuVendor: GpuVendor;
   gpuModel: string;
   gpuCount: number;
+  memoryArchitecture: MemoryArchitecture;
   gpuVramGbTotal: number;
   localAiqSlots: number;
   supportsPerceptrumGpuDecode: boolean;
@@ -159,6 +173,7 @@ export interface HardwareNodeTemplate {
   powerSupply: string;
   cooling: string;
   chassis: string;
+  operatingSystemFamily: OperatingSystemFamily;
   windowsEdition: string;
   expansionScore: number;
   sources: HardwareSource[];
@@ -202,6 +217,8 @@ export interface CatalogStatus {
 export interface PriceSummary {
   currency: Currency;
   confidence: "none" | "low" | "medium";
+  basis: "market_quotes" | "reference_estimate" | "quotation_required";
+  observedAt: string | null;
   knownSubtotal: number | null;
   minimum: number | null;
   median: number | null;
@@ -209,6 +226,19 @@ export interface PriceSummary {
   quotationRequired: boolean;
   quoteCount: number;
   staleQuoteCount: number;
+  sourceUrls: string[];
+  componentEstimates: ComponentCostEstimate[];
+  exclusions: string[];
+}
+
+export interface ComponentCostEstimate {
+  componentId: "cpu" | "motherboard" | "ram" | "gpu" | "storage" | "network" | "power_cooling_chassis" | "integration";
+  component: string;
+  description: string;
+  quantityPerNode: number;
+  unitAmount: number;
+  perNodeAmount: number;
+  projectAmount: number;
   sourceUrls: string[];
 }
 

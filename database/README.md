@@ -3,8 +3,7 @@
 Qual Hardware usa SQLite e cria sozinho um arquivo chamado obrigatoriamente `qual-hardware.sqlite`. Não há servidor de banco, usuário, senha ou instalação adicional.
 
 - Desktop Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite`
-- Desenvolvimento: `data/qual-hardware.sqlite`
-- Docker em um único host: `/data/qual-hardware.sqlite`, no volume `qual_hardware_data`
+- Desenvolvimento desktop: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite`
 
 O aplicativo rejeita qualquer outro nome de arquivo. Essa barreira impede que um banco do Perceptrum, Drakon ou outro produto seja aberto por engano.
 
@@ -12,6 +11,6 @@ O arquivo guarda apenas projetos do Qual Hardware, recomendações, metadados/re
 
 ## Confiabilidade e migração
 
-O esquema está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A aplicação aplica atualizações compatíveis ao abrir e recusa uma versão de banco mais nova do que o executável entende. O modo WAL permite que a API e o worker compartilhem o arquivo no mesmo computador.
+O esquema está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A aplicação aplica atualizações compatíveis ao abrir e recusa uma versão de banco mais nova do que o executável entende. O modo WAL atende às operações internas da janela desktop.
 
-SQLite não deve ser colocado em um compartilhamento SMB/NFS nem usado por contêineres em hosts diferentes. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.
+SQLite não deve ser colocado em um compartilhamento SMB/NFS. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.

@@ -10,13 +10,12 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx watch src/server/index.ts",
-    "dev:web": "vite",
-    "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "npm run desktop:run",
+    "build": "npm run clean && npm run typecheck && vite build && tsc -p tsconfig.server.json",
     "desktop:run": "npm run build && electron .",
     "desktop:package": "npm run build && electron-builder --win portable --x64",
-    "start": "node dist/server/server/index.js",
-    "worker": "tsx src/server/worker.ts",
+    "start": "npm run desktop:run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -59,6 +58,7 @@
     },
     "files": [
       "dist/**/*",
+      "!dist/server/server/worker.js",
       "contracts/**/*",
       "database/**/*",
       "package.json"

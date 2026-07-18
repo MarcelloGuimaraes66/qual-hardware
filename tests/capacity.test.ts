@@ -14,6 +14,8 @@ describe("capacity engine", () => {
       expect(recommendation.primary.allocations.filter((node) => node.role === "active").every((node) =>
         Object.values(node.utilization).every((value) => value <= limit + 1e-8))).toBe(true);
       expect(recommendation.primary.price.quotationRequired).toBe(true);
+      expect(recommendation.primary.price.median).toBeGreaterThan(0);
+      expect(recommendation.primary.price.componentEstimates).toHaveLength(8);
       expect(recommendation.confidence).toBe("estimated");
     }
     const resilient = recommendations.find((item) => item.policy === "n_plus_one")!;
@@ -36,6 +38,21 @@ describe("capacity engine", () => {
     expect(demand.ramGb).toBeGreaterThan(baseline.ramGb);
     expect(demand.gpuVramGb).toBeGreaterThan(baseline.gpuVramGb);
     expect(demand.inferenceRequestsPerSecond).toBeGreaterThan(baseline.inferenceRequestsPerSecond);
+  });
+
+  it("produces three differentiated priced designs for the reported 24-camera AiQ workload", () => {
+    const scenario = createDefaultScenario(24);
+    scenario.cameraGroups[0]!.agents[0]!.model = "aiq-3.7";
+    const recommendations = buildRecommendations("00000000-0000-4000-8000-000000000024", 1, scenario, HARDWARE_CATALOG, []);
+    expect(new Set(recommendations.map((item) => item.primary.hardware.id)).size).toBe(3);
+    for (const recommendation of recommendations) {
+      const price = recommendation.primary.price;
+      expect(price.basis).toBe("reference_estimate");
+      expect(price.median).toBeGreaterThan(0);
+      expect(price.componentEstimates).toHaveLength(8);
+      expect(Math.round(price.componentEstimates.reduce((sum, component) => sum + component.projectAmount, 0) * 100) / 100).toBe(price.median);
+      expect(price.sourceUrls.length).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it("does not let legacy retention or RAID settings change compute sizing", () => {
@@ -100,7 +117,7 @@ describe("capacity engine", () => {
     expect(small.primary.hardware.kind).toBe("workstation");
     expect(large.primary.hardware.kind).toBe("rack");
     expect(large.primary.hardware.windowsEdition).toContain("Ubuntu Server");
-    expect(large.primary.warnings).toContain("ubuntu_server_target_requires_linux_compatible_perceptrum_build_and_benchmark");
+    expect(large.primary.warnings).toContain("ubuntu_target_requires_matching_perceptrum_build_and_benchmark");
   });
 
   it("removes gross price outliers and reports source confidence", () => {
@@ -113,10 +130,48 @@ describe("capacity engine", () => {
     const quotes = [quote("00000000-0000-4000-8000-000000000011", "one", 1000), quote("00000000-0000-4000-8000-000000000012", "two", 1100), quote("00000000-0000-4000-8000-000000000013", "three", 100000)];
     const recommendation = buildRecommendations("00000000-0000-4000-8000-000000000001", 1, scenario, HARDWARE_CATALOG, quotes)[0]!;
     expect(recommendation.primary.price.confidence).toBe("medium");
+    expect(recommendation.primary.price.basis).toBe("market_quotes");
+    expect(recommendation.primary.price.quotationRequired).toBe(false);
     expect(recommendation.primary.price.maximum).toBe(1100);
   });
 
   it("contains current, previous, and two-generation-back reference designs", () => {
     expect(new Set(HARDWARE_CATALOG.map((item) => item.generation))).toEqual(new Set(["current", "previous", "two_generations_back"]));
+  });
+
+  it("considers low-cost laptops for CPU-decode remote-model scenarios", () => {
+    const scenario = createDefaultScenario(4);
+    scenario.cameraGroups[0]!.decodeMode = "cpu";
+    scenario.cameraGroups[0]!.agents[0]!.inputType = "image";
+    const recommendations = buildRecommendations("00000000-0000-4000-8000-000000000041", 1, scenario, HARDWARE_CATALOG, []);
+    expect(recommendations[0]!.primary.hardware.kind).toBe("laptop");
+    expect(recommendations[0]!.primary.price.median).toBeLessThan(recommendations[1]!.primary.price.median!);
+  });
+
+  it("sizes the exact user-tested ASUS instead of silently replacing it", () => {
+    const scenario = createDefaultScenario(4);
+    scenario.cameraGroups[0]!.decodeMode = "cpu";
+    scenario.cameraGroups[0]!.agents[0]!.inputType = "image";
+    scenario.constraints.operatingSystem = "ubuntu";
+    scenario.constraints.infrastructureKind = "laptop";
+    scenario.constraints.requiredHardwareTemplateId = "laptop-vivobook-s16-285h-32gb-user";
+    const recommendations = buildRecommendations("00000000-0000-4000-8000-000000000042", 1, scenario, HARDWARE_CATALOG, []);
+    expect(recommendations.every((item) => item.primary.hardware.id === "laptop-vivobook-s16-285h-32gb-user")).toBe(true);
+    expect(recommendations[0]!.primary.maximumAdditionalCameras).toBeGreaterThan(0);
+    expect(recommendations[0]!.primary.warnings).toEqual(expect.arrayContaining([
+      "laptop_sustained_thermal_and_ac_power_benchmark_required",
+      "wired_ethernet_adapter_required_for_production_rtsp",
+    ]));
+  });
+
+  it("offers distinct Apple Silicon designs only when macOS is explicitly selected", () => {
+    const scenario = createDefaultScenario(4);
+    scenario.cameraGroups[0]!.decodeMode = "cpu";
+    scenario.cameraGroups[0]!.agents[0]!.inputType = "image";
+    scenario.constraints.operatingSystem = "macos";
+    const recommendations = buildRecommendations("00000000-0000-4000-8000-000000000043", 1, scenario, HARDWARE_CATALOG, []);
+    expect(recommendations.every((item) => item.primary.hardware.operatingSystemFamily === "macos")).toBe(true);
+    expect(new Set(recommendations.map((item) => item.primary.hardware.id)).size).toBe(3);
+    expect(recommendations.every((item) => item.primary.warnings.includes("macos_perceptrum_port_and_matching_benchmark_required"))).toBe(true);
   });
 });
