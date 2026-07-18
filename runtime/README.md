@@ -1,6 +1,14 @@
-# Isolated Perceptrum benchmark runner
+# Legacy isolated Perceptrum benchmark runner
 
-This runner is intentionally Windows-only. The Qual Hardware desktop can generate its versioned benchmark manifest on Windows, macOS and Ubuntu, but execution must be transferred to a Windows laboratory with the Perceptrum executable and PowerShell runner. A native macOS/Linux runner is a future T4 project and is not emulated by this desktop refactor.
+This Windows-only PowerShell runner is preserved for compatibility and
+historical evidence. It is no longer the operator-facing capacity workflow.
+
+Use **Calibração de capacidade** in Qual Hardware to export
+`qual-hardware-calibration-plan/1.0.0`, then run it from **Configurações >
+Calibração local** in the native Perceptrum desktop on macOS, Windows or Ubuntu.
+That current flow is local/offline, uses synthetic MediaMTX RTSP plus real
+AiQ/Qwen, and returns `qual-hardware-local-calibration/1.0.0` without a callback
+to a random port on another computer.
 
 `Invoke-PerceptrumBenchmark.ps1` launches the real Perceptrum executable with `PERCEPTRUM_BENCHMARK_MODE=1`, samples the complete process tree, reads Open Monitor's private JSONL telemetry, collects NVIDIA GPU/VRAM/NVDEC data, and uploads aggregate metrics with the manifest's one-use challenge.
 

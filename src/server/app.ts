@@ -4,12 +4,20 @@ import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { z } from "zod";
 import { buildRecommendations, CapacityError } from "../engine/capacity.js";
-import { benchmarkMetricsSchema, scenarioCreateSchema, scenarioUpdateSchema } from "../shared/schemas.js";
-import type { BenchmarkMetrics, CapacityRecommendation } from "../shared/types.js";
+import { buildCapacityPredictions, createCalibrationPlan } from "../engine/calibration.js";
+import {
+  benchmarkMetricsSchema,
+  calibrationPlanRequestSchema,
+  localCalibrationRunSchema,
+  scenarioCreateSchema,
+  scenarioUpdateSchema,
+} from "../shared/schemas.js";
+import type { BenchmarkMetrics, CapacityRecommendation, LocalCalibrationRun } from "../shared/types.js";
+import type { HardwareNodeTemplate } from "../shared/types.js";
 import { createBenchmarkManifest, evidenceValidatesRecommendation, nonceMatches, validateBenchmark } from "./benchmark.js";
 import { CatalogUpdateService } from "./catalogUpdates.js";
 import { jsonReport, pdfReport, xlsxReport } from "./reports.js";
-import { findForbiddenBenchmarkData, safeError } from "./security.js";
+import { findForbiddenBenchmarkData, findForbiddenCalibrationData, safeError } from "./security.js";
 import { RevisionConflictError, type PlannerStore } from "./store.js";
 
 const manifestRequestSchema = z.object({
@@ -23,6 +31,34 @@ const catalogConfigurationSchema = z.object({
   publicKeyPem: z.string().min(1).max(16_384),
 });
 const reportPolicies = ["minimum", "recommended", "n_plus_one"] as const;
+
+function normalizedHardwareModel(value: string): string {
+  return value.toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(?:r|tm|processor|graphics|integrated|generation|gpu)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function fingerprintMatchesTemplate(run: LocalCalibrationRun, template: HardwareNodeTemplate): boolean {
+  const cpu = normalizedHardwareModel(run.fingerprint.cpuModel);
+  const expectedCpu = normalizedHardwareModel(template.cpuModel);
+  const gpu = normalizedHardwareModel(run.fingerprint.gpuModel);
+  const expectedGpu = normalizedHardwareModel(template.gpuModel);
+  const cpuMatches = cpu.includes(template.cpuVendor) && (cpu.includes(expectedCpu) || expectedCpu.includes(cpu));
+  const gpuMatches = gpu.includes(template.gpuVendor) && (gpu.includes(expectedGpu) || expectedGpu.includes(gpu));
+  return cpuMatches && gpuMatches && run.fingerprint.formFactor === template.kind;
+}
+
+async function refreshPredictions(store: PlannerStore) {
+  const predictions = buildCapacityPredictions(
+    await store.getCatalog(),
+    await store.listCalibrationRuns(),
+    await store.listBenchmarkObservations(),
+  );
+  await store.savePredictions(predictions);
+  return predictions;
+}
 
 function applicationResourcePath(...segments: string[]): string {
   const root = process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
@@ -59,7 +95,9 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
   const app = new Hono();
   app.use("/api/*", async (context, next) => {
     const length = Number(context.req.header("content-length") ?? "0");
-    const maximumLength = context.req.path === "/api/catalog/import" ? 10_500_000 : 2_000_000;
+    const maximumLength = context.req.path === "/api/catalog/import" ||
+      context.req.path === "/api/evidence/import" || context.req.path === "/api/calibrations/import"
+      ? 10_500_000 : 2_000_000;
     if (length > maximumLength) return context.json({ error: "payload_too_large" }, 413);
     context.header("Cache-Control", "no-store");
     context.header("X-Content-Type-Options", "nosniff");
@@ -68,7 +106,7 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
 
   app.get("/api/health", (context) => context.json({ status: "ok", storage: store.storageKind }));
   app.get("/api/contract", async (context) => {
-    const file = applicationResourcePath("contracts", "perceptrum-workload-v1.json");
+    const file = applicationResourcePath("contracts", "perceptrum-workload-v2.json");
     return context.json(JSON.parse(await readFile(file, "utf8")) as unknown);
   });
   app.get("/api/scenarios", async (context) => context.json(await store.listScenarios()));
@@ -80,7 +118,8 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
       if (!scenario) return context.json({ error: "scenario_not_found", id }, 404);
       const stored = (await store.listRecommendations(id)).filter((item) => item.scenarioRevision === scenario.revision);
       const recommendations = stored.length ? stored : buildRecommendations(
-        id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false, catalogUpdates.status.catalogVersion);
+        id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
+        catalogUpdates.status.catalogVersion, await refreshPredictions(store));
       comparisons.push({ scenario, recommendations });
     }
     return context.json({ schemaVersion: "capacity-scenario-comparison/1.0.0", comparisons });
@@ -105,7 +144,8 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
     const scenario = await store.getScenario(context.req.param("id"));
     if (!scenario) return context.json({ error: "scenario_not_found" }, 404);
     const recommendations = buildRecommendations(
-      scenario.id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false, catalogUpdates.status.catalogVersion);
+      scenario.id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
+      catalogUpdates.status.catalogVersion, await refreshPredictions(store));
     const withEvidence = currentEvidence(recommendations, await store.listBenchmarkEvidence(scenario.id, scenario.revision));
     await store.saveRecommendations(withEvidence);
     return context.json(withEvidence, 201);
@@ -133,6 +173,57 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
       return context.json({ error: safeError(error) }, 422);
     }
   });
+
+  app.get("/api/calibrations", async (context) => context.json(await store.listCalibrationRuns()));
+  app.get("/api/predictions", async (context) => context.json(await store.listPredictions()));
+  app.get("/api/evidence", async (context) => context.json(await store.listBenchmarkObservations()));
+  app.get("/api/calibrations/status", async (context) => context.json({
+    schemaVersion: "qual-hardware-calibration-status/1.0.0",
+    calibrationRuns: (await store.listCalibrationRuns()).length,
+    publicObservations: (await store.listBenchmarkObservations()).length,
+    predictions: (await store.listPredictions()).length,
+    localOnly: true,
+    inferenceProvider: "aiq_local",
+  }));
+  app.post("/api/calibrations/plans", async (context) => {
+    const request = calibrationPlanRequestSchema.parse(await context.req.json());
+    const recommendation = await store.getRecommendation(request.recommendationId);
+    if (!recommendation) return context.json({ error: "recommendation_not_found" }, 404);
+    const scenario = await store.getScenario(recommendation.scenarioId);
+    if (!scenario || scenario.revision !== recommendation.scenarioRevision) {
+      return context.json({ error: "recommendation_revision_is_not_current" }, 409);
+    }
+    if (request.targetHardwareTemplateId && !(await store.getCatalog()).some((item) => item.id === request.targetHardwareTemplateId)) {
+      return context.json({ error: "calibration_hardware_not_in_catalog" }, 422);
+    }
+    return context.json(createCalibrationPlan(scenario.scenario, request.mode, request.targetHardwareTemplateId), 201);
+  });
+  app.post("/api/calibrations/import", async (context) => {
+    const raw = await context.req.json();
+    const findings = findForbiddenCalibrationData(raw);
+    if (findings.length) return context.json({ error: "privacy_contract_violation", findings }, 422);
+    const run = localCalibrationRunSchema.parse(raw) as LocalCalibrationRun;
+    if (run.fingerprint.hardwareTemplateId) {
+      const target = (await store.getCatalog()).find((item) => item.id === run.fingerprint.hardwareTemplateId);
+      if (!target) return context.json({ error: "calibration_hardware_not_in_catalog" }, 422);
+      if (!fingerprintMatchesTemplate(run, target)) {
+        return context.json({ error: "calibration_hardware_fingerprint_mismatch", targetHardwareTemplateId: target.id }, 422);
+      }
+    }
+    await store.saveCalibrationRun(run);
+    const predictions = await refreshPredictions(store);
+    return context.json({ run, predictions }, 201);
+  });
+  app.post("/api/evidence/import", async (context) => {
+    try {
+      const snapshot = await catalogUpdates.importSignedEvidenceSnapshot(await context.req.text());
+      const predictions = await refreshPredictions(store);
+      return context.json({ snapshot, predictions }, 201);
+    } catch (error) {
+      return context.json({ error: safeError(error) }, 422);
+    }
+  });
+  app.post("/api/predictions/recalculate", async (context) => context.json(await refreshPredictions(store), 201));
 
   app.post("/api/benchmarks/manifests", async (context) => {
     const request = manifestRequestSchema.parse(await context.req.json());

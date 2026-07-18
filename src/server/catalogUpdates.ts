@@ -3,6 +3,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { HARDWARE_CATALOG, HARDWARE_CATALOG_GENERATED_AT, HARDWARE_CATALOG_VERSION, SEED_PRICE_QUOTES } from "../engine/catalog.js";
 import type { CatalogStatus, HardwareNodeTemplate, PriceQuote } from "../shared/types.js";
+import type { EvidenceCatalogSnapshot } from "../shared/types.js";
+import { evidenceCatalogSnapshotSchema } from "../shared/schemas.js";
 import type { PlannerStore } from "./store.js";
 
 const MAX_SNAPSHOT_BYTES = 10_000_000;
@@ -203,6 +205,22 @@ export class CatalogUpdateService {
     await this.apply(snapshot.payload, "imported");
     await this.writeCache(raw);
     return this.status;
+  }
+
+  async importSignedEvidenceSnapshot(raw: string): Promise<EvidenceCatalogSnapshot> {
+    if (!this.publicKeyPem) throw new Error("catalog_verification_key_not_configured");
+    if (Buffer.byteLength(raw, "utf8") > MAX_SNAPSHOT_BYTES) throw new Error("evidence_snapshot_too_large");
+    const envelope = JSON.parse(raw) as unknown;
+    if (!isRecord(envelope) || !isRecord(envelope.payload) || typeof envelope.signature !== "string") {
+      throw new Error("invalid_evidence_envelope");
+    }
+    const payload = evidenceCatalogSnapshotSchema.parse(envelope.payload) as EvidenceCatalogSnapshot;
+    const signature = Buffer.from(envelope.signature, "base64");
+    if (!signature.length || !verify(null, Buffer.from(JSON.stringify(payload), "utf8"), this.publicKeyPem, signature)) {
+      throw new Error("invalid_evidence_signature");
+    }
+    await this.store.upsertBenchmarkObservations(payload.observations);
+    return payload;
   }
 
   private updateConfigurationStatus(): void {

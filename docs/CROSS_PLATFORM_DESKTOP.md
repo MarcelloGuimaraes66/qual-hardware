@@ -20,7 +20,7 @@ Build each platform on its native operating system. The project intentionally do
 | Ubuntu 24.04 x64 | AppImage | `release/Qual-Hardware-${version}-linux-x64.AppImage` |
 | Ubuntu 24.04 x64 | Debian package | `release/qual-hardware_${version}_amd64.deb` |
 
-`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens that application with a temporary user directory and proves its runtime, 14-item catalog, Windows/Ubuntu/macOS recommendation targets, API, calculations, reports, single-instance protection and persistence.
+`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens that application with a temporary user directory and proves its runtime, 21-item catalog, Windows/Ubuntu/macOS recommendation targets, API, calculations, reports, single-instance protection and persistence.
 
 ## Installation and first launch
 
@@ -69,7 +69,7 @@ On Ubuntu, use `xvfb-run --auto-servernum npm run desktop:smoke` in headless env
 ### Windows 11 x64
 
 - Compare the data path printed by the current portable and the candidate; any difference blocks merge.
-- Open the portable, inspect all 14 catalog entries, calculate Windows and macOS target scenarios, import a signed catalog, export PDF/XLSX/JSON and restart.
+- Open the portable, inspect all 21 bundled catalog entries, calculate Windows and macOS target scenarios, import signed catalog/evidence snapshots, export PDF/XLSX/JSON and restart.
 - Confirm persisted data, single-instance focus behavior and complete exit after closing the window.
 
 ### macOS 26 arm64
@@ -95,6 +95,11 @@ For all systems, verify that only loopback is listening, the package runs withou
 - **Ubuntu has no display in CI:** run the smoke command under Xvfb; still complete the separate GNOME/Wayland check.
 - **Database path differs on Windows:** stop the release. Do not copy or move the database automatically; restore path compatibility in code/configuration.
 
-## Benchmark boundary
+## Local calibration
 
-Manifest generation is supported in all three desktops. `runtime/Invoke-PerceptrumBenchmark.ps1` remains an external Windows laboratory component. Native benchmark execution on macOS/Linux requires a separate T4 project and matching Perceptrum executables.
+The same `.qhplan.json`/`.qhcal.json` protocol works with the native Perceptrum
+desktop on macOS, Windows and Ubuntu. The runner packages MediaMTX, FFmpeg and
+ffprobe, uses the local AiQ/Qwen service and accepts loopback only. macOS is
+homologated in this run; Windows and Ubuntu remain subject to native CI plus
+future physical validation. The old PowerShell benchmark is retained only as a
+legacy laboratory path.

@@ -2,7 +2,7 @@
 
 ## Project identity
 
-- Repository: `perceptrum_desktop_aspp`
+- Repository: `qual-hardware`
 - Product: standalone **Qual Hardware** specification calculator
 - Process authority: Archon global configuration; no repository-local Archon memory was available when this project was created.
 - Risk: T4, because this adds persistence, hardware-cost calculations, background collection and a benchmark trust boundary.
@@ -11,7 +11,7 @@
 
 1. Existing Perceptrum camera, Jobs, chat, authentication and deployment flows remain unchanged.
 2. Qual Hardware never receives video, still images, RTSP URLs, RTSP credentials or model API keys.
-3. A recommendation is `validated` only after a matching benchmark passes the documented validation gate.
+3. `validated_local` means that exact computer ran the local Perceptrum calibration; extrapolated machines are never labeled physically validated.
 4. The effective backend execution contract wins over UI-only combinations.
 5. Every displayed price carries source URL, currency, condition and observation time; otherwise the component requires a quotation.
 6. No code in this project can deploy to `/var/www/drakonsite`, operate `drakonsite-backend`, or use port `4999`.
@@ -20,7 +20,7 @@
 
 ## Blast radius and change budget
 
-- Allowed: the new `qual-hardware` project and the isolated benchmark adapter in the desktop runtime.
+- Allowed: this `qual-hardware` project and the isolated local-calibration adapter in the Perceptrum desktop runtime.
 - Excluded: Perceptrum packaging/distribution, production deployment scripts, normal camera bootstrap, command routing, billing and account authentication.
 - Change budget: targeted redesign in the new project; minimal additive integration in Perceptrum.
 
@@ -29,19 +29,20 @@
 | Surface / recommendation target | Windows | macOS | Linux |
 | --- | --- | --- | --- |
 | Qual Hardware desktop | Windows 11 x64 | macOS 26 arm64 | Ubuntu 24.04 x64 |
-| Perceptrum computer workload being sized | supported | opt-in, port + benchmark required | user-observed on ASUS; matching build + benchmark required |
+| Perceptrum computer workload being sized | supported | opt-in; native build + local calibration | native build + local calibration required |
 | Planned Perceptrum rack workload being sized | conditional | not applicable | matching server build + benchmark required |
-| Benchmark manifest generation | supported | supported | supported |
-| Active benchmark runner | Windows-only | Windows-only external component | Windows-only external component |
+| Local calibration-plan generation | supported | supported | supported |
+| Perceptrum local calibration runner | native package/CI | validated on this Mac | native package/CI |
 
 ## Data flow
 
 1. A consultant defines camera groups and one or more agents per group.
 2. The engine normalizes the scenario against the versioned Perceptrum workload contract.
-3. Demand is calculated for CPU, RAM, GPU compute, VRAM, decoder capacity, LAN and Internet. Disk metrics remain observable in benchmarks, but storage capacity and throughput do not participate in node sizing.
+3. Demand is calculated for RTSP receive/decode, BGR processing, encode, CPU, RAM, GPU inference, VRAM/unified memory, disk read/write/capacity, LAN, queues and sustained thermals. RTSP FPS and AiQ inference FPS remain independent.
 4. Candidate hardware nodes are filtered by platform and runtime compatibility and evaluated with multidimensional compute/network allocation. Laptops and mini PCs compete for small CPU-decode/remote-model loads. Apple is opt-in; integrated/shared memory is never counted as dedicated NVIDIA VRAM. Every BOM still includes a modest NVMe workspace for the operating system and temporary inference files.
-5. The service emits minimum, recommended and N+1 designs, each with balanced, lower-CAPEX and expansion alternatives.
-6. A one-time benchmark manifest can be exported. The isolated Windows runner executes it locally and returns aggregate metrics.
+5. The service emits minimum, recommended and N+1 designs, each with up to six compatible cost-ordered machines and Intel/AMD/OEM diversity after safety filtering.
+6. A versioned local plan is exported. Perceptrum uses synthetic loopback RTSP and the real local AiQ/Qwen pipeline and returns aggregate `.qhcal.json` evidence.
+7. Signed public stage observations scale physical anchors by a per-stage rule of three; the most conservative anchor and bottleneck win, followed by 20/30/40% margins and leave-one-out error checks.
 
 ## Security model
 

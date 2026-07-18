@@ -3,6 +3,7 @@ import { HARDWARE_CATALOG_VERSION } from "./catalog.js";
 import { REFERENCE_FX_FROM_USD, referenceCostProfile } from "./referenceCosts.js";
 import type {
   AgentLoad,
+  CapacityPrediction,
   CapacityRecommendation,
   CapacityScenario,
   EffectiveAgentLoad,
@@ -33,16 +34,12 @@ const RESOURCE_KEYS: Array<keyof ResourceDemand> = [
   "inferenceRequestsPerSecond",
 ];
 
-// Disk telemetry remains in exports for benchmark observability, but storage capacity and
-// throughput do not determine node count, hardware selection, headroom or bottlenecks.
-const SIZING_RESOURCE_KEYS = RESOURCE_KEYS.filter((key) =>
-  key !== "diskCapacityTb" && key !== "diskWriteMbps",
-);
+const SIZING_RESOURCE_KEYS = RESOURCE_KEYS;
 
 const POLICY_HEADROOM: Record<RecommendationPolicy, number> = {
-  minimum: 15,
-  recommended: 30,
-  n_plus_one: 30,
+  minimum: 20,
+  recommended: 40,
+  n_plus_one: 40,
 };
 
 export class CapacityError extends Error {
@@ -83,15 +80,21 @@ function scaleDemand(demand: ResourceDemand, scale: number): ResourceDemand {
 
 export function normalizeAgent(agent: AgentLoad): EffectiveAgentLoad {
   const normalized: EffectiveAgentLoad = { ...agent, features: { ...agent.features }, normalizedFields: [] };
+  if (normalized.inputType === "video" && normalized.modelFps > 5) {
+    normalized.normalizedFields.push(`modelFps:${normalized.modelFps}→5`);
+    normalized.modelFps = 5;
+  }
   if (agent.packaging === "mosaic_3x3") {
     normalized.packaging = "mosaic_2x2";
     normalized.normalizedFields.push("packaging:mosaic_3x3→mosaic_2x2");
   }
   if (agent.model === "aiq-3.7" || agent.model === "aiq-3.7-max") {
     if (normalized.inputType !== "video") normalized.normalizedFields.push("inputType:image→video");
-    if (normalized.runEverySeconds !== 10) normalized.normalizedFields.push(`runEverySeconds:${normalized.runEverySeconds}→10`);
+    if (normalized.modelFps !== 1) normalized.normalizedFields.push(`modelFps:${normalized.modelFps}→1`);
+    if (normalized.runEverySeconds !== 60) normalized.normalizedFields.push(`runEverySeconds:${normalized.runEverySeconds}→60`);
     normalized.inputType = "video";
-    normalized.runEverySeconds = 10;
+    normalized.modelFps = 1;
+    normalized.runEverySeconds = 60;
   }
   if (agent.model === "opencv-portal-counter") {
     normalized.inputType = "video";
@@ -112,7 +115,10 @@ interface GroupDemand {
   warnings: string[];
 }
 
-function calculateCameraGroupDemand(group: CapacityScenario["cameraGroups"][number]): GroupDemand {
+function calculateCameraGroupDemand(
+  group: CapacityScenario["cameraGroups"][number],
+  storageSizingEnabled: boolean,
+): GroupDemand {
   const sourceMegapixels = (group.source.width * group.source.height) / 1_000_000;
   const normalized1080p = sourceMegapixels / 2.0736;
   const codecFactor = group.source.codec === "h265" ? 1.35 : 1;
@@ -190,10 +196,14 @@ function calculateCameraGroupDemand(group: CapacityScenario["cameraGroups"][numb
 
   const sampled1080p30 = normalized1080p * (activeCaptureFps / 30);
   demand.cpuCores += sampled1080p30 * 0.28;
-  // Perceptrum inference media is temporary and alert media is sparse. Legacy storage
-  // fields are intentionally ignored so they cannot inflate the compute recommendation.
-  demand.diskWriteMbps = 0;
-  demand.diskCapacityTb = 0;
+  // The local pipeline writes rolling source clips even when long-term retention is disabled.
+  // Disk units are MB/s and decimal TB to match manufacturer SSD specifications.
+  if (storageSizingEnabled) {
+    demand.diskWriteMbps = (group.source.bitrateMbps / 8) * 1.25;
+    const effectiveRetentionDays = group.storage.storeVideo ? Math.max(1, group.storage.retentionDays || 0) : 1;
+    const raidFactor = group.storage.storeVideo ? group.storage.raidFactor : 1;
+    demand.diskCapacityTb = (group.source.bitrateMbps * 86_400 * effectiveRetentionDays * raidFactor) / 8_000_000;
+  }
 
   return { groupId: group.id, groupName: group.name, count: group.count, perCamera: demand, warnings };
 }
@@ -230,7 +240,10 @@ export function calculateScenarioDemand(scenario: CapacityScenario): {
   fixed: ResourceDemand;
   warnings: string[];
 } {
-  const groups = scenario.cameraGroups.map(calculateCameraGroupDemand);
+  const groups = scenario.cameraGroups.map((group) => calculateCameraGroupDemand(
+    group,
+    scenario.workloadContractVersion === WORKLOAD_CONTRACT_VERSION,
+  ));
   const fixed = calculateFixedWorkloadDemand(scenario);
   let aggregate = fixed;
   for (const group of groups) aggregate = addDemand(aggregate, scaleDemand(group.perCamera, group.count));
@@ -242,7 +255,7 @@ function nodeCapacity(template: HardwareNodeTemplate): ResourceDemand {
   return {
     cpuCores: template.physicalCores * sustainedComputeFactor,
     ramGb: template.ramGb,
-    gpuVramGb: template.gpuVramGbTotal,
+    gpuVramGb: template.memoryArchitecture === "dedicated" ? template.gpuVramGbTotal : template.ramGb * 0.5,
     localAiqSlots: template.localAiqSlots,
     gpuDecode1080p30Streams: template.gpuDecode1080p30Streams,
     diskCapacityTb: template.usableStorageTb,
@@ -264,7 +277,7 @@ function operatingSystemFor(template: HardwareNodeTemplate): OperatingSystemFami
 function operatingSystemAssumption(template: HardwareNodeTemplate): string {
   const operatingSystem = operatingSystemFor(template);
   if (operatingSystem === "macos") {
-    return "Apple hardware is an opt-in planning target. It requires a Perceptrum macOS/Apple Silicon port and a matching sustained benchmark; unified memory is not reported as dedicated VRAM and current local AiQ/NVIDIA decode capacity is zero.";
+    return "Apple hardware is an opt-in planning target. Perceptrum and local AiQ/Qwen use the macOS build; unified memory is budgeted conservatively and RTSP decode remains charged to the observed CPU path until calibrated otherwise.";
   }
   if (operatingSystem === "ubuntu") {
     return "Ubuntu execution has been observed on the supplied ASUS configuration, but every Ubuntu desktop/server recommendation still requires the matching Perceptrum build, drivers and sustained benchmark before validation.";
@@ -488,6 +501,7 @@ function evaluateTemplate(
   fixed: ResourceDemand,
   quotes: PriceQuote[],
   warnings: string[],
+  prediction?: CapacityPrediction,
 ): RecommendationAlternative | null {
   const templateOperatingSystem = operatingSystemFor(template);
   const requestedOperatingSystem = scenario.constraints.operatingSystem ?? "auto";
@@ -500,6 +514,9 @@ function evaluateTemplate(
   if (scenario.constraints.preferredGpuVendors.length > 0 && !scenario.constraints.preferredGpuVendors.includes(template.gpuVendor)) return null;
   if (scenario.constraints.requireEcc && !template.ecc) return null;
   if (aggregate.gpuDecode1080p30Streams > 0 && !template.supportsPerceptrumGpuDecode) return null;
+  if (prediction?.status === "incompatible") return null;
+  if (prediction && prediction.status !== "reference_only" && prediction.safeCameraMaximum !== null &&
+      prediction.safeCameraMaximum < scenario.totalCameras) return null;
 
   const headroomPercent = POLICY_HEADROOM[policy];
   const utilizationLimit = 1 - headroomPercent / 100;
@@ -538,10 +555,11 @@ function evaluateTemplate(
   if (template.gpuVendor === "intel") candidateWarnings.push("intel_npu_and_theoretical_ai_tops_are_not_used_as_local_aiq_capacity");
   if (templateOperatingSystem === "ubuntu") candidateWarnings.push("ubuntu_target_requires_matching_perceptrum_build_and_benchmark");
   if (templateOperatingSystem === "macos") {
-    candidateWarnings.push("macos_perceptrum_port_and_matching_benchmark_required");
+    candidateWarnings.push("macos_local_aiq_and_cpu_rtsp_path_require_matching_calibration");
     candidateWarnings.push("apple_unified_memory_is_not_dedicated_vram");
-    candidateWarnings.push("local_aiq_and_current_nvidia_rtsp_decode_are_not_supported_on_this_template");
   }
+  if (!prediction || prediction.status === "reference_only") candidateWarnings.push("physical_calibration_or_comparable_public_evidence_required");
+  else if (prediction.status.startsWith("extrapolated")) candidateWarnings.push(`capacity_${prediction.status}_not_physically_validated`);
 
   return {
     id: randomUUID(),
@@ -563,6 +581,7 @@ function evaluateTemplate(
     ),
     price,
     warnings: [...new Set(candidateWarnings)],
+    ...(prediction ? { calibration: prediction } : {}),
   };
 }
 
@@ -627,20 +646,30 @@ function selectCandidates(
   const balanced = [...primaryCandidates].sort(compareCapex)[0];
   if (!balanced) throw new CapacityError("No compatible hardware design was found.");
 
-  const lowerCapex = [...deploymentCandidates].sort(compareCapex).find((candidate) => candidate.hardware.id !== balanced.hardware.id) ?? balanced;
-  const expansion = [...deploymentCandidates].sort((left, right) =>
-    right.hardware.expansionScore - left.hardware.expansionScore ||
-    right.maximumAdditionalCameras - left.maximumAdditionalCameras,
-  )[0] ?? balanced;
-
-  const selected = [
-    withVariant(lowerCapex, "lower_capex"),
-    withVariant(expansion, "expansion"),
-  ].filter((candidate, index, all) =>
-    candidate.hardware.id !== balanced.hardware.id &&
-    all.findIndex((other) => other.hardware.id === candidate.hardware.id) === index,
-  );
-  return { primary: withVariant(balanced, "balanced"), alternatives: selected };
+  // The primary still honors the cross-policy non-downgrade rule, while the
+  // comparison list may use every design that passed this policy's complete
+  // capacity evaluation. This keeps six useful purchase options visible
+  // without weakening the selected recommendation.
+  const ordered = [...deploymentCandidates].sort(compareCapex);
+  const selectedById = new Map<string, RecommendationAlternative>();
+  selectedById.set(balanced.hardware.id, balanced);
+  for (const candidate of ordered.filter((item) => item.hardware.cpuVendor === "intel").slice(0, 4)) {
+    selectedById.set(candidate.hardware.id, candidate);
+  }
+  const amd = ordered.find((item) => item.hardware.cpuVendor === "amd");
+  if (amd) selectedById.set(amd.hardware.id, amd);
+  for (const candidate of ordered) {
+    if (selectedById.size >= 6) break;
+    selectedById.set(candidate.hardware.id, candidate);
+  }
+  const alternatives = [...selectedById.values()]
+    .filter((candidate) => candidate.hardware.id !== balanced.hardware.id)
+    .sort(compareCapex)
+    .slice(0, 5);
+  return {
+    primary: withVariant(balanced, "balanced"),
+    alternatives: alternatives.map((candidate) => withVariant(candidate, "cost_ordered")),
+  };
 }
 
 export function buildRecommendations(
@@ -651,6 +680,7 @@ export function buildRecommendations(
   quotes: PriceQuote[],
   validated = false,
   catalogVersion = HARDWARE_CATALOG_VERSION,
+  predictions: CapacityPrediction[] = [],
 ): CapacityRecommendation[] {
   const demand = calculateScenarioDemand(scenario);
   const policies: RecommendationPolicy[] = ["minimum", "recommended", "n_plus_one"];
@@ -668,6 +698,7 @@ export function buildRecommendations(
         demand.fixed,
         quotes,
         demand.warnings,
+        predictions.find((prediction) => prediction.hardwareTemplateId === template.id),
       ))
       .filter((candidate): candidate is RecommendationAlternative => candidate !== null);
     if (candidates.length === 0) {
@@ -688,7 +719,9 @@ export function buildRecommendations(
       scenarioRevision,
       generatedAt: new Date().toISOString(),
       policy,
-      confidence: validated ? "validated" : "estimated",
+      confidence: validated
+        ? "validated"
+        : selected.primary.calibration?.status ?? "reference_only",
       contractVersion: WORKLOAD_CONTRACT_VERSION,
       perceptrumBuildHash: scenario.perceptrumBuildHash,
       primary: selected.primary,
@@ -697,9 +730,9 @@ export function buildRecommendations(
         "Continuous RTSP decode remains charged at source codec, resolution and FPS.",
         "BGR buffer capacity is estimated as two seconds at the configured source FPS.",
         "Video frame extraction includes one FFmpeg process per sampled frame, capped at 300 frames per request.",
-        "AiQ local execution uses effective video/10-second scheduling and 5.12 GB estimated VRAM per concurrent slot.",
-        "Storage capacity and disk throughput are not sizing constraints; the BOM includes only an operational NVMe workspace for the operating system and temporary inference files.",
-        "Inference media is assumed to be deleted by Perceptrum after short retention (normally up to one day); sparse alert media is operationally negligible.",
+        "AiQ/Qwen Core uses one effective inference frame per second in 60-second execution cycles; RTSP receive/decode FPS remains independent.",
+        "Disk write throughput and at least one day of rolling temporary source clips participate in sizing; configured retention and RAID factor increase capacity demand.",
+        "The final safe camera count is the minimum across receive, decode, BGR processing, encode, local inference, RAM/VRAM, disk, network and sustained thermal evidence.",
         "Built-in component costs are dated planning references converted with official FX snapshots; current compatible market quotes take precedence when available.",
         "Reference estimates exclude taxes, shipping, licenses, energy, support and TCO and still require a purchase quotation.",
         operatingSystemAssumption(selected.primary.hardware),

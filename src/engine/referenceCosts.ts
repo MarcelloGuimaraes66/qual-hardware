@@ -38,6 +38,14 @@ const APPLE_MAC_MINI_SPECS = "https://www.apple.com/mac-mini/specs/";
 const APPLE_MAC_MINI_STORE = "https://www.apple.com/shop/buy-mac/mac-mini";
 const APPLE_MAC_STUDIO_SPECS = "https://www.apple.com/mac-studio/specs/";
 const APPLE_MAC_STUDIO_STORE = "https://www.apple.com/shop/buy-mac/mac-studio";
+const APPLE_MACBOOK_PRO_SPECS = "https://www.apple.com/macbook-pro/specs/";
+const APPLE_MACBOOK_PRO_STORE = "https://www.apple.com/shop/buy-mac/macbook-pro";
+const DELL_PRECISION_3680 = "https://www.dell.com/en-us/shop/desktop-computers/precision-3680-tower-workstation/spd/precision-t3680-workstation";
+const DELL_PRECISION = "https://www.dell.com/en-us/shop/dell-desktops-and-all-in-one-pcs/scr/desktops/appref=precision-product-line";
+const HP_Z_WORKSTATIONS = "https://www.hp.com/us-en/workstations/desktop-workstation-pc.html";
+const HP_Z8 = "https://www.hp.com/us-en/workstations/z8.html";
+const LENOVO_P_SERIES = "https://www.lenovo.com/us/en/c/workstations/thinkstation-p-series/";
+const LENOVO_PX = "https://www.lenovo.com/us/en/p/workstations/thinkstation-p-series/lenovo-thinkstation-px-intel-tower-workstation/len102s0013";
 
 function workstationComponents(values: [number, number, number, number, number, number, number, number]): ReferenceCostComponentUsd[] {
   const ids: Array<ReferenceCostComponentUsd["componentId"]> = ["cpu", "motherboard", "ram", "gpu", "storage", "network", "power_cooling_chassis", "integration"];
@@ -97,6 +105,11 @@ export const REFERENCE_COST_PROFILES: ReferenceCostProfile[] = [
     sourceUrls: [ASUS_ZEPHYRUS_G16],
   },
   {
+    hardwareTemplateId: "apple-macbook-pro-m4max-14c-32gpu-36gb", cpuModel: "Apple M4 Max (14-core CPU; 10 performance + 4 efficiency)", gpuModel: "Apple M4 Max integrated 32-core GPU", gpuCount: 1,
+    observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([750, 350, 450, 550, 250, 80, 650, 119]),
+    sourceUrls: [APPLE_MACBOOK_PRO_SPECS, APPLE_MACBOOK_PRO_STORE],
+  },
+  {
     hardwareTemplateId: "apple-mac-mini-m4-24gb", cpuModel: "Apple M4 (10-core CPU; 4 performance + 6 efficiency)", gpuModel: "Apple M4 integrated 10-core GPU", gpuCount: 1,
     observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([350, 180, 200, 180, 200, 100, 60, 29]),
     sourceUrls: [APPLE_MAC_MINI_SPECS, APPLE_MAC_MINI_STORE],
@@ -115,6 +128,36 @@ export const REFERENCE_COST_PROFILES: ReferenceCostProfile[] = [
     hardwareTemplateId: "apple-mac-studio-m3ultra-96gb", cpuModel: "Apple M3 Ultra (28-core CPU; 20 performance + 8 efficiency)", gpuModel: "Apple M3 Ultra integrated 60-core GPU", gpuCount: 1,
     observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([1200, 500, 900, 1100, 300, 100, 1099, 100]),
     sourceUrls: [APPLE_MAC_STUDIO_SPECS, APPLE_MAC_STUDIO_STORE],
+  },
+  {
+    hardwareTemplateId: "dell-precision-3680-i9-rtx4000ada", cpuModel: "Intel Core i9-14900K (24 cores / 32 threads)", gpuModel: "NVIDIA RTX 4000 Ada Generation 20 GB", gpuCount: 1,
+    observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([580, 700, 650, 1600, 300, 120, 900, 500]),
+    sourceUrls: [DELL_PRECISION_3680, "https://www.nvidia.com/en-us/design-visualization/rtx-4000/"],
+  },
+  {
+    hardwareTemplateId: "hp-z2-g1i-ultra9-rtx4500ada", cpuModel: "Intel Core Ultra 9 285K (24 cores / 24 threads)", gpuModel: "NVIDIA RTX 4500 Ada Generation 24 GB", gpuCount: 1,
+    observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([620, 750, 650, 2250, 300, 120, 950, 550]),
+    sourceUrls: [HP_Z_WORKSTATIONS, "https://www.nvidia.com/en-us/design-visualization/rtx-4500/"],
+  },
+  {
+    hardwareTemplateId: "lenovo-p3-gen2-ultra9-rtx4000ada", cpuModel: "Intel Core Ultra 9 285K (24 cores / 24 threads)", gpuModel: "NVIDIA RTX 4000 Ada Generation 20 GB", gpuCount: 1,
+    observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([620, 700, 650, 1600, 300, 120, 900, 550]),
+    sourceUrls: [LENOVO_P_SERIES, "https://www.nvidia.com/en-us/design-visualization/rtx-4000/"],
+  },
+  {
+    hardwareTemplateId: "dell-precision-7960-xeonw-rtx5000ada", cpuModel: "Intel Xeon W7-2495X (24 cores / 48 threads)", gpuModel: "NVIDIA RTX 5000 Ada Generation 32 GB", gpuCount: 1,
+    observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([2200, 1600, 1400, 4000, 700, 250, 1500, 800]),
+    sourceUrls: [DELL_PRECISION, "https://www.nvidia.com/en-us/design-visualization/rtx-5000/"],
+  },
+  {
+    hardwareTemplateId: "hp-z8-g5-dualxeon-2xrtx6000ada", cpuModel: "2× Intel Xeon workstation processors (64 cores total)", gpuModel: "NVIDIA RTX 6000 Ada Generation 48 GB", gpuCount: 2,
+    observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([6000, 3500, 3000, 13600, 1400, 600, 3000, 1500]),
+    sourceUrls: [HP_Z8, "https://www.nvidia.com/en-us/design-visualization/rtx-6000/"],
+  },
+  {
+    hardwareTemplateId: "lenovo-thinkstation-px-dualxeon-2xrtx6000ada", cpuModel: "2× Intel Xeon Scalable processors (64 cores total)", gpuModel: "NVIDIA RTX 6000 Ada Generation 48 GB", gpuCount: 2,
+    observedAt: REFERENCE_COST_OBSERVED_AT, components: workstationComponents([6200, 3600, 3000, 13600, 1400, 600, 3200, 1600]),
+    sourceUrls: [LENOVO_PX, "https://www.nvidia.com/en-us/design-visualization/rtx-6000/"],
   },
 ];
 

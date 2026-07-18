@@ -11,10 +11,10 @@ The desktop derives these locations from `app.getPath("userData")`; it does not 
 
 O aplicativo rejeita qualquer outro nome de arquivo. Essa barreira impede que um banco do Perceptrum, Drakon ou outro produto seja aberto por engano.
 
-O arquivo guarda apenas projetos do Qual Hardware, recomendações, metadados/resultados de benchmark, catálogo de equipamentos, preços e fila interna. Nunca guarda vídeo, imagens, URLs ou credenciais RTSP e não contém registros operacionais do Perceptrum.
+O arquivo guarda apenas projetos, recomendações, catálogos, preços, calibrações agregadas, observações públicas e previsões do Qual Hardware. Nunca guarda vídeo, imagens, URLs ou credenciais RTSP e não contém registros operacionais do Perceptrum.
 
 ## Confiabilidade e migração
 
-O esquema está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A aplicação aplica atualizações compatíveis ao abrir e recusa uma versão de banco mais nova do que o executável entende. O modo WAL atende às operações internas da janela desktop.
+O esquema aditivo v2 está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A abertura cria apenas objetos ausentes e faz upsert de snapshots embarcados; não apaga catálogos, calibrações nem previsões anteriores. A aplicação recusa uma versão de banco mais nova do que o executável entende.
 
 SQLite não deve ser colocado em um compartilhamento SMB/NFS. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/schemas/perceptrum-workload-v2.json",
+  "title": "Perceptrum complete local capacity workload",
+  "schemaVersion": "perceptrum-workload/2.0.0",
+  "pipelineStages": [
+    "rtsp_ingest",
+    "video_decode",
+    "bgr_processing",
+    "video_encode",
+    "disk_write",
+    "disk_read",
+    "local_inference",
+    "memory_bandwidth",
+    "network_ingest",
+    "thermal_sustain"
+  ],
+  "fps": {
+    "rtspSource": { "minimum": 1, "maximum": 120, "meaning": "frames received and decoded per camera" },
+    "aiqInference": { "minimum": 1, "maximum": 5, "integer": true, "meaning": "frames extracted and submitted to local AiQ per inference window" },
+    "legacyInferenceValuesAboveMaximum": "preserve stored value, execute as 5 and warn"
+  },
+  "localCalibration": {
+    "rtspOrigin": "rtsp://127.0.0.1",
+    "aiqOrigin": "http://127.0.0.1",
+    "provider": "aiq_local",
+    "externalNetworkAllowed": false,
+    "openAiAllowed": false,
+    "acceptMedia": false,
+    "acceptCredentials": false,
+    "quickPhasesSeconds": { "warmup": 120, "sustained": 300, "surge": 180 },
+    "fullPhasesSeconds": { "warmup": 600, "sustained": 2400, "surge": 600 },
+    "surgeLoadPercent": 120
+  },
+  "storage": {
+    "capacityIsSizingConstraint": true,
+    "throughputIsSizingConstraint": true,
+    "minimumRollingTemporaryRetentionDays": 1,
+    "configuredRetentionAndRaidAreApplied": true
+  },
+  "safety": {
+    "capacityRule": "minimum_across_all_pipeline_stages",
+    "minimumReservePercent": 20,
+    "recommendedReservePercent": 40,
+    "nPlusOneReservePercent": 40
+  }
+}

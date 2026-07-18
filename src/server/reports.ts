@@ -31,7 +31,7 @@ function orderedRecommendations(recommendations: CapacityRecommendation[]): Capa
 export function jsonReport(context: ReportContext): Buffer {
   const recommendations = orderedRecommendations(context.recommendations);
   return Buffer.from(JSON.stringify({
-    schemaVersion: "capacity-recommendation-export/2.2.0",
+    schemaVersion: "capacity-recommendation-export/2.3.0",
     generatedAt: new Date().toISOString(),
     scenario: context.scenario,
     recommendations,
@@ -183,7 +183,7 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
       { ...base, component: "RAM", specification: `${hardware.ramGb} GB per node`, details: `ECC: ${hardware.ecc ? "yes" : "no"}; architecture: ${hardware.memoryArchitecture ?? "dedicated"}`, ...priced("ram") },
       { ...base, component: "GPU", specification: `${hardware.gpuCount} x ${hardware.gpuModel}`, details: `${hardware.gpuVendor}; ${gpuMemoryDescription(hardware)}`, ...priced("gpu") },
       { ...base, component: "AiQ / video decode", specification: `${hardware.localAiqSlots} local AiQ slots; ${hardware.gpuDecode1080p30Streams} reference 1080p30 streams`, details: `Perceptrum GPU decode: ${hardware.supportsPerceptrumGpuDecode ? "supported" : "not supported"}`, quantityPerNode: null, unitCost: null, perNodeCost: null, projectCost: null },
-      { ...base, component: "Operational NVMe", specification: hardware.storageModel, details: `${hardware.usableStorageTb} TB usable for OS and temporary files; not a node-sizing constraint`, ...priced("storage") },
+      { ...base, component: "Operational NVMe", specification: hardware.storageModel, details: `${hardware.usableStorageTb} TB usable; rolling clips, configured retention, write throughput and RAID participate in sizing`, ...priced("storage") },
       { ...base, component: "Network", specification: `${hardware.nicGbps} GbE per node`, details: "LAN and RTSP stream capacity", ...priced("network") },
       { ...base, component: "Power / cooling / chassis", specification: `${hardware.powerSupply}; ${hardware.cooling}; ${hardware.chassis}`, details: `Expansion score: ${hardware.expansionScore}`, ...priced("power_cooling_chassis") },
       { ...base, component: "Operating system", specification: hardware.windowsEdition, details: `${operatingSystemFor(hardware)} target; matching Perceptrum build and benchmark required`, quantityPerNode: null, unitCost: null, perNodeCost: null, projectCost: null },
@@ -236,7 +236,7 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
     proposal: POLICY_LABELS[recommendation.policy],
     resource,
     aggregateDemand: demand,
-    usedForSizing: resource !== "diskCapacityTb" && resource !== "diskWriteMbps",
+    usedForSizing: true,
     bottleneck: resource === recommendation.primary.bottleneck,
   }))));
 
@@ -389,7 +389,14 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   writer.line(`RAM: ${hardware.ramGb} GB por no; ECC: ${hardware.ecc ? "sim" : "nao"}; arquitetura: ${hardware.memoryArchitecture}.`);
   writer.line(`GPU: ${hardware.gpuCount} x ${hardware.gpuModel} (${hardware.gpuVendor}); ${gpuMemoryDescription(hardware)}.`);
   writer.line(`AiQ local: ${hardware.localAiqSlots} instancia(s) por no; decode Perceptrum GPU: ${hardware.supportsPerceptrumGpuDecode ? "compativel" : "nao compativel"}; capacidade de referencia: ${hardware.gpuDecode1080p30Streams} streams 1080p30.`);
-  writer.line(`NVMe operacional: ${hardware.storageModel}; ${hardware.usableStorageTb} TB uteis para SO e temporarios; armazenamento nao dimensiona a quantidade de nos.`);
+  writer.line(`NVMe operacional: ${hardware.storageModel}; ${hardware.usableStorageTb} TB uteis; escrita, clips temporarios, retencao e RAID participam do dimensionamento.`);
+  if (design.calibration) {
+    const calibration = design.calibration;
+    writer.line(`Evidencia de capacidade: ${calibration.status}; confianca ${calibration.confidenceClass}; intervalo seguro ${calibration.safeCameraMinimum ?? "n/d"}-${calibration.safeCameraMaximum ?? "n/d"} cameras; reserva ${calibration.reservePercent}%; gargalo ${calibration.bottleneck ?? "sem cobertura"}.`);
+    for (const stage of calibration.stagePredictions) {
+      writer.line(`Extrapolacao ${stage.stage}: ${stage.safeCameraCapacity} cameras seguras, ${stage.reservePercent}% de reserva, ancoras ${stage.anchorHardwareIds.join(", ") || "nenhuma"}.`);
+    }
+  }
   writer.line(`Rede: ${hardware.nicGbps} GbE; fonte: ${hardware.powerSupply}; refrigeracao: ${hardware.cooling}.`);
   writer.line(`Chassi: ${hardware.chassis}; sistema operacional: ${hardware.windowsEdition}; indice de expansao: ${hardware.expansionScore}.`);
 
@@ -414,7 +421,7 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
 
   writer.heading("Demanda agregada calculada");
   for (const [resource, demand] of Object.entries(design.aggregateDemand)) {
-    const sizing = resource !== "diskCapacityTb" && resource !== "diskWriteMbps";
+    const sizing = true;
     writer.line(`${resource}: ${Math.round(demand * 1000) / 1000}${resource === design.bottleneck ? " - GARGALO" : ""}${sizing ? "" : " - observacional"}.`);
   }
 

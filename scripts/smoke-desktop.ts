@@ -6,7 +6,7 @@ import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createDefaultScenario } from "../src/shared/schemas.js";
-import type { CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
+import type { CapacityPrediction, CapacityRecommendation, HardwareNodeTemplate, LocalCalibrationRun, ScenarioRecord } from "../src/shared/types.js";
 
 interface PackagePaths {
   executable: string;
@@ -216,6 +216,7 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
     "/dist/web/index.html",
     "/dist/server/desktop/main.js",
     "/contracts/perceptrum-workload-v1.json",
+    "/contracts/perceptrum-workload-v2.json",
     "/database/sqlite-schema.sql",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
   for (const forbidden of [
@@ -262,10 +263,11 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   assert.deepEqual(health, { status: "ok", storage: "sqlite" });
   const catalog = await api<{ source: string; hardwareCount: number }>(application.origin, "/api/catalog/status");
   assert.equal(catalog.source, "bundled");
-  assert.equal(catalog.hardwareCount, 14);
+  assert.equal(catalog.hardwareCount, 21);
   const hardware = await api<HardwareNodeTemplate[]>(application.origin, "/api/catalog/hardware");
-  assert.equal(hardware.length, 14);
-  assert.equal(hardware.filter((item) => item.operatingSystemFamily === "macos").length, 4);
+  assert.equal(hardware.length, 21);
+  assert.equal(hardware.filter((item) => item.operatingSystemFamily === "macos").length, 5);
+  assert.ok(hardware.some((item) => item.id === "apple-macbook-pro-m4max-14c-32gpu-36gb"));
   assert(hardware.some((item) => item.id === "laptop-vivobook-s16-285h-32gb-user"));
   const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();
   assert(html.includes("Qual Hardware"));
@@ -294,7 +296,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
-    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/2.2.0");
+    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/2.3.0");
   }
 
   const macScenario = createDefaultScenario(4);
@@ -311,6 +313,20 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   assert.equal(macRecommendations.length, 3);
   assert.equal(new Set(macRecommendations.map((item) => item.primary.hardware.id)).size, 3);
   assert(macRecommendations.every((item) => item.primary.hardware.operatingSystemFamily === "macos"));
+
+  const calibrationFile = String(process.env.QUAL_HARDWARE_CALIBRATION_FILE || "").trim();
+  if (calibrationFile) {
+    const calibration = JSON.parse(await readFile(resolve(calibrationFile), "utf8")) as LocalCalibrationRun;
+    const imported = await api<{ run: LocalCalibrationRun; predictions: CapacityPrediction[] }>(application.origin, "/api/calibrations/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(calibration),
+    });
+    assert.equal(imported.run.id, calibration.id);
+    const exact = imported.predictions.find((item) => item.hardwareTemplateId === calibration.fingerprint.hardwareTemplateId);
+    assert.equal(exact?.status, "validated_local");
+    assert.equal(exact?.exactCalibrationRunId, calibration.id);
+  }
   return created.id;
 }
 

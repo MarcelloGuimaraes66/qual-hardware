@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 14-item catalog, Windows/Ubuntu/macOS recommendation targets, SQLite, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 2.2 exports, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 21-item catalog, Windows/Ubuntu/macOS recommendation targets, SQLite, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 2.3 exports, single-instance behavior and persistence after restart.
 
 ```sh
 npm ci
@@ -17,20 +17,19 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 
 ## Recommendation confidence
 
-- `estimated`: produced by the reference capacity model or interpolation.
-- `validated`: exact CPU, GPU, driver, Perceptrum build and an equal-or-heavier workload completed the benchmark gate.
+- `validated_local`: exact linked catalog profile, CPU, GPU, form factor, build/model hash and workload completed local calibration.
+- `extrapolated_high`: class A with at least two strong comparable anchors, stage coverage, leave-one-out safety and at least 20% reserve.
+- `extrapolated_medium`: class B with one strong/adjacent anchor and at least 30% reserve.
+- `reference_only`: class C, incomplete coverage or cross-architecture evidence; at least 40% reserve and no purchase-capacity claim.
 
-## Benchmark gate
+## Local calibration gate
 
-1. 15 minutes warm-up.
-2. 60 minutes at 100% of the declared scenario.
-3. 15 minutes at 120% of scheduled inference pressure.
-4. No OOM, sustained queue growth, media/credential leakage or inference SLA breach.
-5. Capture FPS, p95/p99 stage latency, process-tree CPU/RAM/I/O and GPU/VRAM/decoder telemetry are present.
-
-The upload challenge is single-use and expires after 24 hours. Native benchmark mode suppresses external events and retained media; a replay controller is required for a certifying 120% surge. Shortened runner-development sessions intentionally fail validation.
-
-The current automatic validation seal is restricted to single-active-node recommendations. Multi-node and N+1 recommendations remain estimated until the coordinated per-node/failover laboratory runner is implemented; a successful sample from only one node must never validate a cluster design.
+1. Quick: 2 minutes warm-up, 5 sustained and 3 at 120%; full: 10, 40 and 10 minutes.
+2. MediaMTX, FFmpeg and the real AiQ/Qwen backend remain on `127.0.0.1`; external/OpenAI count is zero.
+3. Decoded frames reach at least 80% of planned RTSP throughput; inference success is at least 99%; no OOM or sustained queue growth.
+4. All ten stages, phase metrics, exact fingerprint/build/model hashes, temperatures and frame counters are present.
+5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases but never creates importable evidence.
+6. Import rejects a selected catalog profile when CPU, GPU or form factor does not match the measured fingerprint.
 
 ## Audited source baseline
 
@@ -41,10 +40,9 @@ Run `npm run audit:source` whenever Perceptrum, DrakonSite, or AppHost source ch
 - Minimum: 15% capacity reserve.
 - Recommended: 30% capacity reserve.
 - N+1: 30% reserve after loss of one compute node.
-- Storage capacity and disk throughput are never node-count, headroom or bottleneck dimensions. The BOM includes only an operational NVMe workspace because inference media is short-lived and alert media is sparse.
-- Legacy `storeVideo`, `retentionDays` and `raidFactor` scenario fields remain readable but are ignored by the sizing engine.
+- Workload v2 includes rolling clip write/read and at least one day of workspace. Explicit retention and RAID increase demand; legacy workload versions remain readable without silently changing prior sizing.
 - Missing seller quotes use a visibly identified, dated and sourced componentized reference estimate; values are never presented as a firm offer and purchase quotation remains required.
-- Minimum, recommended and N+1 use different primary hardware templates whenever compatible non-downgrade alternatives exist. Capacity constraints always take precedence over diversity.
+- Minimum, recommended and N+1 use different primaries when possible. Each policy exposes up to six cost-ordered qualified options, preferring four Intel, one AMD and multiple OEMs only after capacity safety.
 - A hardware template is rejected if any compute, memory, decoder or network dimension exceeds its policy-adjusted capacity.
 - Laptops and mini PCs participate in CPU-decode/remote-model sizing. The exact ASUS S5606CA profile can be forced and must never be silently replaced by another template.
 - Apple templates are considered only after explicit macOS selection; shared/unified memory is not dedicated VRAM and current local AiQ/NVIDIA decode demand rejects them.

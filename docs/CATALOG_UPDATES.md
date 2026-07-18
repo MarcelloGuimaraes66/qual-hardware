@@ -9,7 +9,7 @@ O executável do Qual Hardware e o catálogo têm ciclos de atualização indepe
 3. Um revisor aprova alterações de especificação, compatibilidade ou produto antes da publicação.
 4. O publicador executa explicitamente `npm run catalog:sign`. A chave privada Ed25519 fica somente no ambiente administrativo de publicação.
 5. O arquivo JSON assinado é publicado em uma URL HTTPS privada/VPN.
-6. O desktop verifica a assinatura com a chave pública, substitui equipamentos e preços em uma única transação SQLite e guarda a última cópia assinada válida no perfil local nativo do Windows, macOS ou Ubuntu.
+6. O desktop verifica a assinatura com a chave pública, adiciona/atualiza os itens do snapshot em uma transação SQLite, registra sua associação ao catálogo e preserva registros anteriores.
 
 O repositório não contém worker contínuo, servidor hospedado nem agendador desse fluxo. Se a organização desejar execução periódica, o agendamento pertence à infraestrutura administrativa externa e deve apenas invocar os dois utilitários explícitos acima.
 
@@ -24,12 +24,17 @@ Cada recomendação grava `catalog-version:<versão>` nas evidências. Cotaçõe
 
 ## Fontes e frequência
 
-- Especificações: fontes oficiais de Intel, AMD, NVIDIA, Apple, ASUS e fabricantes OEM, revisadas quando houver lançamento ou alteração.
+- Especificações: fontes oficiais de Intel, AMD, NVIDIA, Apple, ASUS, Dell, HP, Lenovo e outros OEMs aprovados, revisadas quando houver lançamento ou alteração.
 - Preços: diariamente para Brasil, Estados Unidos e Alemanha; apenas fontes permitidas e produtos novos/disponíveis.
 - Câmbio: cada estimativa ou snapshot registra a fonte e a data da conversão; o modelo embarcado usa referências oficiais de BCB, BCE e Federal Reserve.
 - Falha de coletor: mantém a última observação, aumenta sua idade e não apaga a rastreabilidade.
 
 O agendamento do publicador de catálogos é responsabilidade de uma rotina administrativa separada e externa a este aplicativo. O executável desktop apenas baixa/importa e verifica o snapshot assinado; ele não faz scraping direto das lojas.
+
+Observações públicas para extrapolação seguem um snapshot assinado separado,
+`qual-hardware-evidence-catalog/2.0.0`. Cada score identifica um único estágio,
+SKU, perfil, versão, unidade, configuração, sistema e fonte. Scores genéricos não
+substituem CPU, GPU, disco, rede ou sustentação térmica.
 
 ## O que precisa ser provisionado
 
