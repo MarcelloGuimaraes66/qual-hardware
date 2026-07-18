@@ -47,7 +47,7 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
     return next();
   });
 
-  app.get("/api/health", (context) => context.json({ status: "ok", storage: process.env.DATABASE_URL ? "postgresql" : "memory" }));
+  app.get("/api/health", (context) => context.json({ status: "ok", storage: store.storageKind }));
   app.get("/api/contract", async (context) => {
     const file = applicationResourcePath("contracts", "perceptrum-workload-v1.json");
     return context.json(JSON.parse(await readFile(file, "utf8")) as unknown);

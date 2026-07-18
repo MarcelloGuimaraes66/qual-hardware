@@ -30,14 +30,12 @@
     "exceljs": "^4.4.0",
     "hono": "^4.12.30",
     "pdf-lib": "^1.17.1",
-    "pg": "^8.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
-    "@types/pg": "^8.15.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
@@ -61,6 +59,7 @@
     "files": [
       "dist/**/*",
       "contracts/**/*",
+      "database/**/*",
       "package.json"
     ],
     "win": {

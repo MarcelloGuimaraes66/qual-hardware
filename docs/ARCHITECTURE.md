@@ -16,7 +16,7 @@
 5. Every displayed price carries source URL, currency, condition and observation time; otherwise the component requires a quotation.
 6. No code in this project can deploy to `/var/www/drakonsite`, operate `drakonsite-backend`, or use port `4999`.
 7. Qual Hardware runs as its own desktop executable or private web/API/worker service and is never bundled into any Perceptrum EXE, MSIX, backend, installer or deployment.
-8. Persistent data exists only in database `qual_hardware`, SQL schema `qual_hardware` and its private volume. Connections to any other database name are rejected before use.
+8. Persistent data exists only in the local file `qual-hardware.sqlite`. Any other database filename is rejected before use; no Perceptrum database is opened or modified.
 
 ## Blast radius and change budget
 
@@ -47,4 +47,4 @@
 
 There is no application login. Production hosting must enforce TLS and private-network/VPN access at the reverse proxy or firewall. Administrative catalog collection additionally requires `ADMIN_TOKEN`. Public exposure is unsupported.
 
-The Windows desktop binds its internal API to a random loopback-only port. Its renderer is sandboxed and has no Node.js integration. Catalog snapshots are verified with an Ed25519 public key before replacing the bundled or cached catalog.
+The Windows desktop binds its internal API to a random loopback-only port. Its renderer is sandboxed and has no Node.js integration. Catalog snapshots are verified with an Ed25519 public key before transactionally replacing the local SQLite catalog. The desktop database lives in the Windows user profile and survives application restarts.

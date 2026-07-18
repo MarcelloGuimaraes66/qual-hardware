@@ -1,21 +1,17 @@
-# Dedicated Qual Hardware database
+# Banco local exclusivo do Qual Hardware
 
-Qual Hardware owns an independent PostgreSQL database, role, schema and data volume:
+Qual Hardware usa SQLite e cria sozinho um arquivo chamado obrigatoriamente `qual-hardware.sqlite`. Não há servidor de banco, usuário, senha ou instalação adicional.
 
-- database: `qual_hardware`
-- application role: `qual_hardware`
-- SQL schema: `qual_hardware`
-- Compose volume: `qual_hardware_database`
+- Desktop Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite`
+- Desenvolvimento: `data/qual-hardware.sqlite`
+- Docker em um único host: `/data/qual-hardware.sqlite`, no volume `qual_hardware_data`
 
-`docker compose up` provisions the database and role through the official PostgreSQL image. The application then applies `schema.sql` inside that dedicated database.
+O aplicativo rejeita qualquer outro nome de arquivo. Essa barreira impede que um banco do Perceptrum, Drakon ou outro produto seja aberto por engano.
 
-For an externally managed PostgreSQL server, an administrator must create the isolated role and database before starting the application:
+O arquivo guarda apenas projetos do Qual Hardware, recomendações, metadados/resultados de benchmark, catálogo de equipamentos, preços e fila interna. Nunca guarda vídeo, imagens, URLs ou credenciais RTSP e não contém registros operacionais do Perceptrum.
 
-```sql
-CREATE ROLE qual_hardware LOGIN PASSWORD '<secret-from-the-host-secret-store>';
-CREATE DATABASE qual_hardware OWNER qual_hardware;
-```
+## Confiabilidade e migração
 
-Set `DATABASE_URL` to that database only. Both the application connection guard and `schema.sql` reject any other database name. Never reuse a Perceptrum, Drakon, shared product or PostgreSQL maintenance database.
+O esquema está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A aplicação aplica atualizações compatíveis ao abrir e recusa uma versão de banco mais nova do que o executável entende. O modo WAL permite que a API e o worker compartilhem o arquivo no mesmo computador.
 
-The database stores only Qual Hardware projects, generated recommendations, benchmark metadata/results, catalog entries, price quotes and its internal work queue. It never stores Perceptrum media, RTSP credentials or Perceptrum application records.
+SQLite não deve ser colocado em um compartilhamento SMB/NFS nem usado por contêineres em hosts diferentes. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.

@@ -19,7 +19,8 @@ app.enableSandbox();
 
 async function startLocalApplication(): Promise<string> {
   process.env.QUAL_HARDWARE_RESOURCE_ROOT = app.getAppPath();
-  delete process.env.DATABASE_URL;
+  process.env.QUAL_HARDWARE_SQLITE_PATH = join(app.getPath("userData"), "qual-hardware.sqlite");
+  delete process.env.QUAL_HARDWARE_IN_MEMORY;
   store = createStore();
   const updates = new CatalogUpdateService(store, {
     remoteUrl: process.env.QUAL_HARDWARE_CATALOG_URL,

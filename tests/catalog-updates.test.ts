@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import { CatalogUpdateService } from "../src/server/catalogUpdates.js";
-import { MemoryPlannerStore } from "../src/server/store.js";
+import { SqlitePlannerStore } from "../src/server/store.js";
 
 const cleanupDirectories: string[] = [];
 afterEach(async () => {
@@ -41,7 +41,7 @@ describe("signed catalog updates", () => {
     };
 
     try {
-      const store = new MemoryPlannerStore();
+      const store = new SqlitePlannerStore(join(directory, "remote", "qual-hardware.sqlite"));
       const updates = new CatalogUpdateService(store, options);
       const status = await updates.refresh();
       expect(status.catalogVersion).toBe(payload.catalogVersion);
@@ -50,11 +50,13 @@ describe("signed catalog updates", () => {
 
       responseBody = JSON.stringify({ payload: { ...payload, catalogVersion: "tampered" }, signature });
       await expect(updates.refresh()).rejects.toThrow("invalid_catalog_signature");
+      await store.close();
 
-      const cachedStore = new MemoryPlannerStore();
+      const cachedStore = new SqlitePlannerStore(join(directory, "cached", "qual-hardware.sqlite"));
       const cachedUpdates = new CatalogUpdateService(cachedStore, { publicKeyPem: options.publicKeyPem, cacheFile: options.cacheFile });
       expect((await cachedUpdates.initialize()).source).toBe("cached");
       expect(await cachedStore.getCatalog()).toHaveLength(1);
+      await cachedStore.close();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

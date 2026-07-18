@@ -1,26 +1,22 @@
-export const QUAL_HARDWARE_DATABASE_NAME = "qual_hardware";
-export const QUAL_HARDWARE_SCHEMA_NAME = "qual_hardware";
+import { basename, resolve } from "node:path";
+
+export const QUAL_HARDWARE_SQLITE_FILENAME = "qual-hardware.sqlite";
+export const QUAL_HARDWARE_SQLITE_SCHEMA_VERSION = 1;
 
 /**
- * Prevents Qual Hardware from ever being pointed at a Perceptrum or shared database.
- * PostgreSQL provisioning must create the dedicated `qual_hardware` database first.
+ * Prevents Qual Hardware from opening a Perceptrum or generic shared database.
+ * The local file must always keep the dedicated Qual Hardware filename.
  */
-export function assertDedicatedDatabaseUrl(connectionString: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(connectionString);
-  } catch {
-    throw new Error("DATABASE_URL must be a valid PostgreSQL connection URL for the dedicated qual_hardware database.");
+export function assertDedicatedSqlitePath(databasePath: string): string {
+  if (!databasePath.trim() || databasePath === ":memory:") {
+    throw new Error(`Use a file-backed ${QUAL_HARDWARE_SQLITE_FILENAME} database.`);
   }
-  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
-    throw new Error("DATABASE_URL must use the postgres or postgresql protocol.");
-  }
-  const databaseName = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-  if (databaseName !== QUAL_HARDWARE_DATABASE_NAME) {
+  const resolved = resolve(databasePath);
+  if (basename(resolved).toLowerCase() !== QUAL_HARDWARE_SQLITE_FILENAME) {
     throw new Error(
-      `Qual Hardware refuses database '${databaseName || "(missing)"}'. ` +
-      `Use the dedicated '${QUAL_HARDWARE_DATABASE_NAME}' database; Perceptrum databases are never allowed.`,
+      `Qual Hardware refuses database file '${basename(resolved) || "(missing)"}'. ` +
+      `Use the dedicated '${QUAL_HARDWARE_SQLITE_FILENAME}' file; Perceptrum databases are never allowed.`,
     );
   }
-  return connectionString;
+  return resolved;
 }

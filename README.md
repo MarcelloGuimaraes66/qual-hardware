@@ -13,9 +13,9 @@ Aplicativo desktop independente da Aiquimist para calcular a especificação de 
 
 ## Independent database
 
-Persistent installations use the dedicated PostgreSQL database, role and schema named `qual_hardware`, with the separate `qual_hardware_database` volume. The server refuses a `DATABASE_URL` whose database name is anything other than `qual_hardware`; pointing it at a Perceptrum or shared database fails before any query or schema change.
+Qual Hardware uses its own local SQLite file named `qual-hardware.sqlite`. The filename is enforced before the application opens the database, preventing accidental use of a Perceptrum or generic shared database. Projects, recommendations, benchmark metadata, the hardware catalog and price history persist locally.
 
-See `database/README.md` for Compose and externally managed PostgreSQL provisioning.
+See `database/README.md` for locations, backup and migration rules.
 
 ## Local development
 
@@ -27,7 +27,7 @@ npm run dev:web
 
 The API development port is `4178` by default; Vite proxies `/api` to the same private local port.
 
-Without `DATABASE_URL`, the API uses an in-memory store for local evaluation. PostgreSQL is mandatory for shared or persistent environments.
+The development server creates `data/qual-hardware.sqlite` automatically. Set `QUAL_HARDWARE_SQLITE_PATH` only when a different local directory is required; the filename must remain `qual-hardware.sqlite`.
 
 ## Aplicativo desktop Windows
 
@@ -45,7 +45,7 @@ npm run desktop:package
 
 O arquivo pronto fica em `release/Qual-Hardware-0.1.0-portable.exe`. Ele contém o runtime necessário, abre uma janela própria e inicia a API somente em uma porta aleatória de `127.0.0.1`. Não é necessário instalar Node.js no computador que executará o arquivo.
 
-O modo desktop é local e usa armazenamento em memória durante a sessão. Exporte o resultado em PDF, XLSX ou JSON antes de fechar. Uma instalação compartilhada e persistente continua usando exclusivamente o banco PostgreSQL separado `qual_hardware`.
+O modo desktop grava automaticamente os projetos e o catálogo em `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite`. Os dados continuam disponíveis depois de fechar ou reiniciar o computador. Cada membro da equipe pode copiar somente o executável para sua máquina; o arquivo local é criado no primeiro uso.
 
 O catálogo possui atualização independente e assinada. Consulte `docs/CATALOG_UPDATES.md`; sem URL/chave pública configuradas, o desktop informa que está usando o catálogo incluído no executável.
 
@@ -60,4 +60,4 @@ npm run audit:source
 
 See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, and `contracts/perceptrum-workload-v1.json`.
 
-The isolated Windows runner is documented in `runtime/README.md`. A loopback-only PostgreSQL deployment reference and TLS/VPN proxy example are in `deploy/`; they are provisioning inputs, not deployment commands for retired infrastructure.
+The isolated Windows runner is documented in `runtime/README.md`. A loopback-only SQLite service and TLS/VPN proxy example are in `deploy/`; they are provisioning inputs, not deployment commands for retired infrastructure.

@@ -4,12 +4,12 @@ O executável do Qual Hardware e o catálogo têm ciclos de atualização indepe
 
 ## Fluxo privado diário
 
-1. O worker do banco separado `qual_hardware` executa `npm run catalog:collect` com fontes/API em allowlist.
+1. O serviço privado de catálogo executa `npm run catalog:collect` com fontes/API em allowlist e registra resultados no SQLite próprio do Qual Hardware.
 2. Itens são identificados por MPN exato. Correspondências aproximadas não entram automaticamente.
 3. Um revisor aprova alterações de especificação, compatibilidade ou produto antes da publicação.
 4. O publicador executa `npm run catalog:sign`. A chave privada Ed25519 fica somente nesse worker.
 5. O arquivo JSON assinado é publicado em uma URL HTTPS privada/VPN.
-6. O desktop verifica a assinatura com a chave pública, aplica o catálogo e guarda a última cópia válida no perfil local do Windows.
+6. O desktop verifica a assinatura com a chave pública, substitui equipamentos e preços em uma única transação SQLite e guarda a última cópia assinada válida no perfil local do Windows.
 
 Configure o desktop com `QUAL_HARDWARE_CATALOG_URL` e `QUAL_HARDWARE_CATALOG_PUBLIC_KEY`. Ao iniciar, ele tenta atualizar; a interface também oferece **Atualizar agora**. Se a rede estiver indisponível ou a assinatura for inválida, o catálogo anterior permanece ativo.
 
@@ -23,3 +23,7 @@ Cada recomendação grava `catalog-version:<versão>` nas evidências. Cotaçõe
 - Falha de coletor: mantém a última observação, aumenta sua idade e não apaga a rastreabilidade.
 
 O agendamento é responsabilidade da infraestrutura privada (por exemplo, tarefa diária no worker). O executável não faz scraping direto das lojas.
+
+## O que precisa ser provisionado
+
+O mecanismo já está no aplicativo, mas a atualização automática só fica ativa depois que a Aiquimist publicar a URL HTTPS/VPN do catálogo e instalar a chave pública no ambiente do desktop. A chave privada fica exclusivamente no publicador. Sem esses dois valores, o aplicativo permanece funcional e informa que está usando o catálogo incluído no executável; ele não inventa atualizações nem preços.

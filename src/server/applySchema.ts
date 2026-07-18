@@ -1,14 +1,8 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import pg from "pg";
-import { assertDedicatedDatabaseUrl } from "./database.js";
+import { createStore } from "./store.js";
 
-if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-const pool = new pg.Pool({ connectionString: assertDedicatedDatabaseUrl(process.env.DATABASE_URL) });
+const store = createStore();
 try {
-  const sql = await readFile(resolve(process.cwd(), "database", "schema.sql"), "utf8");
-  await pool.query(sql);
-  console.log("Qual Hardware database schema applied.");
+  console.log("Qual Hardware SQLite schema applied.");
 } finally {
-  await pool.end();
+  await store.close();
 }

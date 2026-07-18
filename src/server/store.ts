@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import pg from "pg";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { HARDWARE_CATALOG, SEED_PRICE_QUOTES } from "../engine/catalog.js";
-import { assertDedicatedDatabaseUrl } from "./database.js";
+import { assertDedicatedSqlitePath, QUAL_HARDWARE_SQLITE_SCHEMA_VERSION } from "./database.js";
 import type {
   BenchmarkManifest,
   BenchmarkResultRecord,
@@ -31,6 +33,7 @@ export interface ClaimedJob {
 }
 
 export interface PlannerStore {
+  readonly storageKind: "memory" | "sqlite";
   listScenarios(): Promise<ScenarioRecord[]>;
   getScenario(id: string): Promise<ScenarioRecord | null>;
   createScenario(scenario: CapacityScenario): Promise<ScenarioRecord>;
@@ -59,6 +62,7 @@ function now(): string {
 }
 
 export class MemoryPlannerStore implements PlannerStore {
+  readonly storageKind = "memory" as const;
   private scenarios = new Map<string, ScenarioRecord>();
   private recommendations = new Map<string, CapacityRecommendation>();
   private manifests = new Map<string, BenchmarkManifest>();
@@ -138,37 +142,96 @@ export class MemoryPlannerStore implements PlannerStore {
   async close(): Promise<void> {}
 }
 
+function parseJson<T>(value: unknown): T {
+  if (typeof value !== "string") throw new Error("invalid_sqlite_json");
+  return JSON.parse(value) as T;
+}
+
 function scenarioRow(row: Record<string, unknown>): ScenarioRecord {
   return {
-    id: String(row.id), revision: Number(row.revision), createdAt: new Date(String(row.created_at)).toISOString(),
-    updatedAt: new Date(String(row.updated_at)).toISOString(), scenario: row.scenario_json as CapacityScenario,
+    id: String(row.id), revision: Number(row.revision), createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at), scenario: parseJson<CapacityScenario>(row.scenario_json),
   };
 }
 
-export class PostgresPlannerStore implements PlannerStore {
-  private readonly pool: pg.Pool;
-  constructor(connectionString: string) {
-    this.pool = new pg.Pool({ connectionString: assertDedicatedDatabaseUrl(connectionString), max: 10 });
+function rows(result: unknown[]): Record<string, unknown>[] {
+  return result as Record<string, unknown>[];
+}
+
+export class SqlitePlannerStore implements PlannerStore {
+  readonly storageKind = "sqlite" as const;
+  private readonly database: DatabaseSync;
+
+  constructor(databasePath: string, schemaPath?: string) {
+    const dedicatedPath = assertDedicatedSqlitePath(databasePath);
+    mkdirSync(dirname(dedicatedPath), { recursive: true });
+    this.database = new DatabaseSync(dedicatedPath);
+    this.database.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+
+    const currentVersion = Number((this.database.prepare("PRAGMA user_version").get() as { user_version?: number }).user_version ?? 0);
+    if (currentVersion > QUAL_HARDWARE_SQLITE_SCHEMA_VERSION) {
+      this.database.close();
+      throw new Error(`SQLite schema version ${currentVersion} is newer than supported version ${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}.`);
+    }
+    const resourceRoot = process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
+    this.database.exec(readFileSync(schemaPath ?? resolve(resourceRoot, "database", "sqlite-schema.sql"), "utf8"));
+    this.seedBundledCatalog();
   }
+
+  private inTransaction<T>(action: () => T, mode: "DEFERRED" | "IMMEDIATE" = "DEFERRED"): T {
+    this.database.exec(`BEGIN ${mode}`);
+    try {
+      const result = action();
+      this.database.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private seedBundledCatalog(): void {
+    const count = Number((this.database.prepare("SELECT COUNT(*) AS count FROM hardware_catalog").get() as { count: number }).count);
+    if (count > 0) return;
+    const insertHardware = this.database.prepare(
+      "INSERT INTO hardware_catalog(id,template_json,updated_at) VALUES(?,?,?)",
+    );
+    const insertQuote = this.database.prepare(
+      "INSERT INTO price_quotes(id,hardware_template_id,quote_json,observed_at) VALUES(?,?,?,?)",
+    );
+    this.inTransaction(() => {
+      const timestamp = now();
+      for (const item of HARDWARE_CATALOG) insertHardware.run(item.id, JSON.stringify(item), timestamp);
+      for (const quote of SEED_PRICE_QUOTES) {
+        insertQuote.run(quote.id, quote.hardwareTemplateId, JSON.stringify(quote), quote.observedAt);
+      }
+    });
+  }
+
   async listScenarios(): Promise<ScenarioRecord[]> {
-    const result = await this.pool.query("SELECT * FROM qual_hardware.scenarios ORDER BY updated_at DESC");
-    return result.rows.map(scenarioRow);
+    return rows(this.database.prepare("SELECT * FROM scenarios ORDER BY updated_at DESC").all()).map(scenarioRow);
   }
   async getScenario(id: string): Promise<ScenarioRecord | null> {
-    const result = await this.pool.query("SELECT * FROM qual_hardware.scenarios WHERE id=$1", [id]);
-    return result.rows[0] ? scenarioRow(result.rows[0]) : null;
+    const row = this.database.prepare("SELECT * FROM scenarios WHERE id=?").get(id) as Record<string, unknown> | undefined;
+    return row ? scenarioRow(row) : null;
   }
   async createScenario(scenario: CapacityScenario): Promise<ScenarioRecord> {
     const id = randomUUID();
-    const result = await this.pool.query(
-      "INSERT INTO qual_hardware.scenarios(id,revision,scenario_json) VALUES($1,1,$2) RETURNING *", [id, scenario]);
-    return scenarioRow(result.rows[0]);
+    const timestamp = now();
+    this.database.prepare(
+      "INSERT INTO scenarios(id,revision,scenario_json,created_at,updated_at) VALUES(?,1,?,?,?)",
+    ).run(id, JSON.stringify(scenario), timestamp, timestamp);
+    return { id, revision: 1, createdAt: timestamp, updatedAt: timestamp, scenario };
   }
   async updateScenario(id: string, expectedRevision: number, scenario: CapacityScenario): Promise<ScenarioRecord> {
-    const result = await this.pool.query(
-      "UPDATE qual_hardware.scenarios SET revision=revision+1,scenario_json=$3,updated_at=now() WHERE id=$1 AND revision=$2 RETURNING *",
-      [id, expectedRevision, scenario]);
-    if (result.rows[0]) return scenarioRow(result.rows[0]);
+    const timestamp = now();
+    const result = this.database.prepare(
+      "UPDATE scenarios SET revision=revision+1,scenario_json=?,updated_at=? WHERE id=? AND revision=?",
+    ).run(JSON.stringify(scenario), timestamp, id, expectedRevision);
+    if (result.changes > 0) {
+      const updated = await this.getScenario(id);
+      if (updated) return updated;
+    }
     const current = await this.getScenario(id);
     if (!current) throw new Error("scenario_not_found");
     throw new RevisionConflictError(current.revision);
@@ -178,100 +241,112 @@ export class PostgresPlannerStore implements PlannerStore {
     return source ? this.createScenario({ ...source.scenario, projectName: `${source.scenario.projectName} — Copy` }) : null;
   }
   async saveRecommendations(items: CapacityRecommendation[]): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const item of items) await client.query(
-        "INSERT INTO qual_hardware.recommendations(id,scenario_id,scenario_revision,recommendation_json,generated_at) VALUES($1,$2,$3,$4,$5)",
-        [item.id, item.scenarioId, item.scenarioRevision, item, item.generatedAt]);
-      await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+    const statement = this.database.prepare(
+      "INSERT INTO recommendations(id,scenario_id,scenario_revision,recommendation_json,generated_at) VALUES(?,?,?,?,?)",
+    );
+    this.inTransaction(() => {
+      for (const item of items) {
+        statement.run(item.id, item.scenarioId, item.scenarioRevision, JSON.stringify(item), item.generatedAt);
+      }
+    });
   }
   async listRecommendations(scenarioId: string): Promise<CapacityRecommendation[]> {
-    const result = await this.pool.query(
-      "SELECT recommendation_json FROM qual_hardware.recommendations WHERE scenario_id=$1 ORDER BY generated_at DESC", [scenarioId]);
-    return result.rows.map((row) => row.recommendation_json as CapacityRecommendation);
+    return rows(this.database.prepare(
+      "SELECT recommendation_json FROM recommendations WHERE scenario_id=? ORDER BY generated_at DESC",
+    ).all(scenarioId)).map((row) => parseJson<CapacityRecommendation>(row.recommendation_json));
   }
   async getRecommendation(id: string): Promise<CapacityRecommendation | null> {
-    const result = await this.pool.query("SELECT recommendation_json FROM qual_hardware.recommendations WHERE id=$1", [id]);
-    return (result.rows[0]?.recommendation_json as CapacityRecommendation | undefined) ?? null;
+    const row = this.database.prepare("SELECT recommendation_json FROM recommendations WHERE id=?").get(id) as Record<string, unknown> | undefined;
+    return row ? parseJson<CapacityRecommendation>(row.recommendation_json) : null;
   }
   async saveManifest(manifest: BenchmarkManifest): Promise<void> {
-    await this.pool.query(
-      "INSERT INTO qual_hardware.benchmark_manifests(id,scenario_id,scenario_revision,manifest_json,expires_at) VALUES($1,$2,$3,$4,$5)",
-      [manifest.id, manifest.scenarioId, manifest.scenarioRevision, manifest, manifest.expiresAt]);
+    this.database.prepare(
+      "INSERT INTO benchmark_manifests(id,scenario_id,scenario_revision,manifest_json,expires_at,created_at) VALUES(?,?,?,?,?,?)",
+    ).run(manifest.id, manifest.scenarioId, manifest.scenarioRevision, JSON.stringify(manifest), manifest.expiresAt, manifest.createdAt);
   }
   async getManifest(id: string): Promise<BenchmarkManifest | null> {
-    const result = await this.pool.query("SELECT manifest_json FROM qual_hardware.benchmark_manifests WHERE id=$1", [id]);
-    return (result.rows[0]?.manifest_json as BenchmarkManifest | undefined) ?? null;
+    const row = this.database.prepare("SELECT manifest_json FROM benchmark_manifests WHERE id=?").get(id) as Record<string, unknown> | undefined;
+    return row ? parseJson<BenchmarkManifest>(row.manifest_json) : null;
   }
   async saveBenchmarkResult(result: BenchmarkResultRecord): Promise<void> {
-    await this.pool.query(
-      "INSERT INTO qual_hardware.benchmark_results(manifest_id,result_json,received_at) VALUES($1,$2,$3) ON CONFLICT(manifest_id) DO UPDATE SET result_json=excluded.result_json,received_at=excluded.received_at",
-      [result.manifestId, result, result.receivedAt]);
+    this.database.prepare(
+      "INSERT INTO benchmark_results(manifest_id,result_json,received_at) VALUES(?,?,?) ON CONFLICT(manifest_id) DO UPDATE SET result_json=excluded.result_json,received_at=excluded.received_at",
+    ).run(result.manifestId, JSON.stringify(result), result.receivedAt);
   }
   async getBenchmarkResult(manifestId: string): Promise<BenchmarkResultRecord | null> {
-    const result = await this.pool.query("SELECT result_json FROM qual_hardware.benchmark_results WHERE manifest_id=$1", [manifestId]);
-    return (result.rows[0]?.result_json as BenchmarkResultRecord | undefined) ?? null;
+    const row = this.database.prepare("SELECT result_json FROM benchmark_results WHERE manifest_id=?").get(manifestId) as Record<string, unknown> | undefined;
+    return row ? parseJson<BenchmarkResultRecord>(row.result_json) : null;
   }
   async listBenchmarkEvidence(scenarioId: string, revision: number): Promise<BenchmarkEvidence[]> {
-    const result = await this.pool.query(
-      "SELECT m.manifest_json,r.result_json FROM qual_hardware.benchmark_manifests m JOIN qual_hardware.benchmark_results r ON r.manifest_id=m.id WHERE m.scenario_id=$1 AND m.scenario_revision=$2",
-      [scenarioId, revision]);
-    return result.rows.map((row) => ({ manifest: row.manifest_json as BenchmarkManifest, result: row.result_json as BenchmarkResultRecord }));
+    return rows(this.database.prepare(
+      "SELECT m.manifest_json,r.result_json FROM benchmark_manifests m JOIN benchmark_results r ON r.manifest_id=m.id WHERE m.scenario_id=? AND m.scenario_revision=?",
+    ).all(scenarioId, revision)).map((row) => ({
+      manifest: parseJson<BenchmarkManifest>(row.manifest_json),
+      result: parseJson<BenchmarkResultRecord>(row.result_json),
+    }));
   }
   async getCatalog(): Promise<HardwareNodeTemplate[]> {
-    const result = await this.pool.query("SELECT template_json FROM qual_hardware.hardware_catalog ORDER BY id");
-    return result.rowCount ? result.rows.map((row) => row.template_json as HardwareNodeTemplate) : HARDWARE_CATALOG;
+    const result = rows(this.database.prepare("SELECT template_json FROM hardware_catalog ORDER BY id").all());
+    return result.length ? result.map((row) => parseJson<HardwareNodeTemplate>(row.template_json)) : HARDWARE_CATALOG;
   }
   async replaceCatalog(hardware: HardwareNodeTemplate[], quotes: PriceQuote[]): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("DELETE FROM qual_hardware.hardware_catalog");
-      await client.query("DELETE FROM qual_hardware.price_quotes");
-      for (const item of hardware) await client.query(
-        "INSERT INTO qual_hardware.hardware_catalog(id,template_json) VALUES($1,$2)", [item.id, item]);
-      for (const quote of quotes) await client.query(
-        "INSERT INTO qual_hardware.price_quotes(id,hardware_template_id,quote_json,observed_at) VALUES($1,$2,$3,$4)",
-        [quote.id, quote.hardwareTemplateId, quote, quote.observedAt]);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    const insertHardware = this.database.prepare(
+      "INSERT INTO hardware_catalog(id,template_json,updated_at) VALUES(?,?,?)",
+    );
+    const insertQuote = this.database.prepare(
+      "INSERT INTO price_quotes(id,hardware_template_id,quote_json,observed_at) VALUES(?,?,?,?)",
+    );
+    this.inTransaction(() => {
+      this.database.exec("DELETE FROM price_quotes; DELETE FROM hardware_catalog;");
+      const timestamp = now();
+      for (const item of hardware) insertHardware.run(item.id, JSON.stringify(item), timestamp);
+      for (const quote of quotes) {
+        insertQuote.run(quote.id, quote.hardwareTemplateId, JSON.stringify(quote), quote.observedAt);
+      }
+    }, "IMMEDIATE");
   }
   async getQuotes(): Promise<PriceQuote[]> {
-    const result = await this.pool.query("SELECT quote_json FROM qual_hardware.price_quotes ORDER BY observed_at DESC");
-    return result.rows.map((row) => row.quote_json as PriceQuote);
+    return rows(this.database.prepare("SELECT quote_json FROM price_quotes ORDER BY observed_at DESC").all())
+      .map((row) => parseJson<PriceQuote>(row.quote_json));
   }
   async upsertQuotes(quotes: PriceQuote[]): Promise<void> {
-    for (const quote of quotes) await this.pool.query(
-      "INSERT INTO qual_hardware.price_quotes(id,hardware_template_id,quote_json,observed_at) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET quote_json=excluded.quote_json,observed_at=excluded.observed_at",
-      [quote.id, quote.hardwareTemplateId, quote, quote.observedAt]);
+    const statement = this.database.prepare(
+      "INSERT INTO price_quotes(id,hardware_template_id,quote_json,observed_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET hardware_template_id=excluded.hardware_template_id,quote_json=excluded.quote_json,observed_at=excluded.observed_at",
+    );
+    this.inTransaction(() => {
+      for (const quote of quotes) {
+        statement.run(quote.id, quote.hardwareTemplateId, JSON.stringify(quote), quote.observedAt);
+      }
+    });
   }
   async enqueue(jobType: string, payload: unknown): Promise<number> {
-    const result = await this.pool.query("INSERT INTO qual_hardware.work_queue(job_type,payload_json) VALUES($1,$2) RETURNING id", [jobType, payload]);
-    return Number(result.rows[0].id);
+    const result = this.database.prepare(
+      "INSERT INTO work_queue(job_type,payload_json,available_at) VALUES(?,?,?)",
+    ).run(jobType, JSON.stringify(payload), now());
+    return Number(result.lastInsertRowid);
   }
   async claimJob(): Promise<ClaimedJob | null> {
-    const result = await this.pool.query(`WITH next AS (
-      SELECT id FROM qual_hardware.work_queue WHERE status='queued' AND available_at<=now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1
-    ) UPDATE qual_hardware.work_queue q SET status='running',locked_at=now(),attempts=attempts+1 FROM next WHERE q.id=next.id
-      RETURNING q.id,q.job_type,q.payload_json`);
-    const row = result.rows[0];
-    return row ? { id: Number(row.id), jobType: String(row.job_type), payload: row.payload_json } : null;
+    return this.inTransaction(() => {
+      const row = this.database.prepare(
+        "SELECT id,job_type,payload_json FROM work_queue WHERE status='queued' AND available_at<=? ORDER BY id LIMIT 1",
+      ).get(now()) as Record<string, unknown> | undefined;
+      if (!row) return null;
+      this.database.prepare(
+        "UPDATE work_queue SET status='running',locked_at=?,attempts=attempts+1 WHERE id=? AND status='queued'",
+      ).run(now(), Number(row.id));
+      return { id: Number(row.id), jobType: String(row.job_type), payload: parseJson<unknown>(row.payload_json) };
+    }, "IMMEDIATE");
   }
   async finishJob(id: number, error: string | null): Promise<void> {
-    await this.pool.query(
-      "UPDATE qual_hardware.work_queue SET status=$2,completed_at=now(),error_text=$3 WHERE id=$1",
-      [id, error === null ? "completed" : "failed", error]);
+    this.database.prepare(
+      "UPDATE work_queue SET status=?,completed_at=?,error_text=? WHERE id=?",
+    ).run(error === null ? "completed" : "failed", now(), error, id);
   }
-  async close(): Promise<void> { await this.pool.end(); }
+  async close(): Promise<void> { this.database.close(); }
 }
 
 export function createStore(): PlannerStore {
-  return process.env.DATABASE_URL ? new PostgresPlannerStore(process.env.DATABASE_URL) : new MemoryPlannerStore();
+  if (process.env.QUAL_HARDWARE_IN_MEMORY === "1") return new MemoryPlannerStore();
+  const databasePath = process.env.QUAL_HARDWARE_SQLITE_PATH ?? resolve(process.cwd(), "data", "qual-hardware.sqlite");
+  return new SqlitePlannerStore(databasePath);
 }

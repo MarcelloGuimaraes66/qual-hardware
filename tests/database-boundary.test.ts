@@ -1,41 +1,62 @@
-import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
+import { readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { afterEach, describe, expect, it } from "vitest";
+import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
+import { createDefaultScenario } from "../src/shared/schemas.js";
 import {
-  assertDedicatedDatabaseUrl,
-  QUAL_HARDWARE_DATABASE_NAME,
-  QUAL_HARDWARE_SCHEMA_NAME,
+  assertDedicatedSqlitePath,
+  QUAL_HARDWARE_SQLITE_FILENAME,
+  QUAL_HARDWARE_SQLITE_SCHEMA_VERSION,
 } from "../src/server/database.js";
+import { SqlitePlannerStore } from "../src/server/store.js";
 
-describe("dedicated Qual Hardware database boundary", () => {
-  it("accepts only the dedicated qual_hardware PostgreSQL database", () => {
-    const dedicated = "postgres://qual_hardware:secret@database:5432/qual_hardware";
-    expect(assertDedicatedDatabaseUrl(dedicated)).toBe(dedicated);
-    expect(assertDedicatedDatabaseUrl("postgresql://admin:secret@localhost:5432/qual_hardware?sslmode=require"))
-      .toContain(`/${QUAL_HARDWARE_DATABASE_NAME}`);
+const cleanupDirectories: string[] = [];
+afterEach(async () => {
+  await Promise.all(cleanupDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
 
-    expect(() => assertDedicatedDatabaseUrl("postgres://user:secret@database:5432/perceptrum"))
-      .toThrow("Use the dedicated 'qual_hardware' database");
-    expect(() => assertDedicatedDatabaseUrl("postgres://user:secret@database:5432/postgres"))
-      .toThrow("Use the dedicated 'qual_hardware' database");
-    expect(() => assertDedicatedDatabaseUrl("mysql://user:secret@database/qual_hardware"))
-      .toThrow("postgres or postgresql");
+describe("dedicated Qual Hardware SQLite boundary", () => {
+  it("accepts only the dedicated Qual Hardware filename", () => {
+    const dedicated = join(tmpdir(), "team-member", QUAL_HARDWARE_SQLITE_FILENAME);
+    expect(assertDedicatedSqlitePath(dedicated)).toBe(dedicated);
+    expect(() => assertDedicatedSqlitePath(join(tmpdir(), "perceptrum.sqlite"))).toThrow("Perceptrum databases are never allowed");
+    expect(() => assertDedicatedSqlitePath(join(tmpdir(), "shared.db"))).toThrow(QUAL_HARDWARE_SQLITE_FILENAME);
+    expect(() => assertDedicatedSqlitePath(":memory:")).toThrow("file-backed");
   });
 
-  it("guards and namespaces the SQL schema", async () => {
-    const sql = await readFile(new URL("../database/schema.sql", import.meta.url), "utf8");
-    expect(sql).toContain("current_database() <> 'qual_hardware'");
-    expect(sql).toContain(`CREATE SCHEMA IF NOT EXISTS ${QUAL_HARDWARE_SCHEMA_NAME}`);
-    expect(sql).toContain("qual_hardware.scenarios");
-    expect(sql).not.toContain("capacity_scenarios");
+  it("uses a versioned strict SQLite schema without product data from Perceptrum", async () => {
+    const sql = await readFile(new URL("../database/sqlite-schema.sql", import.meta.url), "utf8");
+    expect(sql).toContain("PRAGMA journal_mode = WAL");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS scenarios");
+    expect(sql).toContain(") STRICT;");
+    expect(sql).toContain(`PRAGMA user_version = ${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}`);
     expect(sql.toLowerCase()).not.toContain("perceptrum");
+    expect(sql.toLowerCase()).not.toContain("postgres");
   });
 
-  it("provisions an independent database, role, volume and network in Compose", async () => {
+  it("persists projects and the hardware catalog after closing and reopening", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-sqlite-"));
+    cleanupDirectories.push(directory);
+    const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
+    const firstStore = new SqlitePlannerStore(databasePath);
+    const created = await firstStore.createScenario(createDefaultScenario(25));
+    expect(await firstStore.getCatalog()).toHaveLength(HARDWARE_CATALOG.length);
+    await firstStore.close();
+
+    const reopenedStore = new SqlitePlannerStore(databasePath);
+    expect((await reopenedStore.getScenario(created.id))?.scenario.totalCameras).toBe(25);
+    expect(await reopenedStore.getCatalog()).toHaveLength(HARDWARE_CATALOG.length);
+    await reopenedStore.close();
+  });
+
+  it("shares one persistent SQLite volume between the API and worker in Compose", async () => {
     const compose = await readFile(new URL("../docker-compose.yml", import.meta.url), "utf8");
-    expect(compose).toContain("POSTGRES_DB: qual_hardware");
-    expect(compose).toContain("POSTGRES_USER: qual_hardware");
-    expect(compose).toContain("qual_hardware_database:/var/lib/postgresql/data");
+    expect(compose).toContain("QUAL_HARDWARE_SQLITE_PATH: /data/qual-hardware.sqlite");
+    expect(compose.match(/qual_hardware_data:\/data/g)).toHaveLength(2);
     expect(compose).toContain("qual_hardware_private:");
+    expect(compose.toLowerCase()).not.toContain("postgres");
     expect(compose.toLowerCase()).not.toContain("perceptrum");
   });
 });

@@ -1,40 +1,21 @@
 services:
-  database:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: qual_hardware
-      POSTGRES_USER: qual_hardware
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-    volumes:
-      - qual_hardware_database:/var/lib/postgresql/data
-    networks: [qual_hardware_private]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U qual_hardware -d qual_hardware"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   qual-hardware:
     build: .
     restart: unless-stopped
-    depends_on:
-      database:
-        condition: service_healthy
     environment:
       PORT: "4178"
-      DATABASE_URL: postgres://qual_hardware:${POSTGRES_PASSWORD}@database:5432/qual_hardware
+      QUAL_HARDWARE_SQLITE_PATH: /data/qual-hardware.sqlite
       REPORT_STORAGE_DIR: /data/reports
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set private HTTPS URL}
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN}
       PRICE_ALLOWLIST: ${PRICE_ALLOWLIST:-}
       PRICE_SOURCES_JSON: ${PRICE_SOURCES_JSON:-[]}
     volumes:
-      - qual_hardware_reports:/data/reports
+      - qual_hardware_data:/data
     ports:
       - "127.0.0.1:4178:4178"
     networks: [qual_hardware_private]
-    command: ["sh", "-c", "node dist/server/server/applySchema.js && node dist/server/server/index.js"]
+    command: ["node", "dist/server/server/index.js"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4178/api/health"]
       interval: 15s
@@ -44,13 +25,12 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    depends_on:
-      database:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgres://qual_hardware:${POSTGRES_PASSWORD}@database:5432/qual_hardware
+      QUAL_HARDWARE_SQLITE_PATH: /data/qual-hardware.sqlite
       PRICE_ALLOWLIST: ${PRICE_ALLOWLIST:-}
       PRICE_SOURCES_JSON: ${PRICE_SOURCES_JSON:-[]}
+    volumes:
+      - qual_hardware_data:/data
     networks: [qual_hardware_private, qual_hardware_egress]
     command: ["node", "dist/server/server/worker.js"]
 
@@ -60,5 +40,4 @@ networks:
   qual_hardware_egress:
 
 volumes:
-  qual_hardware_database:
-  qual_hardware_reports:
+  qual_hardware_data:

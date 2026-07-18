@@ -11,6 +11,8 @@ describe("Qual Hardware API and reports", () => {
   it("creates, revises, calculates and exports a scenario", async () => {
     const store = new MemoryPlannerStore();
     const app = createApp(store);
+    const health = await app.request("/api/health");
+    expect(await health.json()).toEqual({ status: "ok", storage: "memory" });
     const catalogStatus = await app.request("/api/catalog/status");
     expect(catalogStatus.status).toBe(200);
     expect((await catalogStatus.json() as { catalogVersion: string }).catalogVersion).toMatch(/^hardware-reference\//);
