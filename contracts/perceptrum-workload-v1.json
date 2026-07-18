@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/schemas/perceptrum-workload-v1.json",
+  "title": "Perceptrum effective camera workload contract",
+  "schemaVersion": "perceptrum-workload/1.1.0",
+  "sourceBehavior": {
+    "maxFramesPerInference": 300,
+    "frameBufferSeconds": 2,
+    "rtspNetworkBufferBytes": 4194304,
+    "baseThreadsPerCamera": 3,
+    "asyncDiskWriterPerCamera": true,
+    "localRuntimeParallel": 1,
+    "localRuntimeMaxInstancesPerModel": 16,
+    "localRuntimeEstimatedInstanceVramMiB": 5120,
+    "localRuntimeReserveVramMiB": 512,
+    "storageBehavior": {
+      "capacityIsSizingConstraint": false,
+      "throughputIsSizingConstraint": false,
+      "inferenceMediaTypicalRetentionHours": 24,
+      "alertMediaPattern": "event_driven_sparse",
+      "alertDeletionPolicyOwner": "perceptrum_camera_configuration",
+      "qualHardwareRecommendation": "operating_system_and_temporary_workspace_only"
+    }
+  },
+  "execution": {
+    "inputTypes": ["video", "image"],
+    "selectablePackagingModes": ["frame_sequence", "mosaic_2x2"],
+    "legacyReadOnlyPackagingModes": ["mosaic_3x3"],
+    "models": [
+      "gpt-5.4",
+      "gpt-5",
+      "gpt-5.4-mini",
+      "gpt-5-mini",
+      "aiq-3.7",
+      "aiq-3.7-max",
+      "opencv-portal-counter"
+    ],
+    "cameraAgentRunEverySeconds": [10, 60],
+    "jobRunEverySeconds": [10, 60, 300, 600],
+    "modelFps": { "minimum": 1, "maximum": 10, "integer": true },
+    "normalizationRules": [
+      {
+        "whenModelIn": ["aiq-3.7", "aiq-3.7-max"],
+        "effectiveInputType": "video",
+        "effectiveRunEverySeconds": 10
+      },
+      {
+        "whenModel": "opencv-portal-counter",
+        "effectiveInputType": "video",
+        "effectivePackagingMode": "frame_sequence",
+        "effectiveRunEverySeconds": 60,
+        "effectiveModelFps": 1
+      }
+    ]
+  }
+}

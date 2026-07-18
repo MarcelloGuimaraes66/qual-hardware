@@ -1,0 +1,76 @@
+{
+  "name": "@aiquimist/qual-hardware",
+  "version": "0.1.0",
+  "description": "Calculadora desktop de infraestrutura para cargas do Perceptrum",
+  "author": "Aiquimist",
+  "private": true,
+  "type": "module",
+  "main": "dist/server/desktop/main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "dev:web": "vite",
+    "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
+    "desktop:run": "npm run build && electron .",
+    "desktop:package": "npm run build && electron-builder --win portable --x64",
+    "start": "node dist/server/server/index.js",
+    "worker": "tsx src/server/worker.ts",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "catalog:collect": "tsx src/server/worker.ts --once",
+    "catalog:sign": "tsx scripts/sign-catalog.ts",
+    "db:schema": "tsx src/server/applySchema.ts",
+    "audit:source": "tsx scripts/audit-source-inventory.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.10",
+    "exceljs": "^4.4.0",
+    "hono": "^4.12.30",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.22.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/pg": "^8.15.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
+  "build": {
+    "appId": "ai.aiquimist.qualhardware",
+    "productName": "Qual Hardware",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "contracts/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "Qual-Hardware-${version}-portable.${ext}"
+    }
+  }
+}
