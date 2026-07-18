@@ -1,5 +1,20 @@
 # Validation policy
 
+## Cross-platform desktop gate
+
+Pull requests run the same typecheck, test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, required ASAR resources, loopback origin, health, bundled catalog, SQLite, calculation, PDF/XLSX/JSON exports, single-instance behavior and persistence after restart.
+
+```sh
+npm ci
+npm run typecheck
+npm test
+npm run build
+npx electron-builder --dir --publish never
+npm run desktop:smoke
+```
+
+On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release remains blocked until the manual Windows 11, macOS 26 and Ubuntu 24.04 checklist in `CROSS_PLATFORM_DESKTOP.md` is approved. Windows validation must additionally prove that the existing release and the refactored release resolve the exact same `app.getPath("userData")` directory before merge.
+
 ## Recommendation confidence
 
 - `estimated`: produced by the reference capacity model or interpolation.

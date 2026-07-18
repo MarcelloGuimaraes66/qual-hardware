@@ -1,0 +1,63 @@
+appId: ai.aiquimist.qualhardware
+productName: Qual Hardware
+copyright: Copyright © 2026 Aiquimist
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - contracts/**/*
+  - database/**/*
+  - package.json
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: Qual-Hardware-${version}-windows-${arch}-portable.${ext}
+
+mac:
+  icon: build/icon.icns
+  category: public.app-category.business
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  artifactName: Qual-Hardware-${version}-macos-${arch}.${ext}
+  extendInfo:
+    NSAppTransportSecurity:
+      NSAllowsArbitraryLoads: false
+      NSAllowsLocalNetworking: true
+      NSExceptionDomains:
+        127.0.0.1:
+          NSIncludesSubdomains: false
+          NSTemporaryExceptionAllowsInsecureHTTPLoads: true
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  executableName: qual-hardware
+  synopsis: Calculadora desktop de infraestrutura para cargas do Perceptrum
+  maintainer: Marcello Guimarães <marcellogmf66@gmail.com>
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+
+appImage:
+  artifactName: Qual-Hardware-${version}-linux-${arch}.${ext}
+
+dmg:
+  writeUpdateInfo: false
+
+deb:
+  artifactName: qual-hardware_${version}_amd64.${ext}
+
+publish: null

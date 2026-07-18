@@ -2,9 +2,13 @@
 
 Qual Hardware usa SQLite e cria sozinho um arquivo chamado obrigatoriamente `qual-hardware.sqlite`. Não há servidor de banco, usuário, senha ou instalação adicional.
 
-- Desktop Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite`
+- Desktop Windows: `%APPDATA%\Qual Hardware\qual-hardware.sqlite` (expected Electron default; the existing portable must confirm this exact path before merge)
+- Desktop macOS: `~/Library/Application Support/Qual Hardware/qual-hardware.sqlite`
+- Desktop Ubuntu: `~/.config/Qual Hardware/qual-hardware.sqlite`
 - Desenvolvimento: `data/qual-hardware.sqlite`
 - Docker em um único host: `/data/qual-hardware.sqlite`, no volume `qual_hardware_data`
+
+The desktop derives these locations from `app.getPath("userData")`; it does not hard-code, move or copy a database. Existing data must never be cleaned to make a validation pass. If the Windows comparison returns a different directory, the release is blocked until compatibility is restored.
 
 O aplicativo rejeita qualquer outro nome de arquivo. Essa barreira impede que um banco do Perceptrum, Drakon ou outro produto seja aberto por engano.
 

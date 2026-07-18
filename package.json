@@ -7,14 +7,16 @@
   "type": "module",
   "main": "dist/server/desktop/main.js",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "tsx watch src/server/index.ts",
     "dev:web": "vite",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
     "desktop:run": "npm run build && electron .",
-    "desktop:package": "npm run build && electron-builder --win portable --x64",
+    "desktop:package": "npm run build && electron-builder --publish never",
+    "desktop:package:dir": "npm run build && electron-builder --dir --publish never",
+    "desktop:smoke": "tsx scripts/smoke-desktop.ts",
     "start": "node dist/server/server/index.js",
     "worker": "tsx src/server/worker.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit",
@@ -49,28 +51,5 @@
   },
   "overrides": {
     "uuid": "^11.1.1"
-  },
-  "build": {
-    "appId": "ai.aiquimist.qualhardware",
-    "productName": "Qual Hardware",
-    "asar": true,
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "contracts/**/*",
-      "database/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ],
-      "artifactName": "Qual-Hardware-${version}-portable.${ext}"
-    }
   }
 }

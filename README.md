@@ -19,8 +19,10 @@ See `database/README.md` for locations, backup and migration rules.
 
 ## Local development
 
-```powershell
-npm install
+Use Node.js 24 LTS on Windows 11 x64, macOS 26 Apple Silicon or Ubuntu 24.04 x64. The repository has one npm lockfile and the same commands on every system:
+
+```sh
+npm ci
 npm run dev
 npm run dev:web
 ```
@@ -29,37 +31,48 @@ The API development port is `4178` by default; Vite proxies `/api` to the same p
 
 The development server creates `data/qual-hardware.sqlite` automatically. Set `QUAL_HARDWARE_SQLITE_PATH` only when a different local directory is required; the filename must remain `qual-hardware.sqlite`.
 
-## Aplicativo desktop Windows
+## Aplicativo desktop multiplataforma
 
 Para abrir a versão desktop em desenvolvimento:
 
-```powershell
+```sh
 npm run desktop:run
 ```
 
-Para gerar o executável portátil de 64 bits:
+Para gerar o pacote nativo do sistema atual:
 
-```powershell
+```sh
+npm ci
 npm run desktop:package
 ```
 
-O arquivo pronto fica em `release/Qual-Hardware-0.1.0-portable.exe`. Ele contém o runtime necessário, abre uma janela própria e inicia a API somente em uma porta aleatória de `127.0.0.1`. Não é necessário instalar Node.js no computador que executará o arquivo.
+Cada artefato é compilado no sistema operacional de destino. A versão `0.1.0` produz:
 
-O modo desktop grava automaticamente os projetos e o catálogo em `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite`. Os dados continuam disponíveis depois de fechar ou reiniciar o computador. Cada membro da equipe pode copiar somente o executável para sua máquina; o arquivo local é criado no primeiro uso.
+- Windows: `release/Qual-Hardware-0.1.0-windows-x64-portable.exe`.
+- macOS: `release/Qual-Hardware-0.1.0-macos-arm64.dmg`.
+- Ubuntu: `release/Qual-Hardware-0.1.0-linux-x64.AppImage` e `release/qual-hardware_0.1.0_amd64.deb`.
+
+Os pacotes contêm o runtime necessário, abrem uma janela própria e iniciam a API somente em uma porta aleatória de `127.0.0.1`. O usuário final não precisa instalar Node.js. Os pacotes internos não são assinados e podem exibir SmartScreen ou Gatekeeper; a publicação de cada GitHub Release é manual.
+
+O modo desktop grava automaticamente projetos e catálogo no diretório `userData` nativo do Electron, sempre no arquivo `qual-hardware.sqlite`. Os dados continuam disponíveis depois de fechar ou reiniciar o computador. Consulte `database/README.md` para os caminhos e a regra de preservação.
 
 O botão **Atualizar hardware** permanece visível no rodapé. Ele abre o gerenciador onde a equipe pode configurar a URL/chave pública ou importar manualmente um catálogo assinado. Consulte `docs/CATALOG_UPDATES.md`; sem configuração, o desktop continua usando o catálogo incluído no executável.
 
 Os botões PDF, XLSX e JSON geram um único relatório consolidado com as três propostas da revisão: mínimo técnico, recomendado e N+1. O PDF possui comparação e seções técnicas separadas; o XLSX inclui resumo, BOM detalhada, nós, carga, cálculos, preços e premissas para as três políticas.
 
+Pré-requisitos, instalação, smoke tests, limitações dos pacotes sem assinatura e diagnóstico estão em `docs/CROSS_PLATFORM_DESKTOP.md`.
+
 ## Validation
 
-```powershell
+```sh
 npm run typecheck
 npm test
 npm run build
+npm run desktop:package:dir
+npm run desktop:smoke
 npm run audit:source
 ```
 
 See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, and `contracts/perceptrum-workload-v1.json`.
 
-The isolated Windows runner is documented in `runtime/README.md`. A loopback-only SQLite service and TLS/VPN proxy example are in `deploy/`; they are provisioning inputs, not deployment commands for retired infrastructure.
+The isolated benchmark runner remains Windows-only and is documented in `runtime/README.md`. Manifest generation remains available in all three desktop applications. A loopback-only SQLite service and TLS/VPN proxy example are in `deploy/`; they are provisioning inputs, not deployment commands for retired infrastructure.

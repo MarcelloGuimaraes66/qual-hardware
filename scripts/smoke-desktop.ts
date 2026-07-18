@@ -1,0 +1,317 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createRequire } from "node:module";
+import { createServer } from "node:net";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { createDefaultScenario } from "../src/shared/schemas.js";
+import type { CapacityRecommendation, ScenarioRecord } from "../src/shared/types.js";
+
+interface PackagePaths {
+  executable: string;
+  asar: string;
+  bundle?: string;
+}
+
+interface RunningDesktop {
+  child: ChildProcessWithoutNullStreams;
+  origin: string;
+  debuggerUrl: string;
+  logs: string[];
+}
+
+const projectRoot = resolve(import.meta.dirname, "..");
+
+function packagePaths(): PackagePaths {
+  if (process.platform === "darwin") {
+    const application = join(projectRoot, "release", "mac-arm64", "Qual Hardware.app", "Contents");
+    return {
+      executable: join(application, "MacOS", "Qual Hardware"),
+      asar: join(application, "Resources", "app.asar"),
+      bundle: join(projectRoot, "release", "mac-arm64", "Qual Hardware.app"),
+    };
+  }
+  if (process.platform === "win32") {
+    const application = join(projectRoot, "release", "win-unpacked");
+    return {
+      executable: join(application, "Qual Hardware.exe"),
+      asar: join(application, "resources", "app.asar"),
+    };
+  }
+  const application = join(projectRoot, "release", "linux-unpacked");
+  return {
+    executable: join(application, "qual-hardware"),
+    asar: join(application, "resources", "app.asar"),
+  };
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      assert(address && typeof address !== "string");
+      const port = address.port;
+      server.close((error) => error ? reject(error) : resolvePort(port));
+    });
+  });
+}
+
+async function waitFor<T>(description: string, action: () => Promise<T | null>, timeoutMs = 30_000): Promise<T> {
+  const startedAt = Date.now();
+  let lastError: unknown = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const result = await action();
+      if (result !== null) return result;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 200));
+  }
+  throw new Error(`Timed out waiting for ${description}${lastError instanceof Error ? `: ${lastError.message}` : ""}`);
+}
+
+async function launchDesktop(executable: string, userData: string): Promise<RunningDesktop> {
+  const debugPort = await freePort();
+  const logs: string[] = [];
+  const child = spawn(executable, [
+    `--user-data-dir=${userData}`,
+    `--remote-debugging-port=${debugPort}`,
+  ], {
+    cwd: projectRoot,
+    env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
+  child.stderr.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
+
+  const page = await waitFor("the packaged renderer", async () => {
+    if (child.exitCode !== null) throw new Error(`desktop exited with ${child.exitCode}: ${logs.join("")}`);
+    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(2_000) });
+    if (!response.ok) return null;
+    const pages = await response.json() as Array<{ type?: string; url?: string; webSocketDebuggerUrl?: string }>;
+    const candidate = pages.find((entry) => entry.type === "page" && entry.url?.startsWith("http://127.0.0.1:"));
+    return candidate?.url && candidate.webSocketDebuggerUrl
+      ? { origin: new URL(candidate.url).origin, debuggerUrl: candidate.webSocketDebuggerUrl }
+      : null;
+  });
+  assert.equal(new URL(page.origin).hostname, "127.0.0.1");
+  return { child, ...page, logs };
+}
+
+async function rendererValue<T>(debuggerUrl: string, expression: string): Promise<T> {
+  return new Promise<T>((resolveValue, reject) => {
+    const socket = new WebSocket(debuggerUrl);
+    const requestId = 1;
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("renderer evaluation timed out"));
+    }, 5_000);
+    socket.addEventListener("open", () => socket.send(JSON.stringify({
+      id: requestId,
+      method: "Runtime.evaluate",
+      params: { expression, returnByValue: true, awaitPromise: true },
+    })));
+    socket.addEventListener("message", (event) => {
+      const response = JSON.parse(String(event.data)) as {
+        id?: number;
+        error?: { message?: string };
+        result?: { exceptionDetails?: unknown; result?: { value?: T } };
+      };
+      if (response.id !== requestId) return;
+      clearTimeout(timeout);
+      socket.close();
+      if (response.error || response.result?.exceptionDetails) {
+        reject(new Error(response.error?.message ?? "renderer evaluation failed"));
+      } else {
+        resolveValue(response.result?.result?.value as T);
+      }
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(new Error("renderer debugger connection failed"));
+    });
+  });
+}
+
+async function waitForExit(child: ChildProcess, timeoutMs = 15_000): Promise<void> {
+  if (child.exitCode !== null) return;
+  await new Promise<void>((resolveExit, reject) => {
+    const timeout = setTimeout(() => reject(new Error("desktop did not exit")), timeoutMs);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      resolveExit();
+    });
+  });
+}
+
+async function stopDesktop(application: RunningDesktop): Promise<void> {
+  if (application.child.exitCode !== null) return;
+  application.child.kill("SIGTERM");
+  try {
+    await waitForExit(application.child);
+  } catch (error) {
+    application.child.kill("SIGKILL");
+    await waitForExit(application.child, 5_000);
+    throw error;
+  }
+}
+
+async function launchDuplicate(paths: PackagePaths, userData: string): Promise<void> {
+  if (process.platform === "darwin") {
+    assert(paths.bundle);
+    execFileSync("/usr/bin/open", [paths.bundle, "--args", `--user-data-dir=${userData}`]);
+    await new Promise((resolveWait) => setTimeout(resolveWait, 1_000));
+    return;
+  }
+  const duplicate = spawn(paths.executable, [`--user-data-dir=${userData}`], { stdio: "ignore" });
+  await waitForExit(duplicate, 10_000);
+}
+
+async function api<T>(origin: string, path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${origin}${path}`, { ...init, signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) throw new Error(`${path} returned ${response.status}: ${await response.text()}`);
+  return response.json() as Promise<T>;
+}
+
+async function verifyBinaryArchitecture(file: string): Promise<void> {
+  const binary = await readFile(file);
+  if (process.platform === "win32") {
+    assert.equal(binary.subarray(0, 2).toString("ascii"), "MZ");
+    const peOffset = binary.readUInt32LE(0x3c);
+    assert.equal(binary.subarray(peOffset, peOffset + 4).toString("binary"), "PE\0\0");
+    assert.equal(binary.readUInt16LE(peOffset + 4), 0x8664, "Windows package must be x64");
+  } else if (process.platform === "darwin") {
+    assert.equal(binary.readUInt32LE(0), 0xfeedfacf, "macOS package must be 64-bit Mach-O");
+    assert.equal(binary.readUInt32LE(4), 0x0100000c, "macOS package must be arm64");
+  } else {
+    assert.deepEqual([...binary.subarray(0, 4)], [0x7f, 0x45, 0x4c, 0x46]);
+    assert.equal(binary[4], 2, "Linux package must be ELF64");
+    assert.equal(binary.readUInt16LE(18), 0x3e, "Linux package must be x64");
+  }
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await stat(file);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function verifyPackage(paths: PackagePaths): Promise<void> {
+  await stat(paths.executable);
+  await stat(paths.asar);
+  await verifyBinaryArchitecture(paths.executable);
+
+  const require = createRequire(import.meta.url);
+  const asarCli = join(dirname(require.resolve("@electron/asar/package.json")), "bin", "asar.js");
+  const listing = execFileSync(process.execPath, [asarCli, "list", paths.asar], { encoding: "utf8" });
+  for (const required of [
+    "/dist/web/index.html",
+    "/dist/server/desktop/main.js",
+    "/contracts/perceptrum-workload-v1.json",
+    "/database/sqlite-schema.sql",
+  ]) assert(listing.includes(required), `ASAR is missing ${required}`);
+}
+
+async function verifyReleaseArtifacts(): Promise<void> {
+  const metadata = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8")) as { version: string };
+  if (process.platform === "win32") {
+    const portable = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-windows-x64-portable.exe`);
+    if (await fileExists(portable)) await verifyBinaryArchitecture(portable);
+    return;
+  }
+  if (process.platform === "darwin") {
+    const dmg = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-macos-arm64.dmg`);
+    if (await fileExists(dmg)) execFileSync("/usr/bin/hdiutil", ["verify", dmg], { stdio: "pipe" });
+    return;
+  }
+  const appImage = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-linux-x64.AppImage`);
+  const deb = join(projectRoot, "release", `qual-hardware_${metadata.version}_amd64.deb`);
+  if (await fileExists(appImage)) {
+    await verifyBinaryArchitecture(appImage);
+    assert((await stat(appImage)).mode & 0o111, "AppImage must be executable");
+  }
+  if (await fileExists(deb)) {
+    assert.equal(execFileSync("dpkg-deb", ["--field", deb, "Architecture"], { encoding: "utf8" }).trim(), "amd64");
+    assert.equal(execFileSync("dpkg-deb", ["--field", deb, "Package"], { encoding: "utf8" }).trim(), "qual-hardware");
+  }
+}
+
+async function exerciseApplication(application: RunningDesktop): Promise<string> {
+  const renderedText = await waitFor("the rendered React interface", async () => {
+    const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
+    return text.includes("Qual Hardware") && text.length > 100 ? text : null;
+  });
+  assert(renderedText.includes("Qual Hardware"));
+  await rendererValue(application.debuggerUrl, "location.assign('data:text/html,blocked'); true");
+  await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+  assert.equal(await rendererValue<string>(application.debuggerUrl, "location.origin"), application.origin, "non-loopback navigation must be blocked");
+
+  const health = await api<{ status: string; storage: string }>(application.origin, "/api/health");
+  assert.deepEqual(health, { status: "ok", storage: "sqlite" });
+  const catalog = await api<{ source: string; hardwareCount: number }>(application.origin, "/api/catalog/status");
+  assert.equal(catalog.source, "bundled");
+  assert(catalog.hardwareCount > 0);
+  const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();
+  assert(html.includes("Qual Hardware"));
+  assert(html.includes("Content-Security-Policy"));
+
+  const scenario = createDefaultScenario(4);
+  scenario.projectName = "Packaged desktop smoke test";
+  const created = await api<ScenarioRecord>(application.origin, "/api/scenarios", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ scenario }),
+  });
+  const recommendations = await api<CapacityRecommendation[]>(application.origin, `/api/scenarios/${created.id}/recommendations`, { method: "POST" });
+  assert.equal(recommendations.length, 3);
+  const recommendation = recommendations.find((item) => item.policy === "recommended");
+  assert(recommendation);
+  for (const format of ["json", "pdf", "xlsx"] as const) {
+    const response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(15_000) });
+    assert(response.ok, `${format} report returned ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
+    if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
+    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/2.0.0");
+  }
+  return created.id;
+}
+
+async function main(): Promise<void> {
+  const paths = packagePaths();
+  await verifyPackage(paths);
+  await verifyReleaseArtifacts();
+  const userData = await mkdtemp(join(tmpdir(), "qual-hardware-desktop-smoke-"));
+  let running: RunningDesktop | null = null;
+  try {
+    running = await launchDesktop(paths.executable, userData);
+    const scenarioId = await exerciseApplication(running);
+
+    await launchDuplicate(paths, userData);
+    assert.equal(running.child.exitCode, null, "second instance must not terminate the primary instance");
+    await stopDesktop(running);
+    running = null;
+
+    running = await launchDesktop(paths.executable, userData);
+    const scenarios = await api<ScenarioRecord[]>(running.origin, "/api/scenarios");
+    assert(scenarios.some((scenario) => scenario.id === scenarioId), "SQLite data did not persist across restarts");
+    await stopDesktop(running);
+    running = null;
+  } finally {
+    if (running) await stopDesktop(running);
+  }
+
+  const database = await readFile(join(userData, "qual-hardware.sqlite"));
+  assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
+  console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}; data=${userData}`);
+}
+
+await main();

@@ -1,5 +1,7 @@
 # Isolated Perceptrum benchmark runner
 
+This runner is intentionally Windows-only. The Qual Hardware desktop can generate its versioned benchmark manifest on Windows, macOS and Ubuntu, but execution must be transferred to a Windows laboratory with the Perceptrum executable and PowerShell runner. A native macOS/Linux runner is a future T4 project and is not emulated by this desktop refactor.
+
 `Invoke-PerceptrumBenchmark.ps1` launches the real Perceptrum executable with `PERCEPTRUM_BENCHMARK_MODE=1`, samples the complete process tree, reads Open Monitor's private JSONL telemetry, collects NVIDIA GPU/VRAM/NVDEC data, and uploads aggregate metrics with the manifest's one-use challenge.
 
 The native runtime suppresses thumbnails, commercial events, camera-connection events, Job alert persistence/delivery, Telegram delivery, retained PNG frames, and retention hydration while this flag is active. Temporary working media remains private in a unique OS temporary directory and is deleted after the run.

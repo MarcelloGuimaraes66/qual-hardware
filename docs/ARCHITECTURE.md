@@ -28,11 +28,12 @@
 
 | Surface | Windows | macOS | Linux |
 | --- | --- | --- | --- |
-| Qual Hardware desktop | supported | out of scope | out of scope |
+| Qual Hardware desktop | Windows 11 x64 | macOS 26 arm64 | Ubuntu 24.04 x64 |
 | Qual Hardware private web/API | supported | supported | supported |
 | Perceptrum workstation workload being sized | supported | out of scope | out of scope |
 | Planned Perceptrum rack workload being sized | conditional | out of scope | requires a Linux-compatible Perceptrum build and matching benchmark |
-| Active benchmark runner | planned in Perceptrum Windows runtime | out of scope | out of scope |
+| Benchmark manifest generation | supported | supported | supported |
+| Active benchmark runner | Windows-only | Windows-only external component | Windows-only external component |
 
 ## Data flow
 
@@ -47,4 +48,6 @@
 
 There is no application login. Production hosting must enforce TLS and private-network/VPN access at the reverse proxy or firewall. Administrative catalog collection additionally requires `ADMIN_TOKEN`. Public exposure is unsupported.
 
-The Windows desktop binds its internal API to a random loopback-only port. Its renderer is sandboxed and has no Node.js integration. Catalog snapshots are verified with an Ed25519 public key before transactionally replacing the local SQLite catalog. The desktop database lives in the Windows user profile and survives application restarts.
+The desktop binds its internal API to a random `127.0.0.1` port. Its renderer is sandboxed, isolated, has no Node.js integration, rejects unused permissions and cannot navigate away from its loopback origin. Catalog snapshots are verified with an Ed25519 public key before transactionally replacing the local SQLite catalog. The desktop database lives in Electron's native per-user `userData` directory and survives application restarts on all three supported systems.
+
+Only one desktop instance may own the database. Windows and Ubuntu quit after the last window closes. On macOS, closing the last window keeps the application active, Dock activation recreates the window, and `Cmd+Q` closes the API and SQLite before exit.
