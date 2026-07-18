@@ -266,8 +266,84 @@ function ResultsStep({ scenario, recommendations, lang, onManifest, onDownload }
     <div className="policy-tabs">{recommendations.map((item) => <button key={item.policy} className={selectedPolicy === item.policy ? "active" : ""} onClick={() => { setSelectedPolicy(item.policy); setVariant(0); }}><span>{policyLabels[item.policy][lang]}</span><b>{item.primary.nodeCount} nodes</b></button>)}</div>
     <div className="variant-tabs">{designs.map((item, index) => <button key={item.id} className={variant === index ? "active" : ""} onClick={() => setVariant(index)}>{item.variant === "balanced" ? (lang === "pt" ? "Balanceada" : "Balanced") : item.variant === "lower_capex" ? (lang === "pt" ? "Menor CAPEX" : "Lower CAPEX") : (lang === "pt" ? "Maior expansão" : "More expansion")}</button>)}</div>
     <div className="workload-summary"><h4>{lang === "pt" ? "Carga usada neste cálculo" : "Workload used for this calculation"}</h4>{scenario.cameraGroups.map((group) => <div className="workload-group" key={group.id}><b>{group.count}× {group.name}</b><span>{group.source.codec.toUpperCase()} · {group.source.width}×{group.source.height} · {group.source.sourceFps} FPS RTSP · {group.source.bitrateMbps} Mbps · decode {group.decodeMode.toUpperCase()}</span>{group.agents.map((agent) => <small key={agent.id}>{readingTypeLabel(agent, lang)} · {agent.model} · {agent.inputType === "video" ? `${agent.modelFps} FPS · ` : ""}{agent.runEverySeconds <= 10 ? 10 : 60} s</small>)}</div>)}</div>
-    <DesignDetail design={design} lang={lang} /><div className="export-row"><span>{lang === "pt" ? "Exportar proposta" : "Export proposal"}</span>{(["pdf", "xlsx", "json"] as const).map((format) => <button key={format} type="button" className="secondary small" onClick={() => onDownload(rec, format)}>{format.toUpperCase()}</button>)}</div>
+    <DesignDetail design={design} lang={lang} /><div className="export-row"><span>{lang === "pt" ? "Relatório completo: mínimo + recomendado + N+1" : "Complete report: minimum + recommended + N+1"}</span>{(["pdf", "xlsx", "json"] as const).map((format) => <button key={format} type="button" className="secondary small" onClick={() => onDownload(rec, format)}>{format.toUpperCase()}</button>)}</div>
   </section>;
+}
+
+function CatalogManager({
+  status,
+  lang,
+  onClose,
+  onStatus,
+  onCatalogApplied,
+}: {
+  status: CatalogStatus | null;
+  lang: Language;
+  onClose: () => void;
+  onStatus: (status: CatalogStatus) => void;
+  onCatalogApplied: (status: CatalogStatus, message: string) => void;
+}): ReactElement {
+  const [remoteUrl, setRemoteUrl] = useState(status?.remoteUrl ?? "");
+  const [publicKeyPem, setPublicKeyPem] = useState("");
+  const [working, setWorking] = useState(false);
+  const [detail, setDetail] = useState("");
+
+  const configure = async (): Promise<void> => {
+    setWorking(true); setDetail("");
+    try {
+      const next = await api<CatalogStatus>("/api/catalog/configure", {
+        method: "POST",
+        body: JSON.stringify({ remoteUrl: remoteUrl.trim() || null, publicKeyPem }),
+      });
+      onStatus(next); setPublicKeyPem("");
+      setDetail(lang === "pt" ? "Configuração salva neste computador." : "Configuration saved on this computer.");
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : "catalog_configuration_failed");
+    } finally { setWorking(false); }
+  };
+
+  const refresh = async (): Promise<void> => {
+    setWorking(true); setDetail("");
+    try {
+      const next = await api<CatalogStatus>("/api/catalog/refresh", { method: "POST" });
+      onCatalogApplied(next, lang === "pt" ? `Hardware atualizado para ${next.catalogVersion}.` : `Hardware updated to ${next.catalogVersion}.`);
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : "catalog_update_failed");
+    } finally { setWorking(false); }
+  };
+
+  const importSnapshot = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!status?.verificationKeyConfigured) {
+      setDetail(lang === "pt" ? "Salve primeiro a chave pública usada para verificar o catálogo." : "Save the catalog verification public key first.");
+      return;
+    }
+    setWorking(true); setDetail("");
+    try {
+      const response = await fetch("/api/catalog/import", { method: "POST", headers: { "content-type": "application/json" }, body: await file.text() });
+      const body = await response.json() as CatalogStatus & { error?: string };
+      if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+      onCatalogApplied(body, lang === "pt" ? `Catálogo assinado ${body.catalogVersion} importado.` : `Signed catalog ${body.catalogVersion} imported.`);
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : "catalog_import_failed");
+    } finally { setWorking(false); }
+  };
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="catalog-modal" role="dialog" aria-modal="true" aria-labelledby="catalog-title">
+      <div className="modal-heading"><div><span>CATALOG / HARDWARE</span><h2 id="catalog-title">{lang === "pt" ? "Atualizar hardware" : "Update hardware"}</h2></div><button type="button" className="icon-button" aria-label={lang === "pt" ? "Fechar" : "Close"} onClick={onClose}>×</button></div>
+      <div className="catalog-summary"><div><span>{lang === "pt" ? "Versão ativa" : "Active version"}</span><b>{status?.catalogVersion ?? "—"}</b><small>{status?.source ?? "—"}</small></div><div><span>{lang === "pt" ? "Equipamentos" : "Hardware"}</span><b>{status?.hardwareCount ?? "—"}</b><small>{status?.quoteCount ?? 0} {lang === "pt" ? "preços" : "prices"}</small></div><div><span>{lang === "pt" ? "Verificação" : "Verification"}</span><b>{status?.verificationKeyConfigured ? "ED25519 OK" : (lang === "pt" ? "NÃO CONFIGURADA" : "NOT CONFIGURED")}</b><small>{status?.remoteUpdateConfigured ? "HTTPS + SIGNATURE" : "SIGNED FILE"}</small></div></div>
+      <div className="catalog-config-grid">
+        <Field label={lang === "pt" ? "URL HTTPS do catálogo (opcional)" : "Catalog HTTPS URL (optional)"} hint={lang === "pt" ? "Deixe vazio para trabalhar somente com importação manual assinada." : "Leave blank to use signed manual imports only."}><input type="url" value={remoteUrl} onChange={(event) => setRemoteUrl(event.target.value)} placeholder="https://catalogo.interno/catalog-snapshot.json" /></Field>
+        <Field label={lang === "pt" ? "Chave pública Ed25519" : "Ed25519 public key"} hint={!status?.configurationWritable ? (lang === "pt" ? "Configuração bloqueada neste modo; use a chave definida pelo administrador." : "Configuration is locked in this mode; use the administrator-provided key.") : status?.verificationKeyConfigured ? (lang === "pt" ? "Uma chave já está salva. Cole uma chave apenas para substituí-la ou alterar a URL." : "A key is already saved. Paste a key only to replace it or change the URL.") : (lang === "pt" ? "Obrigatória para impedir catálogos falsos ou alterados." : "Required to reject false or modified catalogs.")}><textarea value={publicKeyPem} disabled={!status?.configurationWritable} onChange={(event) => setPublicKeyPem(event.target.value)} rows={6} placeholder="-----BEGIN PUBLIC KEY-----" /></Field>
+      </div>
+      <div className="catalog-actions"><button type="button" className="secondary" disabled={working || !status?.configurationWritable || !publicKeyPem.trim()} onClick={configure}>{lang === "pt" ? "Salvar configuração" : "Save configuration"}</button><button type="button" className="primary" disabled={working || !status?.remoteUpdateConfigured} onClick={refresh}>{lang === "pt" ? "Buscar atualização online" : "Check online update"}</button><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar catálogo assinado" : "Import signed catalog"}<input type="file" hidden accept="application/json,.json" disabled={working} onChange={importSnapshot} /></label></div>
+      {detail && <div className="catalog-message">{detail}</div>}
+      <p className="catalog-privacy">{lang === "pt" ? "Somente equipamentos, especificações e preços são atualizados. Projetos, câmeras e credenciais nunca são enviados." : "Only hardware, specifications and prices are updated. Projects, cameras and credentials are never uploaded."}</p>
+    </section>
+  </div>;
 }
 
 export function App(): ReactElement {
@@ -277,6 +353,7 @@ export function App(): ReactElement {
   const [record, setRecord] = useState<ScenarioRecord | null>(null); const [recommendations, setRecommendations] = useState<CapacityRecommendation[]>([]);
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
+  const [catalogManagerOpen, setCatalogManagerOpen] = useState(false);
   const stepIndex = steps.indexOf(step); const groupTotal = useMemo(() => scenario.cameraGroups.reduce((sum, group) => sum + group.count, 0), [scenario.cameraGroups]);
   useEffect(() => {
     void api<CatalogStatus>("/api/catalog/status").then(setCatalogStatus).catch(() => setCatalogStatus(null));
@@ -292,24 +369,14 @@ export function App(): ReactElement {
     try {
       const response = await fetch(`/api/recommendations/${recommendation.id}/export/${format}`);
       const blob = await checkedReportBlob(response, format);
-      saveBlob(`qual-hardware-${recommendation.policy}.${format}`, blob);
-      setMessage(lang === "pt" ? `${format.toUpperCase()} verificado e baixado com sucesso.` : `${format.toUpperCase()} verified and downloaded successfully.`);
+      saveBlob(`qual-hardware-3-configuracoes.${format}`, blob);
+      setMessage(lang === "pt" ? `${format.toUpperCase()} com as 3 configurações foi verificado e baixado.` : `${format.toUpperCase()} with all 3 configurations was verified and downloaded.`);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "unknown_error";
       setMessage(lang === "pt" ? `Não foi possível gerar um ${format.toUpperCase()} válido (${detail}). Recalcule o projeto e tente novamente.` : `A valid ${format.toUpperCase()} could not be generated (${detail}). Recalculate the project and try again.`);
     } finally { setBusy(false); }
   };
   const manifest = async (recommendation: CapacityRecommendation): Promise<void> => { const gpuDriver = window.prompt(lang === "pt" ? "Informe a versão exata do driver GPU que será validada:" : "Enter the exact GPU driver version to validate:"); if (!gpuDriver?.trim()) return; setBusy(true); try { const result = await api<unknown>("/api/benchmarks/manifests", { method: "POST", body: JSON.stringify({ recommendationId: recommendation.id, gpuDriver: gpuDriver.trim(), slaInferenceLatencyMs: 10000 }) }); downloadJson(`qual-hardware-benchmark-${recommendation.policy}.json`, result); setMessage(lang === "pt" ? "Manifesto de benchmark gerado. O nonce expira em 24 horas." : "Benchmark manifest generated. Its nonce expires in 24 hours."); } catch (error) { setMessage(error instanceof Error ? error.message : "Error"); } finally { setBusy(false); } };
-  const refreshCatalog = async (): Promise<void> => {
-    setBusy(true); setMessage("");
-    try {
-      const status = await api<CatalogStatus>("/api/catalog/refresh", { method: "POST" });
-      setCatalogStatus(status); setRecommendations([]); setRecord(null);
-      setMessage(lang === "pt" ? `Catálogo ${status.catalogVersion} atualizado. Recalcule os projetos existentes.` : `Catalog ${status.catalogVersion} updated. Recalculate existing projects.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "catalog_update_failed");
-    } finally { setBusy(false); }
-  };
   const body = step === "project" ? <ProjectStep scenario={scenario} update={setScenario} lang={lang} cameraCountConfirmed={cameraCountConfirmed} onCameraCount={(value) => { setScenario(withCameraTotal(scenario, value)); setCameraCountConfirmed(true); }} /> : step === "cameras" ? <CameraStep scenario={scenario} update={setScenario} lang={lang} /> : step === "agents" ? <AgentsStep scenario={scenario} update={setScenario} lang={lang} /> : step === "additional" ? <AdditionalStep scenario={scenario} update={setScenario} lang={lang} /> : step === "storage" ? <NetworkStep scenario={scenario} lang={lang} /> : <ResultsStep scenario={scenario} recommendations={recommendations} lang={lang} onManifest={manifest} onDownload={downloadReport} />;
   return <div className="app-shell"><header><div className="brand"><div className="brand-mark">A<span>Q</span></div><div><b>AIQUIMIST</b><small>QUAL HARDWARE</small></div></div><div className="header-meta"><span className="private-badge">● PRIVATE NETWORK</span><button onClick={() => { const next = lang === "pt" ? "en" : "pt"; setLang(next); localStorage.setItem("qual-hardware-language", next); }}>{lang === "pt" ? "EN" : "PT"}</button></div></header>
     <main><div className="intro"><div><p>HARDWARE / {String(stepIndex + 1).padStart(2, "0")}</p><h1>{text[lang].title}</h1><span>{text[lang].subtitle}</span></div><div className="camera-counter"><strong>{cameraCountConfirmed ? scenario.totalCameras : "—"}</strong><span>CAMERAS</span></div></div>
@@ -317,5 +384,5 @@ export function App(): ReactElement {
       <nav className="stepper">{steps.map((item, index) => <button key={item} className={`${item === step ? "active" : ""} ${index < stepIndex ? "done" : ""}`} onClick={() => index <= stepIndex || recommendations.length ? setStep(item) : undefined}><i>{index < stepIndex ? "✓" : index + 1}</i><span>{text[lang][item]}</span></button>)}</nav>
       {message && <div className="toast" onClick={() => setMessage("")}>{message}<span>×</span></div>}{body}
       <div className="actions">{stepIndex > 0 && <button className="secondary" onClick={() => setStep(steps[stepIndex - 1]!)}>{text[lang].back}</button>}<div />{step !== "result" && step !== "storage" && <button className="primary" disabled={step === "project" && !cameraCountConfirmed} onClick={() => setStep(steps[stepIndex + 1]!)}>{text[lang].next} →</button>}{step === "storage" && <button className="primary" disabled={busy || groupTotal !== scenario.totalCameras} onClick={calculate}>{busy ? "…" : text[lang].calculate} →</button>}{step === "result" && <button className="primary" disabled={busy} onClick={calculate}>{lang === "pt" ? "Recalcular" : "Recalculate"}</button>}</div>
-    </main><footer><span>{WORKLOAD_CONTRACT_VERSION}</span><div className="catalog-state"><span>{catalogStatus ? `${lang === "pt" ? "Catálogo" : "Catalog"}: ${catalogStatus.catalogVersion} · ${catalogStatus.source}${catalogStatus.stalePriceCount ? ` · ${catalogStatus.stalePriceCount} ${lang === "pt" ? "preços defasados" : "stale prices"}` : ""}` : (lang === "pt" ? "Catálogo: verificando" : "Catalog: checking")}</span>{catalogStatus?.remoteUpdateConfigured ? <button type="button" disabled={busy} onClick={refreshCatalog}>{lang === "pt" ? "Atualizar agora" : "Update now"}</button> : <small>{lang === "pt" ? "Atualização privada ainda não configurada" : "Private update not configured yet"}</small>}</div><span>{lang === "pt" ? "Sem mídia · Sem credenciais RTSP" : "No media · No RTSP credentials"}</span></footer>{busy && <div className="loading"><div /></div>}</div>;
+    </main><footer><span>{WORKLOAD_CONTRACT_VERSION}</span><div className="catalog-state"><span>{catalogStatus ? `${lang === "pt" ? "Catálogo" : "Catalog"}: ${catalogStatus.catalogVersion} · ${catalogStatus.source}${catalogStatus.stalePriceCount ? ` · ${catalogStatus.stalePriceCount} ${lang === "pt" ? "preços defasados" : "stale prices"}` : ""}` : (lang === "pt" ? "Catálogo: verificando" : "Catalog: checking")}</span><button type="button" disabled={busy} onClick={() => setCatalogManagerOpen(true)}>{lang === "pt" ? "Atualizar hardware" : "Update hardware"}</button></div><span>{lang === "pt" ? "Sem mídia · Sem credenciais RTSP" : "No media · No RTSP credentials"}</span></footer>{catalogManagerOpen && <CatalogManager status={catalogStatus} lang={lang} onClose={() => setCatalogManagerOpen(false)} onStatus={setCatalogStatus} onCatalogApplied={(status, detail) => { setCatalogStatus(status); setRecommendations([]); setRecord(null); setMessage(`${detail} ${lang === "pt" ? "Recalcule os projetos existentes." : "Recalculate existing projects."}`); setCatalogManagerOpen(false); }} />}{busy && <div className="loading"><div /></div>}</div>;
 }

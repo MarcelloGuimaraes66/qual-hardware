@@ -188,11 +188,14 @@ export interface CatalogStatus {
   catalogVersion: string;
   generatedAt: string;
   checkedAt: string;
-  source: "bundled" | "cached" | "remote";
+  source: "bundled" | "cached" | "remote" | "imported";
   hardwareCount: number;
   quoteCount: number;
   stalePriceCount: number;
   remoteUpdateConfigured: boolean;
+  verificationKeyConfigured: boolean;
+  configurationWritable: boolean;
+  remoteUrl: string | null;
   lastError: string | null;
 }
 

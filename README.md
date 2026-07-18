@@ -47,7 +47,9 @@ O arquivo pronto fica em `release/Qual-Hardware-0.1.0-portable.exe`. Ele contém
 
 O modo desktop grava automaticamente os projetos e o catálogo em `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite`. Os dados continuam disponíveis depois de fechar ou reiniciar o computador. Cada membro da equipe pode copiar somente o executável para sua máquina; o arquivo local é criado no primeiro uso.
 
-O catálogo possui atualização independente e assinada. Consulte `docs/CATALOG_UPDATES.md`; sem URL/chave pública configuradas, o desktop informa que está usando o catálogo incluído no executável.
+O botão **Atualizar hardware** permanece visível no rodapé. Ele abre o gerenciador onde a equipe pode configurar a URL/chave pública ou importar manualmente um catálogo assinado. Consulte `docs/CATALOG_UPDATES.md`; sem configuração, o desktop continua usando o catálogo incluído no executável.
+
+Os botões PDF, XLSX e JSON geram um único relatório consolidado com as três propostas da revisão: mínimo técnico, recomendado e N+1. O PDF possui comparação e seções técnicas separadas; o XLSX inclui resumo, BOM detalhada, nós, carga, cálculos, preços e premissas para as três políticas.
 
 ## Validation
 

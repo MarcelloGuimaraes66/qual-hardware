@@ -40,15 +40,17 @@ describe("Qual Hardware API and reports", () => {
     const json = await app.request(`/api/recommendations/${recommendation.id}/export/json`);
     expect(json.status).toBe(200);
     expect(json.headers.get("content-type")).toContain("application/json");
-    expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-recommended.json"');
-    expect((await json.json() as { schemaVersion: string }).schemaVersion).toBe("capacity-recommendation-export/1.0.0");
+    expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-3-configuracoes.json"');
+    const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[] };
+    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/2.0.0");
+    expect(jsonReport.recommendations.map((item) => item.policy)).toEqual(["minimum", "recommended", "n_plus_one"]);
 
     const pdf = await app.request(`/api/recommendations/${recommendation.id}/export/pdf`);
     const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
     expect(pdf.status).toBe(200);
     expect(pdf.headers.get("content-type")).toContain("application/pdf");
     expect(new TextDecoder().decode(pdfBytes.slice(0, 5))).toBe("%PDF-");
-    expect((await PDFDocument.load(pdfBytes)).getPageCount()).toBeGreaterThan(0);
+    expect((await PDFDocument.load(pdfBytes)).getPageCount()).toBeGreaterThanOrEqual(4);
 
     const spreadsheet = await app.request(`/api/recommendations/${recommendation.id}/export/xlsx`);
     expect(spreadsheet.status).toBe(200);
@@ -57,7 +59,14 @@ describe("Qual Hardware API and reports", () => {
     expect(Array.from(spreadsheetBytes.slice(0, 2))).toEqual([0x50, 0x4b]);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(spreadsheetBytes.buffer);
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Scenario", "BOM", "Nodes", "Distribution", "Calculations", "Quotes", "Assumptions"]);
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Scenario", "3 Configurations", "BOM", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
+    const configurations = workbook.getWorksheet("3 Configurations")!;
+    expect(configurations.rowCount).toBe(4);
+    expect([2, 3, 4].map((row) => configurations.getRow(row).getCell(1).value)).toEqual(["minimum", "recommended", "n_plus_one"]);
+    expect(workbook.getWorksheet("BOM")!.rowCount).toBe(37);
+    expect(new Set(workbook.getWorksheet("BOM")!.getColumn(1).values.slice(2).map(String))).toEqual(new Set(["minimum", "recommended", "n_plus_one"]));
+    const nodePolicies = new Set(workbook.getWorksheet("Nodes")!.getColumn(1).values.slice(2).map(String));
+    expect(nodePolicies).toEqual(new Set(["minimum", "recommended", "n_plus_one"]));
 
     const manifestResponse = await app.request("/api/benchmarks/manifests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recommendationId: recommendation.id, gpuDriver: "test-driver", slaInferenceLatencyMs: 10000 }) });
     const manifest = await manifestResponse.json() as BenchmarkManifest;

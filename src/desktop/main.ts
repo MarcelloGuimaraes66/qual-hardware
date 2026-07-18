@@ -26,15 +26,15 @@ async function startLocalApplication(): Promise<string> {
     remoteUrl: process.env.QUAL_HARDWARE_CATALOG_URL,
     publicKeyPem: process.env.QUAL_HARDWARE_CATALOG_PUBLIC_KEY?.replaceAll("\\n", "\n"),
     cacheFile: join(app.getPath("userData"), "catalog-snapshot.json"),
+    configFile: join(app.getPath("userData"), "catalog-update-config.json"),
   });
   catalogUpdates = updates;
   await updates.initialize();
-  if (updates.status.remoteUpdateConfigured) {
-    catalogRefreshTimer = setInterval(() => {
-      void catalogUpdates?.refresh().catch((error: unknown) => console.error("Catalog refresh failed", error));
-    }, CATALOG_REFRESH_INTERVAL_MILLISECONDS);
-    catalogRefreshTimer.unref();
-  }
+  catalogRefreshTimer = setInterval(() => {
+    if (!catalogUpdates?.status.remoteUpdateConfigured) return;
+    void catalogUpdates.refresh().catch((error: unknown) => console.error("Catalog refresh failed", error));
+  }, CATALOG_REFRESH_INTERVAL_MILLISECONDS);
+  catalogRefreshTimer.unref();
 
   return new Promise((resolveOrigin, reject) => {
     localServer = serve({

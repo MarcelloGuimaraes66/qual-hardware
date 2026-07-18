@@ -23,7 +23,8 @@
     "catalog:collect": "tsx src/server/worker.ts --once",
     "catalog:sign": "tsx scripts/sign-catalog.ts",
     "db:schema": "tsx src/server/applySchema.ts",
-    "audit:source": "tsx scripts/audit-source-inventory.ts"
+    "audit:source": "tsx scripts/audit-source-inventory.ts",
+    "reports:sample": "tsx scripts/generate-report-samples.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.10",

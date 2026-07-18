@@ -30,3 +30,5 @@ Run `npm run audit:source` whenever Perceptrum, DrakonSite, or AppHost source ch
 - Legacy `storeVideo`, `retentionDays` and `raidFactor` scenario fields remain readable but are ignored by the sizing engine.
 - Missing prices never become zero-cost parts; reports mark them as quotation required.
 - A hardware template is rejected if any compute, memory, decoder or network dimension exceeds its policy-adjusted capacity.
+- Every PDF, XLSX and JSON proposal export contains the complete current set of minimum, recommended and N+1 designs; a partial recommendation set is rejected.
+- Hardware catalog imports require a configured Ed25519 public key and never replace the active catalog when signature verification fails.

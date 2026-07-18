@@ -3,6 +3,7 @@ dist/
 release/
 .playwright-cli/
 output/
+outputs/
 data/
 .env
 coverage/

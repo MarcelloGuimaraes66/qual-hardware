@@ -61,4 +61,45 @@ describe("signed catalog updates", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+
+  it("persists a verification key and imports a signed catalog without a remote URL", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const payload = {
+      schemaVersion: "qual-hardware-catalog/1.0.0" as const,
+      catalogVersion: "hardware-reference/manual-import",
+      generatedAt: new Date().toISOString(),
+      hardware: [HARDWARE_CATALOG[0]!, HARDWARE_CATALOG[1]!],
+      quotes: [],
+    };
+    const raw = JSON.stringify({
+      payload,
+      signature: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString("base64"),
+    });
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-manual-catalog-"));
+    cleanupDirectories.push(directory);
+    const options = {
+      configFile: join(directory, "catalog-update-config.json"),
+      cacheFile: join(directory, "catalog-snapshot.json"),
+    };
+    const store = new SqlitePlannerStore(join(directory, "first", "qual-hardware.sqlite"));
+    const updates = new CatalogUpdateService(store, options);
+    const configured = await updates.configure({
+      remoteUrl: null,
+      publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    });
+    expect(configured.verificationKeyConfigured).toBe(true);
+    expect(configured.remoteUpdateConfigured).toBe(false);
+    expect(configured.remoteUrl).toBeNull();
+    expect((await updates.importSignedSnapshot(raw)).source).toBe("imported");
+    expect(await store.getCatalog()).toHaveLength(2);
+    await store.close();
+
+    const reopenedStore = new SqlitePlannerStore(join(directory, "second", "qual-hardware.sqlite"));
+    const reopened = new CatalogUpdateService(reopenedStore, options);
+    const status = await reopened.initialize();
+    expect(status.source).toBe("cached");
+    expect(status.verificationKeyConfigured).toBe(true);
+    expect(await reopenedStore.getCatalog()).toHaveLength(2);
+    await reopenedStore.close();
+  });
 });

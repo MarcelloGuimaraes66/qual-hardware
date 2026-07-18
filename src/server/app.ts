@@ -18,6 +18,11 @@ const manifestRequestSchema = z.object({
   slaInferenceLatencyMs: z.number().positive().max(3_600_000).default(10_000),
 });
 const compareRequestSchema = z.object({ scenarioIds: z.array(z.string().uuid()).min(2).max(10) });
+const catalogConfigurationSchema = z.object({
+  remoteUrl: z.string().max(2_048).nullable(),
+  publicKeyPem: z.string().min(1).max(16_384),
+});
+const reportPolicies = ["minimum", "recommended", "n_plus_one"] as const;
 
 function applicationResourcePath(...segments: string[]): string {
   const root = process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
@@ -37,11 +42,25 @@ function currentEvidence(
   } : recommendation);
 }
 
+function reportRecommendationSet(
+  selected: CapacityRecommendation,
+  stored: CapacityRecommendation[],
+): CapacityRecommendation[] {
+  const selectedTime = Date.parse(selected.generatedAt);
+  return reportPolicies.map((policy) => {
+    if (policy === selected.policy) return selected;
+    return stored
+      .filter((item) => item.scenarioRevision === selected.scenarioRevision && item.policy === policy)
+      .sort((left, right) => Math.abs(Date.parse(left.generatedAt) - selectedTime) - Math.abs(Date.parse(right.generatedAt) - selectedTime))[0];
+  }).filter((item): item is CapacityRecommendation => Boolean(item));
+}
+
 export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdateService(store)): Hono {
   const app = new Hono();
   app.use("/api/*", async (context, next) => {
     const length = Number(context.req.header("content-length") ?? "0");
-    if (length > 2_000_000) return context.json({ error: "payload_too_large" }, 413);
+    const maximumLength = context.req.path === "/api/catalog/import" ? 10_500_000 : 2_000_000;
+    if (length > maximumLength) return context.json({ error: "payload_too_large" }, 413);
     context.header("Cache-Control", "no-store");
     context.header("X-Content-Type-Options", "nosniff");
     return next();
@@ -99,6 +118,21 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
     if (!catalogUpdates.status.remoteUpdateConfigured) return context.json({ error: "catalog_update_not_configured" }, 503);
     return context.json(await catalogUpdates.refresh());
   });
+  app.post("/api/catalog/configure", async (context) => {
+    const configuration = catalogConfigurationSchema.parse(await context.req.json());
+    try {
+      return context.json(await catalogUpdates.configure(configuration));
+    } catch (error) {
+      return context.json({ error: safeError(error) }, 422);
+    }
+  });
+  app.post("/api/catalog/import", async (context) => {
+    try {
+      return context.json(await catalogUpdates.importSignedSnapshot(await context.req.text()));
+    } catch (error) {
+      return context.json({ error: safeError(error) }, 422);
+    }
+  });
 
   app.post("/api/benchmarks/manifests", async (context) => {
     const request = manifestRequestSchema.parse(await context.req.json());
@@ -131,8 +165,10 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
     if (!recommendation) return context.json({ error: "recommendation_not_found" }, 404);
     const scenario = await store.getScenario(recommendation.scenarioId);
     if (!scenario) return context.json({ error: "scenario_not_found" }, 404);
+    const recommendations = reportRecommendationSet(recommendation, await store.listRecommendations(recommendation.scenarioId));
+    if (recommendations.length !== reportPolicies.length) return context.json({ error: "recommendation_set_incomplete" }, 409);
     const format = context.req.param("format");
-    const reportContext = { scenario, recommendation };
+    const reportContext = { scenario, recommendations };
     let body: Buffer;
     let contentType: string;
     if (format === "json") { body = jsonReport(reportContext); contentType = "application/json; charset=utf-8"; }
@@ -140,7 +176,7 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
     else if (format === "pdf") { body = await pdfReport(reportContext); contentType = "application/pdf"; }
     else return context.json({ error: "unsupported_export_format" }, 404);
     context.header("Content-Type", contentType);
-    context.header("Content-Disposition", `attachment; filename="qual-hardware-${recommendation.policy}.${format}"`);
+    context.header("Content-Disposition", `attachment; filename="qual-hardware-3-configuracoes.${format}"`);
     context.header("Content-Length", String(body.byteLength));
     if (process.env.REPORT_STORAGE_DIR) {
       const reportDirectory = resolve(process.env.REPORT_STORAGE_DIR);
