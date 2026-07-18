@@ -217,6 +217,8 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
     "/dist/server/desktop/main.js",
     "/contracts/perceptrum-workload-v1.json",
     "/contracts/perceptrum-workload-v2.json",
+    "/contracts/qual-hardware-source-registry-v1.schema.json",
+    "/contracts/qual-hardware-catalog-bundle-v1.schema.json",
     "/database/sqlite-schema.sql",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
   for (const forbidden of [
@@ -261,9 +263,15 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
 
   const health = await api<{ status: string; storage: string }>(application.origin, "/api/health");
   assert.deepEqual(health, { status: "ok", storage: "sqlite" });
-  const catalog = await api<{ source: string; hardwareCount: number }>(application.origin, "/api/catalog/status");
-  assert.equal(catalog.source, "bundled");
+  const catalog = await api<{ source: string; channel: string; automatic: boolean; hardwareCount: number }>(application.origin, "/api/catalog/status");
+  assert(["bundled", "cached", "remote"].includes(catalog.source));
+  assert.equal(catalog.channel, "official_public");
+  assert.equal(catalog.automatic, true);
   assert.equal(catalog.hardwareCount, 21);
+  const catalogSources = await api<Array<{ id: string }>>(application.origin, "/api/catalog/sources");
+  assert(catalogSources.length >= 39);
+  const catalogPublications = await api<Array<{ sequence: number }>>(application.origin, "/api/catalog/publications");
+  if (catalog.source !== "bundled") assert(catalogPublications.length >= 1);
   const hardware = await api<HardwareNodeTemplate[]>(application.origin, "/api/catalog/hardware");
   assert.equal(hardware.length, 21);
   assert.equal(hardware.filter((item) => item.operatingSystemFamily === "macos").length, 5);

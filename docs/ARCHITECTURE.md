@@ -17,6 +17,8 @@
 6. No code in this project can deploy to `/var/www/drakonsite`, operate `drakonsite-backend`, or use port `4999`.
 7. Qual Hardware runs only as its own desktop executable. Its loopback API is an internal implementation detail and is never hosted, deployed or bundled into any Perceptrum EXE, MSIX, backend, installer or distribution.
 8. Persistent data exists only in the local file `qual-hardware.sqlite`. Any other database filename is rejected before use; no Perceptrum database is opened or modified.
+9. Public catalog releases are append-only, signed with Ed25519 and linked by sequence and previous-bundle SHA-256. A failed or malicious publication never replaces the active snapshot.
+10. Store discovery and Qwen classification run only in the central publisher. No project, camera, credential, calibration or other user datum leaves the desktop.
 
 ## Blast radius and change budget
 
@@ -43,11 +45,13 @@
 5. The service emits minimum, recommended and N+1 designs, each with up to six compatible cost-ordered machines and Intel/AMD/OEM diversity after safety filtering.
 6. A versioned local plan is exported. Perceptrum uses synthetic loopback RTSP and the real local AiQ/Qwen pipeline and returns aggregate `.qhcal.json` evidence.
 7. Signed public stage observations scale physical anchors by a per-stage rule of three; the most conservative anchor and bottleneck win, followed by 20/30/40% margins and leave-one-out error checks.
+8. GitHub Actions checks the approved source registry every 15 days, validates structured observations, signs one immutable catalog bundle and publishes it as a `catalog-*` Release plus an append-only `catalog-data` history.
+9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically in SQLite v4.
 
 ## Security model
 
 There is no application login because there is no hosted surface. Public or LAN exposure is unsupported and no deployment artifacts are shipped.
 
-The desktop binds its internal API to a random `127.0.0.1` port. Its renderer is sandboxed, isolated, has no Node.js integration, rejects unused permissions and cannot navigate away from its loopback origin. Catalog snapshots are verified with an Ed25519 public key before transactionally replacing the local SQLite catalog. The desktop database lives in Electron's native per-user `userData` directory and survives application restarts on all three supported systems.
+The desktop binds its internal API to a random `127.0.0.1` port. Its renderer is sandboxed, isolated, has no Node.js integration, rejects unused permissions and cannot navigate away from its loopback origin. The official GitHub owner, Release prefix and an Ed25519 public-key ring are compiled into the application; the private key exists only as the protected publisher secret. Catalog snapshots are verified before transactionally adding the new publication and switching the active pointer. The desktop database lives in Electron's native per-user `userData` directory and survives application restarts on all three supported systems.
 
 Only one desktop instance may own the database. Windows and Ubuntu quit after the last window closes. On macOS, closing the last window keeps the application active, Dock activation recreates the window, and `Cmd+Q` closes the API and SQLite before exit.

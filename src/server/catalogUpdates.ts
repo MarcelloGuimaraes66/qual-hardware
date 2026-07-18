@@ -2,13 +2,17 @@ import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { HARDWARE_CATALOG, HARDWARE_CATALOG_GENERATED_AT, HARDWARE_CATALOG_VERSION, SEED_PRICE_QUOTES } from "../engine/catalog.js";
-import type { CatalogStatus, CatalogUpdateRun, HardwareNodeTemplate, PriceQuote } from "../shared/types.js";
+import type { CatalogPublication, CatalogStatus, CatalogUpdateRun, HardwareNodeTemplate, PriceQuote } from "../shared/types.js";
 import type { EvidenceCatalogSnapshot } from "../shared/types.js";
 import { evidenceCatalogSnapshotSchema } from "../shared/schemas.js";
+import { OFFICIAL_CATALOG_CHANNEL } from "../shared/catalogChannel.js";
+import { BUNDLED_SOURCE_REGISTRY } from "../engine/sourceRegistry.js";
+import { sourceHealth } from "./catalogPublication.js";
+import { OfficialCatalogChannel, type OfficialCatalogChannelOptions } from "./officialCatalogChannel.js";
 import type { PlannerStore } from "./store.js";
 
 const MAX_SNAPSHOT_BYTES = 10_000_000;
-const STALE_PRICE_MILLISECONDS = 72 * 60 * 60 * 1_000;
+const STALE_PRICE_MILLISECONDS = 18 * 24 * 60 * 60 * 1_000;
 
 interface CatalogPayload {
   schemaVersion: "qual-hardware-catalog/1.0.0";
@@ -28,6 +32,9 @@ export interface CatalogUpdateOptions {
   publicKeyPem?: string | undefined;
   cacheFile?: string | undefined;
   configFile?: string | undefined;
+  officialEnabled?: boolean | undefined;
+  officialChannel?: OfficialCatalogChannelOptions | undefined;
+  allowLegacyConfiguration?: boolean | undefined;
 }
 
 export interface CatalogUpdateConfiguration {
@@ -103,6 +110,9 @@ export class CatalogUpdateService {
   private publicKeyPem: string | undefined;
   private readonly cacheFile: string | undefined;
   private readonly configFile: string | undefined;
+  private readonly officialEnabled: boolean;
+  private readonly officialChannel: OfficialCatalogChannel;
+  private readonly allowLegacyConfiguration: boolean;
 
   constructor(private readonly store: PlannerStore, options: CatalogUpdateOptions = {}) {
     this.remoteUrl = validatedRemoteUrl(options.remoteUrl ?? process.env.QUAL_HARDWARE_CATALOG_URL);
@@ -111,6 +121,11 @@ export class CatalogUpdateService {
     );
     this.cacheFile = options.cacheFile ?? process.env.QUAL_HARDWARE_CATALOG_CACHE;
     this.configFile = options.configFile ?? process.env.QUAL_HARDWARE_CATALOG_CONFIG;
+    this.officialEnabled = options.officialEnabled ?? false;
+    this.officialChannel = new OfficialCatalogChannel(options.officialChannel);
+    this.allowLegacyConfiguration = options.allowLegacyConfiguration ?? true;
+    if (this.officialEnabled && !this.publicKeyPem) this.publicKeyPem = Object.values(OFFICIAL_CATALOG_CHANNEL.keyRing)[0];
+    const bundledHealth = sourceHealth(BUNDLED_SOURCE_REGISTRY.sources);
     this.currentStatus = {
       catalogVersion: HARDWARE_CATALOG_VERSION,
       generatedAt: HARDWARE_CATALOG_GENERATED_AT,
@@ -119,18 +134,31 @@ export class CatalogUpdateService {
       hardwareCount: HARDWARE_CATALOG.length,
       quoteCount: SEED_PRICE_QUOTES.length,
       stalePriceCount: SEED_PRICE_QUOTES.filter(quoteIsStale).length,
-      remoteUpdateConfigured: Boolean(this.remoteUrl && this.publicKeyPem),
-      verificationKeyConfigured: Boolean(this.publicKeyPem),
-      configurationWritable: Boolean(this.configFile),
-      remoteUrl: this.remoteUrl ?? null,
+      remoteUpdateConfigured: this.officialEnabled || Boolean(this.remoteUrl && this.publicKeyPem),
+      verificationKeyConfigured: this.officialEnabled || Boolean(this.publicKeyPem),
+      configurationWritable: Boolean(this.configFile && this.allowLegacyConfiguration),
+      remoteUrl: this.officialEnabled ? this.officialChannel.releasesUrl : this.remoteUrl ?? null,
       lastError: null,
       lastUpdate: null,
+      channel: this.officialEnabled ? "official_public" : (this.remoteUrl ? "legacy_admin" : "bundled"),
+      automatic: this.officialEnabled,
+      latestSequence: null,
+      lastPublicationAt: null,
+      nextCollectionExpectedAt: null,
+      publicationDelayDays: 0,
+      markets: ["BR", "US", "DE"],
+      componentCount: 0,
+      benchmarkCount: 0,
+      sourceHealth: bundledHealth,
+      latestSummary: null,
     };
   }
 
   get status(): CatalogStatus { return { ...this.currentStatus }; }
 
   async initialize(): Promise<CatalogStatus> {
+    const activePublication = await this.store.getActiveCatalogPublication();
+    if (activePublication) await this.updateFromPublication(activePublication, "cached");
     if (this.configFile) {
       try {
         const parsed = JSON.parse(await readFile(this.configFile, "utf8")) as Partial<PersistedCatalogUpdateConfiguration>;
@@ -151,13 +179,16 @@ export class CatalogUpdateService {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.currentStatus.lastError = "cached_catalog_rejected";
       }
     }
-    if (this.currentStatus.remoteUpdateConfigured) {
+    if (this.officialEnabled) {
+      try { await this.refreshOfficial(); } catch { this.currentStatus.lastError = "official_catalog_refresh_failed"; }
+    } else if (this.currentStatus.remoteUpdateConfigured) {
       try { await this.refresh(); } catch { this.currentStatus.lastError = "remote_catalog_refresh_failed"; }
     }
     return this.status;
   }
 
   async refresh(): Promise<CatalogStatus> {
+    if (this.officialEnabled) return this.refreshOfficial();
     if (!this.remoteUrl || !this.publicKeyPem) throw new Error("catalog_update_not_configured");
     const run = await this.beginRun("inventory_prices", "remote", "Verificando atualização assinada de equipamentos e preços.");
     try {
@@ -185,7 +216,7 @@ export class CatalogUpdateService {
   }
 
   async configure(configuration: CatalogUpdateConfiguration): Promise<CatalogStatus> {
-    if (!this.configFile) throw new Error("catalog_configuration_read_only");
+    if (!this.configFile || !this.allowLegacyConfiguration) throw new Error("catalog_configuration_read_only");
     const publicKeyPem = validatedPublicKey(configuration.publicKeyPem);
     if (!publicKeyPem) throw new Error("catalog_public_key_required");
     this.remoteUrl = validatedRemoteUrl(configuration.remoteUrl);
@@ -210,6 +241,18 @@ export class CatalogUpdateService {
     if (!this.publicKeyPem) throw new Error("catalog_verification_key_not_configured");
     const run = await this.beginRun("inventory_prices", "imported", "Validando o arquivo local assinado antes de alterar o catálogo ativo.");
     try {
+      if (this.officialEnabled) {
+        const publication = await this.officialChannel.importRaw(this.store, raw);
+        run.toVersion = publication.catalogVersion;
+        run.added = publication.summary.added; run.updated = publication.summary.updated;
+        run.unchanged = publication.summary.unchanged; run.rejected = publication.summary.rejected;
+        run.status = "applied"; run.completedAt = new Date().toISOString();
+        run.message = `Publicação oficial ${publication.publicationId} importada como recuperação avançada.`;
+        await this.store.saveCatalogUpdateRun(run);
+        await this.updateFromPublication(publication, "imported");
+        this.currentStatus.lastUpdate = run;
+        return this.status;
+      }
       const snapshot = parseSnapshot(raw);
       verifySnapshot(snapshot, this.publicKeyPem);
       if (Date.parse(snapshot.payload.generatedAt) < Date.parse(this.currentStatus.generatedAt)) throw new Error("catalog_snapshot_rollback_rejected");
@@ -282,10 +325,10 @@ export class CatalogUpdateService {
   }
 
   private updateConfigurationStatus(): void {
-    this.currentStatus.remoteUpdateConfigured = Boolean(this.remoteUrl && this.publicKeyPem);
-    this.currentStatus.verificationKeyConfigured = Boolean(this.publicKeyPem);
-    this.currentStatus.configurationWritable = Boolean(this.configFile);
-    this.currentStatus.remoteUrl = this.remoteUrl ?? null;
+    this.currentStatus.remoteUpdateConfigured = this.officialEnabled || Boolean(this.remoteUrl && this.publicKeyPem);
+    this.currentStatus.verificationKeyConfigured = this.officialEnabled || Boolean(this.publicKeyPem);
+    this.currentStatus.configurationWritable = Boolean(this.configFile && this.allowLegacyConfiguration);
+    this.currentStatus.remoteUrl = this.officialEnabled ? this.officialChannel.releasesUrl : this.remoteUrl ?? null;
     this.currentStatus.checkedAt = new Date().toISOString();
   }
 
@@ -295,6 +338,58 @@ export class CatalogUpdateService {
     const temporary = `${this.cacheFile}.next`;
     await writeFile(temporary, raw, "utf8");
     await rename(temporary, this.cacheFile);
+  }
+
+  private async refreshOfficial(): Promise<CatalogStatus> {
+    const run = await this.beginRun("inventory_prices", "remote", "Consultando o canal público oficial e verificando a cadeia Ed25519.");
+    try {
+      const result = await this.officialChannel.refresh(this.store);
+      run.status = result.applied ? "applied" : "verified";
+      run.completedAt = new Date().toISOString();
+      if (result.publication) {
+        run.toVersion = result.publication.catalogVersion;
+        run.added = result.publication.summary.added;
+        run.updated = result.publication.summary.updated;
+        run.unchanged = result.publication.summary.unchanged;
+        run.rejected = result.publication.summary.rejected;
+        run.message = result.applied
+          ? `Publicação ${result.publication.publicationId} validada e ativada atomicamente.`
+          : `Canal oficial verificado; ${result.publication.publicationId} continua sendo a publicação mais recente.`;
+        await this.updateFromPublication(result.publication, result.applied ? "remote" : this.currentStatus.source);
+      } else {
+        run.message = "Canal oficial verificado; ainda não existe publicação assinada. O catálogo embarcado continua ativo.";
+      }
+      await this.store.saveCatalogUpdateRun(run);
+      this.currentStatus.lastUpdate = run;
+      this.currentStatus.checkedAt = new Date().toISOString();
+      this.currentStatus.lastError = null;
+      return this.status;
+    } catch (error) {
+      await this.failRun(run, error);
+      throw error;
+    }
+  }
+
+  private async updateFromPublication(publication: CatalogPublication, source: CatalogStatus["source"]): Promise<void> {
+    const hardware = await this.store.getCatalog();
+    const quotes = await this.store.getQuotes();
+    const components = await this.store.listHardwareComponents();
+    const benchmarks = await this.store.listBenchmarkObservations();
+    const sources = await this.store.listCatalogSources();
+    const nextCollection = new Date(Date.parse(publication.publishedAt) + 15 * 24 * 60 * 60 * 1_000);
+    const delayDays = Math.max(0, (Date.now() - nextCollection.getTime()) / (24 * 60 * 60 * 1_000));
+    this.currentStatus = {
+      ...this.currentStatus,
+      catalogVersion: publication.catalogVersion, generatedAt: publication.publishedAt,
+      checkedAt: new Date().toISOString(), source, hardwareCount: hardware.length, quoteCount: quotes.length,
+      stalePriceCount: quotes.filter(quoteIsStale).length, remoteUpdateConfigured: true,
+      verificationKeyConfigured: true, configurationWritable: Boolean(this.configFile && this.allowLegacyConfiguration),
+      remoteUrl: this.officialChannel.releasesUrl, lastError: null, channel: "official_public", automatic: true,
+      latestSequence: publication.sequence, lastPublicationAt: publication.publishedAt,
+      nextCollectionExpectedAt: nextCollection.toISOString(), publicationDelayDays: Math.round(delayDays * 10) / 10,
+      markets: ["BR", "US", "DE"], componentCount: components.length, benchmarkCount: benchmarks.length,
+      sourceHealth: sources.length ? sourceHealth(sources) : publication.sourceHealth, latestSummary: publication.summary,
+    };
   }
 
   private async apply(payload: CatalogPayload, source: "cached" | "remote" | "imported", run?: CatalogUpdateRun): Promise<void> {
@@ -333,6 +428,17 @@ export class CatalogUpdateService {
       remoteUrl: this.remoteUrl ?? null,
       lastError: null,
       lastUpdate: run ?? this.currentStatus.lastUpdate ?? null,
+      channel: this.officialEnabled ? "official_public" : (this.remoteUrl ? "legacy_admin" : "bundled"),
+      automatic: this.officialEnabled,
+      latestSequence: this.currentStatus.latestSequence,
+      lastPublicationAt: this.currentStatus.lastPublicationAt,
+      nextCollectionExpectedAt: this.currentStatus.nextCollectionExpectedAt,
+      publicationDelayDays: this.currentStatus.publicationDelayDays,
+      markets: this.currentStatus.markets,
+      componentCount: this.currentStatus.componentCount,
+      benchmarkCount: this.currentStatus.benchmarkCount,
+      sourceHealth: this.currentStatus.sourceHealth,
+      latestSummary: this.currentStatus.latestSummary,
     };
   }
 }

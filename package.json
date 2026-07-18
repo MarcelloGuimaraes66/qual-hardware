@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "catalog:collect": "tsx src/server/worker.ts --once",
+    "catalog:publisher": "tsx scripts/catalog-publisher.ts",
     "catalog:sign": "tsx scripts/sign-catalog.ts",
     "evidence:sign": "tsx scripts/sign-evidence.ts",
     "db:schema": "tsx src/server/applySchema.ts",

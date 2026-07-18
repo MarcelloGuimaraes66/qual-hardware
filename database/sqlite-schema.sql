@@ -153,4 +153,76 @@ CREATE TABLE IF NOT EXISTS hardware_predictions (
 CREATE INDEX IF NOT EXISTS hardware_predictions_hardware_idx
   ON hardware_predictions (hardware_template_id, generated_at DESC);
 
-PRAGMA user_version = 3;
+CREATE TABLE IF NOT EXISTS catalog_sources (
+  id TEXT PRIMARY KEY,
+  source_json TEXT NOT NULL CHECK (json_valid(source_json)),
+  state TEXT NOT NULL CHECK (state IN ('active', 'degraded', 'unavailable', 'disabled')),
+  last_run_at TEXT,
+  last_success_at TEXT,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS source_fetch_runs (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  run_json TEXT NOT NULL CHECK (json_valid(run_json)),
+  started_at TEXT NOT NULL,
+  completed_at TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS source_fetch_runs_source_idx
+  ON source_fetch_runs (source_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS source_observations (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  observation_json TEXT NOT NULL CHECK (json_valid(observation_json)),
+  content_hash TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS source_observations_source_idx
+  ON source_observations (source_id, retrieved_at DESC);
+
+CREATE TABLE IF NOT EXISTS catalog_publications (
+  sequence INTEGER PRIMARY KEY CHECK (sequence > 0),
+  publication_id TEXT NOT NULL UNIQUE,
+  catalog_version TEXT NOT NULL,
+  bundle_sha256 TEXT NOT NULL UNIQUE,
+  previous_bundle_sha256 TEXT,
+  key_id TEXT NOT NULL,
+  publication_json TEXT NOT NULL CHECK (json_valid(publication_json)),
+  envelope_json TEXT NOT NULL CHECK (json_valid(envelope_json)),
+  published_at TEXT NOT NULL,
+  valid_until TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS catalog_bundle_active_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  sequence INTEGER NOT NULL REFERENCES catalog_publications(sequence),
+  etag TEXT,
+  activated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS catalog_component_price_quotes (
+  id TEXT PRIMARY KEY,
+  component_id TEXT NOT NULL REFERENCES hardware_components(id),
+  publication_sequence INTEGER NOT NULL REFERENCES catalog_publications(sequence),
+  quote_json TEXT NOT NULL CHECK (json_valid(quote_json)),
+  observed_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS catalog_component_price_quotes_active_idx
+  ON catalog_component_price_quotes (publication_sequence, component_id, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS catalog_publication_component_membership (
+  publication_sequence INTEGER NOT NULL REFERENCES catalog_publications(sequence),
+  component_id TEXT NOT NULL REFERENCES hardware_components(id),
+  PRIMARY KEY (publication_sequence, component_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS catalog_publication_benchmark_membership (
+  publication_sequence INTEGER NOT NULL REFERENCES catalog_publications(sequence),
+  observation_id TEXT NOT NULL REFERENCES public_benchmark_observations(id),
+  PRIMARY KEY (publication_sequence, observation_id)
+) STRICT;
+
+PRAGMA user_version = 4;

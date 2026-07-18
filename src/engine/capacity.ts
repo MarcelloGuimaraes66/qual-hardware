@@ -312,7 +312,7 @@ function summarizePrice(
     );
   const stale = matching.filter((quote) => {
     const observedAt = Date.parse(quote.observedAt);
-    return !Number.isFinite(observedAt) || observedAt > now + 5 * 60_000 || now - observedAt > 72 * 60 * 60 * 1000;
+    return !Number.isFinite(observedAt) || observedAt > now + 5 * 60_000 || now - observedAt > 18 * 24 * 60 * 60 * 1000;
   });
   const staleIds = new Set(stale.map((quote) => quote.id));
   const applicable = matching
@@ -372,7 +372,7 @@ function summarizePrice(
       minimum: amounts[0] === undefined ? null : Math.round(amounts[0] * 100) / 100,
       median: quotedTotal,
       maximum: amounts.at(-1) === undefined ? null : Math.round(amounts.at(-1)! * 100) / 100,
-      quotationRequired: false,
+      quotationRequired: independentSources < 2,
       quoteCount: applicable.length,
       staleQuoteCount: stale.length,
       sourceUrls: [...new Set(applicable.map((quote) => quote.url))],

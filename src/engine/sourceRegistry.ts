@@ -1,0 +1,78 @@
+import { SOURCE_REGISTRY_VERSION, type CatalogSource, type SourceRegistry } from "../shared/types.js";
+
+const GENERATED_AT = "2026-07-18T12:00:00.000Z";
+
+function source(
+  id: string,
+  organization: string,
+  primaryUrl: string,
+  category: CatalogSource["category"],
+  parser: CatalogSource["parser"],
+  products: string[],
+  markets: CatalogSource["markets"] = [],
+  currencies: CatalogSource["currencies"] = [],
+  state: CatalogSource["state"] = "active",
+  extraHosts: string[] = [],
+  discoveryUrls: string[] = [],
+): CatalogSource {
+  const hostname = new URL(primaryUrl).hostname;
+  return {
+    id, organization, primaryUrl, discoveryUrls, allowedHosts: [hostname, ...extraHosts],
+    allowedRedirectHosts: [hostname, ...extraHosts], category, markets, currencies, parser, products,
+    trustTier: category === "price" ? 2 : 1, maxRequestsPerRun: category === "price" ? 80 : 30,
+    minimumIntervalMs: 750, robotsRequired: parser !== "api", state,
+    lastRunAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+    notes: state === "unavailable" ? ["Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."] : [],
+  };
+}
+
+export const BUNDLED_SOURCE_REGISTRY: SourceRegistry = {
+  schemaVersion: SOURCE_REGISTRY_VERSION,
+  generatedAt: GENERATED_AT,
+  sources: [
+    source("spec-intel-ark", "Intel", "https://www.intel.com/content/www/us/en/ark.html", "specification", "html_table", ["CPU", "NPU", "iGPU"]),
+    source("spec-amd-products", "AMD", "https://www.amd.com/en/products/specifications.html", "specification", "html_table", ["CPU", "GPU", "APU"], [], [], "unavailable"),
+    source("spec-nvidia-products", "NVIDIA", "https://www.nvidia.com/en-us/geforce/graphics-cards/", "specification", "json_ld", ["GPU", "VRAM", "NVDEC", "NVENC"]),
+    source("spec-apple-mac", "Apple", "https://www.apple.com/mac/", "specification", "json_ld", ["Apple Silicon", "Mac"]),
+    source("oem-asus", "ASUS / ROG", "https://www.asus.com/laptops/for-gaming/rog-republic-of-gamers/", "oem", "sitemap", ["laptop", "desktop", "workstation"]),
+    source("oem-dell", "Dell / Alienware / Precision / PowerEdge", "https://www.dell.com/en-us/shop/dell-computer-laptops/scr/laptops", "oem", "json_ld", ["laptop", "workstation", "server"], ["US"], ["USD"], "unavailable"),
+    source("oem-hp", "HP", "https://www.hp.com/us-en/shop/cat/laptops", "oem", "json_ld", ["laptop", "workstation"], ["US"], ["USD"], "unavailable"),
+    source("oem-hpe", "HPE", "https://www.hpe.com/us/en/servers.html", "oem", "sitemap", ["server"], ["US"], ["USD"], "unavailable"),
+    source("oem-lenovo", "Lenovo / Legion / ThinkStation / ThinkSystem", "https://www.lenovo.com/us/en/c/workstations/", "oem", "json_ld", ["laptop", "workstation", "server"], ["US"], ["USD"], "unavailable"),
+    source("oem-acer", "Acer / Predator", "https://www.acer.com/us-en/predator/laptops", "oem", "json_ld", ["laptop", "desktop"], ["US"], ["USD"], "unavailable"),
+    source("oem-msi", "MSI", "https://us.msi.com/Laptops", "oem", "sitemap", ["laptop", "desktop", "workstation"], ["US"], ["USD"], "unavailable"),
+    source("oem-gigabyte", "Gigabyte / Aorus", "https://www.gigabyte.com/Laptop", "oem", "sitemap", ["laptop", "workstation", "server"], [], [], "unavailable"),
+    source("oem-supermicro", "Supermicro", "https://www.supermicro.com/en/products/systems", "oem", "sitemap", ["workstation", "server"]),
+    source("benchmark-mlcommons", "MLCommons", "https://mlcommons.org/benchmarks/inference-datacenter/", "benchmark", "csv", ["local_inference"]),
+    source("benchmark-openbenchmarking", "OpenBenchmarking", "https://openbenchmarking.org/suites/", "benchmark", "api", ["CPU", "GPU", "storage", "memory"], [], [], "unavailable"),
+    source("benchmark-blender", "Blender Open Data", "https://opendata.blender.org/", "benchmark", "html_table", ["CPU", "GPU"], [], [], "active", [], [
+      "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%204070%20Ti%20SUPER/",
+      "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%205090/",
+      "https://opendata.blender.org/devices/NVIDIA%20RTX%206000%20Ada%20Generation/",
+      "https://opendata.blender.org/devices/Apple%20M4%20Pro/"
+    ]),
+    source("benchmark-spec", "SPEC", "https://www.spec.org/cpu2017/results/", "benchmark", "html_table", ["CPU sustained"]),
+    source("benchmark-nvidia-codec", "NVIDIA Video Codec SDK", "https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new", "benchmark", "html_table", ["NVDEC", "NVENC"]),
+    source("price-br-dell", "Dell Brasil", "https://www.dell.com/pt-br/shop", "price", "json_ld", ["systems"], ["BR"], ["BRL"]),
+    source("price-br-hp", "HP Brasil", "https://www.hp.com/br-pt/shop/", "price", "json_ld", ["systems"], ["BR"], ["BRL"], "unavailable"),
+    source("price-br-lenovo", "Lenovo Brasil", "https://www.lenovo.com/br/pt/", "price", "json_ld", ["systems"], ["BR"], ["BRL"], "unavailable"),
+    source("price-br-asus", "ASUS Brasil", "https://br.store.asus.com/", "price", "json_ld", ["systems", "components"], ["BR"], ["BRL"], "unavailable"),
+    source("price-br-apple", "Apple Brasil", "https://www.apple.com/br/shop/buy-mac", "price", "json_ld", ["systems"], ["BR"], ["BRL"]),
+    source("price-br-kabum", "KaBuM!", "https://www.kabum.com.br/hardware", "price", "json_ld", ["components", "systems"], ["BR"], ["BRL"]),
+    source("price-br-pichau", "Pichau", "https://www.pichau.com.br/hardware", "price", "json_ld", ["components", "systems"], ["BR"], ["BRL"], "unavailable"),
+    source("price-br-terabyte", "TerabyteShop", "https://www.terabyteshop.com.br/hardware", "price", "json_ld", ["components", "systems"], ["BR"], ["BRL"], "unavailable"),
+    source("price-us-nvidia", "NVIDIA Marketplace", "https://marketplace.nvidia.com/en-us/consumer/", "price", "json_ld", ["GPU", "systems"], ["US"], ["USD"], "unavailable"),
+    source("price-us-newegg", "Newegg", "https://www.newegg.com/Components/Store/ID-1", "price", "json_ld", ["components", "systems"], ["US"], ["USD"]),
+    source("price-us-apple", "Apple", "https://www.apple.com/shop/buy-mac/mac-mini/m4-pro-chip-14-core-cpu-20-core-gpu-48gb-memory-1tb-storage", "price", "json_ld", ["systems"], ["US"], ["USD"]),
+    source("price-us-bh", "B&H", "https://www.bhphotovideo.com/c/browse/computers-solutions/ci/9581", "price", "json_ld", ["components", "systems"], ["US"], ["USD"], "unavailable"),
+    source("price-us-bestbuy", "Best Buy", "https://www.bestbuy.com/site/computers-pcs/computer-cards-components/abcat0507000.c", "price", "json_ld", ["components", "systems"], ["US"], ["USD"], "unavailable"),
+    source("price-de-alternate", "Alternate", "https://www.alternate.de/Hardware", "price", "json_ld", ["components", "systems"], ["DE"], ["EUR"]),
+    source("price-de-apple", "Apple", "https://www.apple.com/de/shop/buy-mac/mac-mini/m4-chip-10%E2%80%91core-cpu-10%E2%80%91core-gpu-24-gb-arbeitsspeicher-1tb-speicher", "price", "json_ld", ["systems"], ["DE"], ["EUR"]),
+    source("price-de-cyberport", "Cyberport", "https://www.cyberport.de/pc-und-zubehoer.html", "price", "json_ld", ["components", "systems"], ["DE"], ["EUR"], "unavailable"),
+    source("price-de-notebooksbilliger", "notebooksbilliger", "https://www.notebooksbilliger.de/pc+hardware", "price", "json_ld", ["components", "systems"], ["DE"], ["EUR"], "unavailable"),
+    source("price-de-mindfactory", "Mindfactory", "https://www.mindfactory.de/Hardware.html", "price", "json_ld", ["components"], ["DE"], ["EUR"], "unavailable"),
+    source("fx-bcb-ptax", "Banco Central do Brasil", "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/aplicacao#!/recursos", "exchange_rate", "api", ["USD/BRL", "EUR/BRL"], ["BR"], ["BRL"]),
+    source("fx-ecb", "European Central Bank", "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml", "exchange_rate", "api", ["EUR/USD"], ["DE", "US"], ["EUR", "USD"]),
+    source("fx-federal-reserve", "Federal Reserve", "https://www.federalreserve.gov/releases/h10/current/", "exchange_rate", "html_table", ["USD/EUR"], ["US", "DE"], ["USD", "EUR"]),
+  ],
+};

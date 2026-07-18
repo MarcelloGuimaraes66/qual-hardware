@@ -8,6 +8,8 @@ export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0"
 export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
 export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/2.0.0" as const;
 export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/1.0.0" as const;
+export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
+export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
 
 export type Market = "BR" | "US" | "DE";
 export type Currency = "BRL" | "USD" | "EUR";
@@ -215,7 +217,8 @@ export interface HardwareNodeTemplate {
 
 export interface PriceQuote {
   id: string;
-  hardwareTemplateId: string;
+  hardwareTemplateId: string | null;
+  componentId?: string | null;
   mpn: string;
   seller: string;
   market: Market;
@@ -231,6 +234,132 @@ export interface PriceQuote {
   url: string;
   observedAt: string;
   sourceKind: "official_api" | "allowed_page" | "curated";
+  sourceId?: string;
+  scope?: "component" | "system";
+  gtin?: string | null;
+  sku?: string | null;
+  contentHash?: string;
+  evidenceLocator?: string;
+  retrievedAt?: string;
+  validUntil?: string;
+}
+
+export type CatalogSourceCategory = "specification" | "oem" | "price" | "benchmark" | "exchange_rate";
+export type CatalogSourceParser = "api" | "json_ld" | "sitemap" | "csv" | "html_table" | "pdf";
+export type CatalogSourceState = "active" | "degraded" | "unavailable" | "disabled";
+
+export interface CatalogSource {
+  id: string;
+  organization: string;
+  primaryUrl: string;
+  discoveryUrls: string[];
+  allowedHosts: string[];
+  allowedRedirectHosts: string[];
+  category: CatalogSourceCategory;
+  markets: Market[];
+  currencies: Currency[];
+  parser: CatalogSourceParser;
+  products: string[];
+  trustTier: 1 | 2 | 3;
+  maxRequestsPerRun: number;
+  minimumIntervalMs: number;
+  robotsRequired: boolean;
+  state: CatalogSourceState;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  notes: string[];
+}
+
+export interface SourceRegistry {
+  schemaVersion: typeof SOURCE_REGISTRY_VERSION;
+  generatedAt: string;
+  sources: CatalogSource[];
+}
+
+export interface SourceFetchRun {
+  id: string;
+  sourceId: string;
+  startedAt: string;
+  completedAt: string | null;
+  status: "collected" | "skipped" | "failed";
+  httpStatus: number | null;
+  observationCount: number;
+  rejectedCount: number;
+  message: string;
+  error: string | null;
+}
+
+export interface SourceObservation {
+  id: string;
+  sourceId: string;
+  retrievedAt: string;
+  url: string;
+  contentType: string;
+  contentHash: string;
+  evidenceLocator: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CatalogBundleSourceHealth {
+  active: number;
+  healthy: number;
+  degraded: number;
+  unavailable: number;
+  failedPercent: number;
+}
+
+export interface CatalogBundle {
+  schemaVersion: typeof CATALOG_BUNDLE_VERSION;
+  channel: "stable";
+  sequence: number;
+  publicationId: string;
+  catalogVersion: string;
+  generatedAt: string;
+  publishedAt: string;
+  validUntil: string;
+  previousBundleSha256: string | null;
+  collectorCommit: string;
+  qwen: {
+    model: "Qwen/Qwen3-1.7B-GGUF:Q8_0";
+    modelSha256: string;
+    promptVersion: string;
+    used: boolean;
+  };
+  markets: Market[];
+  hardware: HardwareNodeTemplate[];
+  components: HardwareComponent[];
+  benchmarks: PublicBenchmarkObservation[];
+  prices: PriceQuote[];
+  sources: CatalogSource[];
+  sourceHealth: CatalogBundleSourceHealth;
+  summary: {
+    added: number;
+    updated: number;
+    unchanged: number;
+    rejected: number;
+    checkedWithoutChanges: boolean;
+  };
+}
+
+export interface SignedCatalogBundle {
+  payload: CatalogBundle;
+  keyId: string;
+  signature: string;
+}
+
+export interface CatalogPublication {
+  sequence: number;
+  publicationId: string;
+  catalogVersion: string;
+  bundleSha256: string;
+  previousBundleSha256: string | null;
+  keyId: string;
+  publishedAt: string;
+  validUntil: string;
+  etag: string | null;
+  sourceHealth: CatalogBundleSourceHealth;
+  summary: CatalogBundle["summary"];
 }
 
 export interface CatalogStatus {
@@ -247,6 +376,17 @@ export interface CatalogStatus {
   remoteUrl: string | null;
   lastError: string | null;
   lastUpdate?: CatalogUpdateRun | null;
+  channel: "official_public" | "legacy_admin" | "bundled";
+  automatic: boolean;
+  latestSequence: number | null;
+  lastPublicationAt: string | null;
+  nextCollectionExpectedAt: string | null;
+  publicationDelayDays: number;
+  markets: Market[];
+  componentCount: number;
+  benchmarkCount: number;
+  sourceHealth: CatalogBundleSourceHealth;
+  latestSummary: CatalogBundle["summary"] | null;
 }
 
 export interface CatalogUpdateRun {

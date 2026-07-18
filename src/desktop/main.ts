@@ -35,12 +35,13 @@ async function startLocalApplication(): Promise<string> {
     publicKeyPem: process.env.QUAL_HARDWARE_CATALOG_PUBLIC_KEY?.replaceAll("\\n", "\n"),
     cacheFile: paths.catalogCacheFile,
     configFile: paths.catalogConfigFile,
+    officialEnabled: true,
+    allowLegacyConfiguration: process.env.QUAL_HARDWARE_CATALOG_ADMIN === "1",
   });
   catalogUpdates = updates;
   await updates.initialize();
   catalogRefreshTimer = setInterval(() => {
-    if (!catalogUpdates?.status.remoteUpdateConfigured) return;
-    void catalogUpdates.refresh().catch((error: unknown) => console.error("Catalog refresh failed", error));
+    void updates.refresh().catch((error: unknown) => console.error("Catalog refresh failed", error));
   }, CATALOG_REFRESH_INTERVAL_MILLISECONDS);
   catalogRefreshTimer.unref();
 

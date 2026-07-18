@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import { createDefaultAgent, createDefaultScenario } from "../shared/schemas.js";
 import type {
-  AgentLoad, CameraGroup, CapacityRecommendation, CapacityScenario, CatalogStatus, Currency, InfrastructureKind,
+  AgentLoad, CameraGroup, CapacityRecommendation, CapacityScenario, CatalogPublication, CatalogSource, CatalogStatus, Currency, InfrastructureKind,
   CalibrationPlan, CapacityPrediction, HardwareNodeTemplate, LocalCalibrationRun, Market, OperatingSystemFamily,
   RecommendationAlternative, RecommendationPolicy, ScenarioRecord,
 } from "../shared/types.js";
@@ -333,31 +333,19 @@ function CatalogManager({
   onStatus: (status: CatalogStatus) => void;
   onCatalogApplied: (status: CatalogStatus, message: string) => void;
 }): ReactElement {
-  const [remoteUrl, setRemoteUrl] = useState(status?.remoteUrl ?? "");
-  const [publicKeyPem, setPublicKeyPem] = useState("");
   const [working, setWorking] = useState(false);
   const [detail, setDetail] = useState("");
   const [hardware, setHardware] = useState<HardwareNodeTemplate[]>([]);
+  const [sources, setSources] = useState<CatalogSource[]>([]);
+  const [publications, setPublications] = useState<CatalogPublication[]>([]);
   useEffect(() => {
     void api<HardwareNodeTemplate[]>("/api/catalog/hardware").then(setHardware).catch(() => setHardware([]));
+    void api<CatalogSource[]>("/api/catalog/sources").then(setSources).catch(() => setSources([]));
+    void api<CatalogPublication[]>("/api/catalog/publications").then(setPublications).catch(() => setPublications([]));
   }, [status?.catalogVersion]);
 
-  const configure = async (): Promise<void> => {
-    setWorking(true); setDetail("");
-    try {
-      const next = await api<CatalogStatus>("/api/catalog/configure", {
-        method: "POST",
-        body: JSON.stringify({ remoteUrl: remoteUrl.trim() || null, publicKeyPem }),
-      });
-      onStatus(next); setPublicKeyPem("");
-      setDetail(lang === "pt" ? "Configuração salva neste computador." : "Configuration saved on this computer.");
-    } catch (error) {
-      setDetail(error instanceof Error ? error.message : "catalog_configuration_failed");
-    } finally { setWorking(false); }
-  };
-
   const refresh = async (): Promise<void> => {
-    setWorking(true); setDetail(lang === "pt" ? "Etapa 1/4: consultando a URL configurada. Em seguida a assinatura e a data serão verificadas antes de qualquer ativação." : "Step 1/4: checking the configured URL, signature and timestamp before activation.");
+    setWorking(true); setDetail(lang === "pt" ? "Consultando o canal público oficial. O aplicativo validará checksum, assinatura, sequência e cadeia antes de ativar qualquer dado." : "Checking the official public channel. Checksum, signature, sequence and chain are verified before activation.");
     try {
       const next = await api<CatalogStatus>("/api/catalog/refresh", { method: "POST" });
       onCatalogApplied(next, next.lastUpdate?.message ?? (lang === "pt" ? `Hardware atualizado para ${next.catalogVersion}.` : `Hardware updated to ${next.catalogVersion}.`));
@@ -388,17 +376,15 @@ function CatalogManager({
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="catalog-modal" role="dialog" aria-modal="true" aria-labelledby="catalog-title">
       <div className="modal-heading"><div><span>CATALOG / HARDWARE</span><h2 id="catalog-title">{lang === "pt" ? "Atualizar hardware" : "Update hardware"}</h2></div><button type="button" className="icon-button" aria-label={lang === "pt" ? "Fechar" : "Close"} onClick={onClose}>×</button></div>
-      <div className="catalog-summary"><div><span>{lang === "pt" ? "Versão ativa" : "Active version"}</span><b>{status?.catalogVersion ?? "—"}</b><small>{status?.source ?? "—"}</small></div><div><span>{lang === "pt" ? "Equipamentos" : "Hardware"}</span><b>{status?.hardwareCount ?? "—"}</b><small>{status?.quoteCount ?? 0} {lang === "pt" ? "preços" : "prices"}</small></div><div><span>{lang === "pt" ? "Verificação" : "Verification"}</span><b>{status?.verificationKeyConfigured ? "ED25519 OK" : (lang === "pt" ? "NÃO CONFIGURADA" : "NOT CONFIGURED")}</b><small>{status?.remoteUpdateConfigured ? "HTTPS + SIGNATURE" : "SIGNED FILE"}</small></div></div>
+      <div className="catalog-summary"><div><span>{lang === "pt" ? "Versão ativa" : "Active version"}</span><b>{status?.catalogVersion ?? "—"}</b><small>{status?.channel ?? "—"}</small></div><div><span>{lang === "pt" ? "Inventário" : "Inventory"}</span><b>{status?.hardwareCount ?? "—"} {lang === "pt" ? "máquinas" : "machines"}</b><small>{status?.componentCount ?? 0} {lang === "pt" ? "componentes" : "components"} · {status?.benchmarkCount ?? 0} benchmarks</small></div><div><span>{lang === "pt" ? "Preços" : "Prices"}</span><b>{status?.quoteCount ?? 0}</b><small>BRL · USD · EUR</small></div><div><span>{lang === "pt" ? "Segurança" : "Security"}</span><b>{status?.verificationKeyConfigured ? "ED25519 OK" : "—"}</b><small>SHA-256 · chain · anti-rollback</small></div></div>
+      <div className="catalog-channel-info"><div><span>{lang === "pt" ? "Última publicação" : "Last publication"}</span><b>{status?.lastPublicationAt ? new Date(status.lastPublicationAt).toLocaleString() : (lang === "pt" ? "Catálogo embarcado" : "Bundled catalog")}</b></div><div><span>{lang === "pt" ? "Próxima coleta prevista" : "Next collection expected"}</span><b>{status?.nextCollectionExpectedAt ? new Date(status.nextCollectionExpectedAt).toLocaleString() : (lang === "pt" ? "Primeira publicação pendente" : "First publication pending")}</b></div><div><span>{lang === "pt" ? "Saúde das fontes" : "Source health"}</span><b>{status?.sourceHealth.healthy ?? 0} OK · {status?.sourceHealth.degraded ?? 0} {lang === "pt" ? "degradadas" : "degraded"} · {status?.sourceHealth.unavailable ?? 0} {lang === "pt" ? "indisponíveis" : "unavailable"}</b></div><div><span>{lang === "pt" ? "Histórico" : "History"}</span><b>{publications.length} {lang === "pt" ? "publicação(ões) local(is)" : "local publication(s)"} · {sources.length} {lang === "pt" ? "fontes" : "sources"}</b></div></div>
       <div className="catalog-hardware-heading"><div><span>{lang === "pt" ? "Lista ativa" : "Active list"}</span><h3>{lang === "pt" ? "Computadores e servidores considerados" : "Computers and servers considered"}</h3></div><small>{lang === "pt" ? "Apple requer seleção explícita de macOS. GPU integrada usa CPU decode no contrato atual." : "Apple requires explicit macOS selection. Integrated GPUs use CPU decode in the current contract."}</small></div>
       <div className="catalog-hardware-list">{hardware.map((item) => <article key={item.id}><div><b>{item.name}</b><span>{item.kind} · {hardwareOperatingSystem(item)}</span></div><small>{item.cpuModel} · {item.ramGb} GB {item.memoryArchitecture === "unified" ? "unified" : "RAM"} · {item.gpuModel}</small></article>)}</div>
-      <div className="catalog-config-grid">
-        <Field label={lang === "pt" ? "URL HTTPS do catálogo (opcional)" : "Catalog HTTPS URL (optional)"} hint={lang === "pt" ? "Deixe vazio para trabalhar somente com importação manual assinada." : "Leave blank to use signed manual imports only."}><input type="url" value={remoteUrl} onChange={(event) => setRemoteUrl(event.target.value)} placeholder="https://catalogo.interno/catalog-snapshot.json" /></Field>
-        <Field label={lang === "pt" ? "Chave pública Ed25519" : "Ed25519 public key"} hint={!status?.configurationWritable ? (lang === "pt" ? "Configuração bloqueada neste modo; use a chave definida pelo administrador." : "Configuration is locked in this mode; use the administrator-provided key.") : status?.verificationKeyConfigured ? (lang === "pt" ? "Uma chave já está salva. Cole uma chave apenas para substituí-la ou alterar a URL." : "A key is already saved. Paste a key only to replace it or change the URL.") : (lang === "pt" ? "Obrigatória para impedir catálogos falsos ou alterados." : "Required to reject false or modified catalogs.")}><textarea value={publicKeyPem} disabled={!status?.configurationWritable} onChange={(event) => setPublicKeyPem(event.target.value)} rows={6} placeholder="-----BEGIN PUBLIC KEY-----" /></Field>
-      </div>
-      <div className="catalog-actions"><button type="button" className="secondary" disabled={working || !status?.configurationWritable || !publicKeyPem.trim()} onClick={configure}>{lang === "pt" ? "Salvar configuração" : "Save configuration"}</button><button type="button" className="primary" disabled={working || !status?.remoteUpdateConfigured} onClick={refresh}>{lang === "pt" ? "Buscar atualização online" : "Check online update"}</button><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar catálogo assinado" : "Import signed catalog"}<input type="file" hidden accept="application/json,.json" disabled={working} onChange={importSnapshot} /></label></div>
+      <div className="catalog-actions"><button type="button" className="primary" disabled={working} onClick={refresh}>{working ? (lang === "pt" ? "Verificando com segurança…" : "Checking safely…") : (lang === "pt" ? "Verificar agora" : "Check now")}</button></div>
+      <details className="catalog-recovery"><summary>{lang === "pt" ? "Recuperação avançada" : "Advanced recovery"}</summary><p>{lang === "pt" ? "Use somente se o canal público estiver indisponível e você recebeu um arquivo oficial assinado." : "Use only if the public channel is unavailable and you received an official signed file."}</p><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar catálogo assinado" : "Import signed catalog"}<input type="file" hidden accept="application/json,.json" disabled={working} onChange={importSnapshot} /></label></details>
       {detail && <div className="catalog-message">{detail}</div>}
       {status?.lastUpdate && <div className="catalog-message">{status.lastUpdate.message}<br /><small>{status.lastUpdate.status} · {status.lastUpdate.added} novo(s) · {status.lastUpdate.updated} atualizado(s) · {status.lastUpdate.unchanged} inalterado(s)</small></div>}
-      <p className="catalog-privacy">{lang === "pt" ? "Somente equipamentos, especificações e preços são atualizados. Projetos, câmeras e credenciais nunca são enviados. Quando URL e chave estão configuradas, o aplicativo verifica ao abrir e a cada 24 horas; toda tentativa fica registrada e aparece aqui." : "Only hardware, specifications and prices are updated. Projects, cameras and credentials are never uploaded. With URL and key configured, checks run at startup and every 24 hours; every attempt is recorded here."}</p>
+      <p className="catalog-privacy">{lang === "pt" ? "A atualização é automática ao abrir e a cada 24 horas. O GitHub verifica as fontes a cada 15 dias. Somente dados públicos de hardware entram; projetos, câmeras e credenciais nunca são enviados. Se qualquer validação falhar, o catálogo anterior continua ativo." : "Updates run automatically at startup and every 24 hours. GitHub checks sources every 15 days. Only public hardware data is downloaded; projects, cameras and credentials are never uploaded. The previous catalog remains active after any validation failure."}</p>
     </section>
   </div>;
 }

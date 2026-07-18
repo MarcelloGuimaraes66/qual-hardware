@@ -15,6 +15,6 @@ O arquivo guarda apenas projetos, recomendações, catálogos, preços, calibra�
 
 ## Confiabilidade e migração
 
-O esquema aditivo v2 está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A abertura cria apenas objetos ausentes e faz upsert de snapshots embarcados; não apaga catálogos, calibrações nem previsões anteriores. A aplicação recusa uma versão de banco mais nova do que o executável entende.
+O esquema aditivo v4 está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A abertura cria apenas objetos ausentes e faz upsert de snapshots embarcados; não apaga catálogos, calibrações nem previsões anteriores. As tabelas v4 guardam registro de fontes, execuções/observações de coleta, publicações imutáveis, preços por componente e o ponteiro do bundle ativo. Uma ativação atualiza todos esses dados ou nenhum deles. A aplicação recusa uma versão de banco mais nova do que o executável entende.
 
 SQLite não deve ser colocado em um compartilhamento SMB/NFS. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.

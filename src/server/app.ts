@@ -154,6 +154,8 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
   app.get("/api/catalog/hardware", async (context) => context.json(await store.getCatalog()));
   app.get("/api/catalog/quotes", async (context) => context.json(await store.getQuotes()));
   app.get("/api/catalog/status", (context) => context.json(catalogUpdates.status));
+  app.get("/api/catalog/sources", async (context) => context.json(await store.listCatalogSources()));
+  app.get("/api/catalog/publications", async (context) => context.json(await store.listCatalogPublications()));
   app.get("/api/catalog/update-runs", async (context) => context.json(await store.listCatalogUpdateRuns()));
   app.post("/api/catalog/refresh", async (context) => {
     if (!catalogUpdates.status.remoteUpdateConfigured) return context.json({ error: "catalog_update_not_configured" }, 503);

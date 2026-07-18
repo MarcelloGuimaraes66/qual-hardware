@@ -20,7 +20,7 @@ Build each platform on its native operating system. The project intentionally do
 | Ubuntu 24.04 x64 | AppImage | `release/Qual-Hardware-${version}-linux-x64.AppImage` |
 | Ubuntu 24.04 x64 | Debian package | `release/qual-hardware_${version}_amd64.deb` |
 
-`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens that application with a temporary user directory and proves its runtime, 21-item catalog, Windows/Ubuntu/macOS recommendation targets, API, calculations, reports, single-instance protection and persistence.
+`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens that application with a temporary user directory and proves its runtime, official automatic catalog channel, 39-source registry, 21-item fallback catalog, Windows/Ubuntu/macOS recommendation targets, API, calculations, reports, single-instance protection and persistence.
 
 ## Installation and first launch
 
@@ -41,6 +41,8 @@ Either mark the AppImage executable and launch it, or install the `.deb` with th
 The packaged application contains Electron and does not use a separately installed Node.js. It starts Hono on an operating-system-assigned port bound only to `127.0.0.1`. The renderer is sandboxed and can reach only the application origin. A single-instance lock prevents two applications from concurrently owning SQLite.
 
 Qual Hardware is exclusively desktop: it has no standalone server, Docker image or hosted deployment. The operating system chosen in a scenario is the target for the planned Perceptrum machine and is independent from the operating system running the calculator.
+
+All packages use the same public `catalog-*` GitHub Releases. They check automatically at startup and every 24 hours, download nothing when the ETag is unchanged and preserve the active snapshot after any network, schema, checksum, signature, sequence or database failure. Collection and Qwen never execute on the user's computer.
 
 The database filename remains `qual-hardware.sqlite` under Electron's native `userData` directory:
 
@@ -69,7 +71,7 @@ On Ubuntu, use `xvfb-run --auto-servernum npm run desktop:smoke` in headless env
 ### Windows 11 x64
 
 - Compare the data path printed by the current portable and the candidate; any difference blocks merge.
-- Open the portable, inspect all 21 bundled catalog entries, calculate Windows and macOS target scenarios, import signed catalog/evidence snapshots, export PDF/XLSX/JSON and restart.
+- Open the portable, confirm the automatic-channel status and source health, inspect the active catalog, calculate Windows and macOS target scenarios, export PDF/XLSX/JSON and restart.
 - Confirm persisted data, single-instance focus behavior and complete exit after closing the window.
 
 ### macOS 26 arm64
@@ -77,12 +79,12 @@ On Ubuntu, use `xvfb-run --auto-servernum npm run desktop:smoke` in headless env
 - Mount the DMG, copy the app to Applications and complete the unsigned first-open flow.
 - Validate Dock activation, last-window close, recreation and `Cmd+Q`.
 - Validate the Apple Silicon opt-in, exact-existing-hardware flow, three differentiated proposals and reconciled component costs.
-- Import a catalog, download all reports, restart and confirm persistence.
+- Verify the official catalog automatically, download all reports, restart and confirm publication/project persistence.
 
 ### Ubuntu 24.04 x64
 
 - Run the AppImage and install the DEB in GNOME/Wayland.
-- Validate menu integration, window lifecycle, the ASUS exact-hardware flow, catalog import, all exports, persistence and exit.
+- Validate menu integration, window lifecycle, the ASUS exact-hardware flow, automatic catalog status, all exports, persistence and exit.
 
 For all systems, verify that only loopback is listening, the package runs without user-installed Node.js, the expected icon appears, all current tests pass and no existing database is changed or removed.
 
