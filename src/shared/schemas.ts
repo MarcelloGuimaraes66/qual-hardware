@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { CapacityScenario } from "./types.js";
-import { WORKLOAD_CONTRACT_VERSION } from "./types.js";
+import {
+  CALIBRATION_PLAN_VERSION,
+  EVIDENCE_CATALOG_VERSION,
+  LOCAL_CALIBRATION_VERSION,
+  WORKLOAD_CONTRACT_VERSION,
+} from "./types.js";
 
 const agentFeaturesSchema = z.object({
   onlyCaptureOnMotion: z.boolean(),
@@ -53,7 +58,7 @@ export const cameraGroupSchema = z.object({
 
 export const capacityScenarioSchema = z.object({
   schemaVersion: z.literal("capacity-scenario/1.0.0"),
-  workloadContractVersion: z.enum([WORKLOAD_CONTRACT_VERSION, "perceptrum-workload/1.0.0"]),
+  workloadContractVersion: z.enum([WORKLOAD_CONTRACT_VERSION, "perceptrum-workload/1.1.0", "perceptrum-workload/1.0.0"]),
   projectName: z.string().min(1).max(160),
   customerName: z.string().max(160),
   market: z.enum(["BR", "US", "DE"]),
@@ -135,15 +140,190 @@ export const benchmarkMetricsSchema = z.object({
   })).length(3),
 });
 
+export const calibrationStageSchema = z.enum([
+  "rtsp_ingest",
+  "video_decode",
+  "bgr_processing",
+  "video_encode",
+  "disk_write",
+  "disk_read",
+  "local_inference",
+  "memory_bandwidth",
+  "network_ingest",
+  "thermal_sustain",
+]);
+
+const operatingSystemSchema = z.enum(["windows", "ubuntu", "macos"]);
+
+export const localCalibrationRunSchema = z.object({
+  schemaVersion: z.literal(LOCAL_CALIBRATION_VERSION),
+  id: z.string().uuid(),
+  planId: z.string().uuid(),
+  createdAt: z.iso.datetime(),
+  startedAt: z.iso.datetime(),
+  completedAt: z.iso.datetime(),
+  workloadContractVersion: z.literal(WORKLOAD_CONTRACT_VERSION),
+  mode: z.enum(["quick", "full"]),
+  executionMode: z.enum(["readiness", "production_pipeline"]).optional(),
+  developmentOnly: z.literal(true).optional(),
+  fingerprint: z.object({
+    hardwareTemplateId: z.string().min(1).max(160).nullable(),
+    hostnameHash: z.string().min(16).max(256),
+    cpuModel: z.string().min(1).max(240),
+    cpuArchitecture: z.string().min(1).max(120),
+    physicalCores: z.number().int().positive().max(1024),
+    logicalCores: z.number().int().positive().max(2048),
+    cpuPowerLimitWatts: z.number().positive().max(10_000).nullable(),
+    gpuModel: z.string().min(1).max(240),
+    gpuArchitecture: z.string().min(1).max(120),
+    gpuCount: z.number().int().nonnegative().max(32),
+    gpuVramBytes: z.number().int().nonnegative(),
+    gpuDriver: z.string().min(1).max(160),
+    ramBytes: z.number().int().positive(),
+    memoryChannels: z.number().int().positive().max(32).nullable(),
+    memorySpeedMtps: z.number().positive().max(100_000).nullable(),
+    storageModel: z.string().min(1).max(240),
+    filesystem: z.string().min(1).max(120),
+    nicModel: z.string().min(1).max(240),
+    operatingSystem: operatingSystemSchema,
+    operatingSystemVersion: z.string().min(1).max(240),
+    powerProfile: z.string().min(1).max(160),
+    formFactor: z.enum(["laptop", "mini_pc", "workstation", "rack"]),
+    coolingProfile: z.string().min(1).max(240),
+    perceptrumBuildHash: z.string().min(1).max(128),
+    aiqModel: z.string().min(1).max(240),
+    aiqModelHash: z.string().min(1).max(256),
+    inferenceBackend: z.string().min(1).max(160),
+  }),
+  requestedSourceFps: z.number().positive().max(120),
+  measuredSourceFps: z.number().nonnegative().max(240),
+  requestedInferenceFps: z.number().int().min(1).max(5),
+  effectiveInferenceFps: z.number().min(1).max(5),
+  framesPlanned: z.number().int().nonnegative(),
+  framesExtracted: z.number().int().nonnegative(),
+  framesPacked: z.number().int().nonnegative(),
+  framesInferred: z.number().int().nonnegative(),
+  rtspOrigin: z.string().url().refine((value) => new URL(value).hostname === "127.0.0.1", "RTSP must use 127.0.0.1"),
+  aiqOrigin: z.string().url().refine((value) => new URL(value).hostname === "127.0.0.1", "AiQ must use 127.0.0.1"),
+  networkPolicy: z.literal("loopback_only"),
+  externalRequestCount: z.literal(0),
+  openAiRequestCount: z.literal(0),
+  mediaFieldCount: z.literal(0),
+  credentialFieldCount: z.literal(0),
+  stages: z.array(z.object({
+    stage: calibrationStageSchema,
+    safeCameraCapacity: z.number().nonnegative(),
+    throughput: z.number().nonnegative(),
+    throughputUnit: z.string().min(1).max(80),
+    p95LatencyMs: z.number().nonnegative(),
+    peakUtilizationPercent: z.number().min(0).max(100),
+    queueGrowthPerMinute: z.number(),
+    thermalThrottlePercent: z.number().min(0).max(100),
+  })).min(6),
+  phases: z.array(z.object({
+    name: z.enum(["warmup", "sustained", "surge"]),
+    durationSeconds: z.number().int().positive(),
+    loadPercent: z.number().positive(),
+    cameraCount: z.number().int().positive(),
+    inferenceSuccessRate: z.number().min(0).max(1),
+    maxQueueDepth: z.number().int().nonnegative(),
+    queueGrowthPerMinute: z.number(),
+    outOfMemoryCount: z.number().int().nonnegative(),
+  })).length(3),
+  overallSafeCameraCapacity: z.number().nonnegative(),
+  bottleneck: calibrationStageSchema,
+  pipelineEvidence: z.object({
+    complete: z.boolean(),
+    isolatedDatabase: z.boolean(),
+    sourceRegistered: z.boolean(),
+    rtspClipProvided: z.boolean(),
+    intelligenceJobQueued: z.boolean(),
+    schedulerClaimedJob: z.boolean(),
+    aiqLocalCompleted: z.boolean(),
+    resultPersisted: z.boolean(),
+  }).loose().optional(),
+  qualityGate: z.object({
+    eligibleForCapacityExtrapolation: z.boolean(),
+    evidenceLevel: z.enum(["validated_local", "representative_only"]),
+    failures: z.array(z.string().max(240)).max(100),
+    warnings: z.array(z.string().max(240)).max(100),
+  }).optional(),
+  notes: z.array(z.string().max(500)).max(100),
+}).superRefine((value, context) => {
+  if (Date.parse(value.completedAt) <= Date.parse(value.startedAt)) {
+    context.addIssue({ code: "custom", path: ["completedAt"], message: "Calibration completion must be after start." });
+  }
+  if (value.framesInferred > value.framesPacked || value.framesPacked > value.framesExtracted) {
+    context.addIssue({ code: "custom", path: ["framesInferred"], message: "Frame counters are not monotonic." });
+  }
+  if (value.qualityGate?.eligibleForCapacityExtrapolation && value.pipelineEvidence?.complete !== true) {
+    context.addIssue({ code: "custom", path: ["pipelineEvidence"], message: "Eligible calibration requires complete production-pipeline evidence." });
+  }
+});
+
+export const hardwareComponentSchema = z.object({
+  id: z.string().min(1).max(240),
+  kind: z.enum(["cpu", "gpu", "memory", "storage", "network", "system"]),
+  manufacturer: z.string().min(1).max(160),
+  sku: z.string().min(1).max(240),
+  architecture: z.string().min(1).max(160),
+  specifications: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  sourceUrls: z.array(z.string().url().refine((value) => new URL(value).protocol === "https:")).min(1).max(30),
+});
+
+export const publicBenchmarkObservationSchema = z.object({
+  id: z.string().min(1).max(240),
+  hardwareTemplateId: z.string().min(1).max(160),
+  stage: calibrationStageSchema,
+  profileId: z.string().min(1).max(240),
+  benchmarkName: z.string().min(1).max(240),
+  benchmarkVersion: z.string().min(1).max(120),
+  score: z.number().positive(),
+  unit: z.string().min(1).max(80),
+  higherIsBetter: z.boolean(),
+  componentId: z.string().min(1).max(240).optional(),
+  componentKind: z.enum(["cpu", "gpu", "memory", "storage", "network", "system"]).optional(),
+  sourceTier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  sourceUrl: z.string().url().refine((value) => new URL(value).protocol === "https:", "Evidence source must use HTTPS"),
+  observedAt: z.iso.datetime(),
+  operatingSystem: z.union([operatingSystemSchema, z.literal("any")]),
+  configuration: z.string().min(20).max(2_000),
+  powerWatts: z.number().positive().max(20_000).nullable().optional(),
+  driverVersion: z.string().min(1).max(240).nullable().optional(),
+  coolingProfile: z.string().min(1).max(240).nullable().optional(),
+  sampleCount: z.number().int().positive().max(1_000_000).optional(),
+  qualityFlags: z.array(z.string().min(1).max(120)).max(40).optional(),
+});
+
+export const evidenceCatalogSnapshotSchema = z.object({
+  schemaVersion: z.literal(EVIDENCE_CATALOG_VERSION),
+  catalogVersion: z.string().min(1).max(160),
+  generatedAt: z.iso.datetime(),
+  components: z.array(hardwareComponentSchema).max(100_000).optional(),
+  observations: z.array(publicBenchmarkObservationSchema).min(1).max(100_000),
+});
+
+export const calibrationPlanRequestSchema = z.object({
+  recommendationId: z.string().uuid(),
+  mode: z.enum(["quick", "full"]),
+  targetHardwareTemplateId: z.string().min(1).max(160).nullable(),
+});
+
+export const calibrationPlanSchema = z.object({
+  schemaVersion: z.literal(CALIBRATION_PLAN_VERSION),
+  id: z.string().uuid(),
+  targetHardwareTemplateId: z.string().min(1).max(160).nullable(),
+});
+
 export function createDefaultAgent(): CapacityScenario["cameraGroups"][number]["agents"][number] {
   return {
     id: globalThis.crypto.randomUUID(),
     name: "Continuous video analysis",
-    model: "gpt-5.4-mini",
+    model: "aiq-3.7",
     inputType: "video",
     packaging: "mosaic_2x2",
     modelFps: 1,
-    runEverySeconds: 10,
+    runEverySeconds: 60,
     features: {
       onlyCaptureOnMotion: false,
       temporal: false,

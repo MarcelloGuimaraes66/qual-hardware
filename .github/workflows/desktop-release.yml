@@ -1,0 +1,97 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows 11 x64
+            os: windows-2025
+            artifact: windows
+            paths: release/*.exe
+            platform: windows
+          - name: macOS 26 arm64
+            os: macos-26
+            artifact: macos
+            paths: release/*.dmg
+            platform: macos
+          - name: Ubuntu 24.04 x64
+            os: ubuntu-24.04
+            artifact: linux
+            paths: |
+              release/*.AppImage
+              release/*.deb
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify tag matches package version
+        shell: bash
+        run: node -e "const version = require('./package.json').version; if (process.env.GITHUB_REF_NAME !== 'v' + version) throw new Error('Tag must equal v' + version)"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run desktop:package
+      - name: Smoke test packaged desktop
+        if: matrix.platform != 'linux'
+        run: npm run desktop:smoke
+      - name: Configure Chromium sandbox helper for unpacked Linux smoke
+        if: matrix.platform == 'linux'
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
+      - name: Smoke test packaged desktop under Xvfb
+        if: matrix.platform == 'linux'
+        run: xvfb-run --auto-servernum npm run desktop:smoke
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+          retention-days: 7
+
+  draft-release:
+    name: Consolidate draft release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          checksum_file="release-assets/SHA256SUMS"
+          while IFS= read -r -d '' file; do
+            digest="$(sha256sum "$file" | cut -d ' ' -f 1)"
+            printf '%s  %s\n' "$digest" "$(basename "$file")" >> "$checksum_file"
+          done < <(find release-assets -type f ! -name SHA256SUMS -print0 | sort -z)
+      - name: Create draft GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+            --draft \
+            --generate-notes \
+            --title "Qual Hardware $GITHUB_REF_NAME" \
+            --verify-tag

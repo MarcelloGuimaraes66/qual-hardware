@@ -1,9 +1,16 @@
 import { serve, type ServerType } from "@hono/node-server";
-import { app, BrowserWindow, shell } from "electron";
-import { join } from "node:path";
+import { app, BrowserWindow, dialog, Menu, session, shell } from "electron";
 import { createApp } from "../server/app.js";
 import { CatalogUpdateService } from "../server/catalogUpdates.js";
 import { createStore, type PlannerStore } from "../server/store.js";
+import {
+  createIdempotentShutdown,
+  DESKTOP_APP_ID,
+  externalHttpUrl,
+  isLocalApplicationUrl,
+  resolveDesktopPaths,
+  shouldQuitWhenAllWindowsClosed,
+} from "./runtime.js";
 
 const HOST = "127.0.0.1";
 const CATALOG_REFRESH_INTERVAL_MILLISECONDS = 24 * 60 * 60 * 1_000;
@@ -13,26 +20,28 @@ let store: PlannerStore | null = null;
 let catalogUpdates: CatalogUpdateService | null = null;
 let catalogRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let localOrigin = "";
-let shuttingDown = false;
+let shutdownComplete = false;
 
 app.enableSandbox();
 
 async function startLocalApplication(): Promise<string> {
-  process.env.QUAL_HARDWARE_RESOURCE_ROOT = app.getAppPath();
-  process.env.QUAL_HARDWARE_SQLITE_PATH = join(app.getPath("userData"), "qual-hardware.sqlite");
+  const paths = resolveDesktopPaths(app.getAppPath(), app.getPath("userData"));
+  process.env.QUAL_HARDWARE_RESOURCE_ROOT = paths.resourceRoot;
+  process.env.QUAL_HARDWARE_SQLITE_PATH = paths.databaseFile;
   delete process.env.QUAL_HARDWARE_IN_MEMORY;
   store = createStore();
   const updates = new CatalogUpdateService(store, {
     remoteUrl: process.env.QUAL_HARDWARE_CATALOG_URL,
     publicKeyPem: process.env.QUAL_HARDWARE_CATALOG_PUBLIC_KEY?.replaceAll("\\n", "\n"),
-    cacheFile: join(app.getPath("userData"), "catalog-snapshot.json"),
-    configFile: join(app.getPath("userData"), "catalog-update-config.json"),
+    cacheFile: paths.catalogCacheFile,
+    configFile: paths.catalogConfigFile,
+    officialEnabled: true,
+    allowLegacyConfiguration: process.env.QUAL_HARDWARE_CATALOG_ADMIN === "1",
   });
   catalogUpdates = updates;
   await updates.initialize();
   catalogRefreshTimer = setInterval(() => {
-    if (!catalogUpdates?.status.remoteUpdateConfigured) return;
-    void catalogUpdates.refresh().catch((error: unknown) => console.error("Catalog refresh failed", error));
+    void updates.refresh().catch((error: unknown) => console.error("Catalog refresh failed", error));
   }, CATALOG_REFRESH_INTERVAL_MILLISECONDS);
   catalogRefreshTimer.unref();
 
@@ -46,6 +55,11 @@ async function startLocalApplication(): Promise<string> {
   });
 }
 
+function openExternalUrl(candidate: string): void {
+  const target = externalHttpUrl(candidate);
+  if (target) void shell.openExternal(target);
+}
+
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     title: "Qual Hardware",
@@ -55,7 +69,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 700,
     backgroundColor: "#061014",
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: process.platform !== "darwin",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -64,16 +78,16 @@ function createMainWindow(): BrowserWindow {
     },
   });
 
-  window.setMenuBarVisibility(false);
+  if (process.platform !== "darwin") window.setMenuBarVisibility(false);
   window.once("ready-to-show", () => window.show());
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://") || url.startsWith("http://")) void shell.openExternal(url);
+    openExternalUrl(url);
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    if (url !== localOrigin && !url.startsWith(`${localOrigin}/`)) {
+    if (!isLocalApplicationUrl(url, localOrigin)) {
       event.preventDefault();
-      if (url.startsWith("https://") || url.startsWith("http://")) void shell.openExternal(url);
+      openExternalUrl(url);
     }
   });
   window.on("closed", () => { mainWindow = null; });
@@ -81,7 +95,7 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
-async function shutdown(): Promise<void> {
+const shutdown = createIdempotentShutdown(async (): Promise<void> => {
   if (catalogRefreshTimer) clearInterval(catalogRefreshTimer);
   catalogRefreshTimer = null;
   if (localServer) await new Promise<void>((resolveClose) => localServer!.close(() => resolveClose()));
@@ -89,23 +103,69 @@ async function shutdown(): Promise<void> {
   catalogUpdates = null;
   await store?.close();
   store = null;
+});
+
+function configureApplicationMenu(): void {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: app.name, submenu: [{ role: "about" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { type: "separator" }, { role: "quit" }] },
+    { role: "editMenu" },
+    { role: "windowMenu" },
+  ]));
 }
 
-app.whenReady().then(async () => {
+function focusMainWindow(): void {
+  if (!mainWindow && localOrigin) mainWindow = createMainWindow();
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function bootstrap(): Promise<void> {
+  if (process.platform === "win32") app.setAppUserModelId(DESKTOP_APP_ID);
+  configureApplicationMenu();
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   localOrigin = await startLocalApplication();
   mainWindow = createMainWindow();
+  console.log(`Qual Hardware desktop ready on ${localOrigin}; data=${app.getPath("userData")}`);
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", focusMainWindow);
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow();
+    if (BrowserWindow.getAllWindows().length === 0) focusMainWindow();
   });
-}).catch((error: unknown) => {
-  console.error("Qual Hardware failed to start", error);
-  app.exit(1);
+  void app.whenReady().then(bootstrap).catch(async (error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("Qual Hardware failed to start", error);
+    await shutdown().catch((shutdownError: unknown) => console.error("Qual Hardware shutdown failed", shutdownError));
+    dialog.showErrorBox("Qual Hardware não pôde iniciar", detail);
+    app.exit(1);
+  });
+}
+
+app.on("window-all-closed", () => {
+  if (shouldQuitWhenAllWindowsClosed(process.platform)) app.quit();
+});
+app.on("before-quit", (event) => {
+  if (shutdownComplete || (!localServer && !store)) return;
+  event.preventDefault();
+  mainWindow?.destroy();
+  mainWindow = null;
+  void shutdown()
+    .catch((error: unknown) => console.error("Qual Hardware shutdown failed", error))
+    .finally(() => {
+      shutdownComplete = true;
+      app.quit();
+    });
 });
 
-app.on("window-all-closed", () => app.quit());
-app.on("before-quit", (event) => {
-  if (shuttingDown || (!localServer && !store)) return;
-  event.preventDefault();
-  shuttingDown = true;
-  void shutdown().finally(() => app.quit());
-});
+process.on("SIGINT", () => app.quit());
+process.on("SIGTERM", () => app.quit());

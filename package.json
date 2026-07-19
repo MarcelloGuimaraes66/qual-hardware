@@ -7,20 +7,23 @@
   "type": "module",
   "main": "dist/server/desktop/main.js",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "npm run desktop:run",
-    "build": "npm run clean && npm run typecheck && vite build && tsc -p tsconfig.server.json",
+    "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
     "desktop:run": "npm run build && electron .",
-    "desktop:package": "npm run build && electron-builder --win portable --x64",
+    "desktop:package": "npm run build && electron-builder --publish never",
+    "desktop:package:dir": "npm run build && electron-builder --dir --publish never",
+    "desktop:smoke": "tsx scripts/smoke-desktop.ts",
     "start": "npm run desktop:run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "catalog:collect": "tsx src/server/worker.ts --once",
+    "catalog:publisher": "tsx scripts/catalog-publisher.ts",
     "catalog:sign": "tsx scripts/sign-catalog.ts",
+    "evidence:sign": "tsx scripts/sign-evidence.ts",
     "db:schema": "tsx src/server/applySchema.ts",
     "audit:source": "tsx scripts/audit-source-inventory.ts",
     "reports:sample": "tsx scripts/generate-report-samples.ts"
@@ -48,29 +51,5 @@
   },
   "overrides": {
     "uuid": "^11.1.1"
-  },
-  "build": {
-    "appId": "ai.aiquimist.qualhardware",
-    "productName": "Qual Hardware",
-    "asar": true,
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "!dist/server/server/worker.js",
-      "contracts/**/*",
-      "database/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ],
-      "artifactName": "Qual-Hardware-${version}-portable.${ext}"
-    }
   }
 }

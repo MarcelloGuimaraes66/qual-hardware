@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { createDefaultScenario } from "../src/shared/schemas.js";
+import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import type { BenchmarkManifest, CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
@@ -17,9 +18,10 @@ describe("Qual Hardware API and reports", () => {
     expect(catalogStatus.status).toBe(200);
     expect((await catalogStatus.json() as { catalogVersion: string }).catalogVersion).toMatch(/^hardware-reference\//);
     const hardwareCatalog = await (await app.request("/api/catalog/hardware")).json() as HardwareNodeTemplate[];
-    expect(hardwareCatalog).toHaveLength(14);
+    expect(hardwareCatalog).toHaveLength(HARDWARE_CATALOG.length);
     expect(hardwareCatalog.some((item) => item.id === "laptop-vivobook-s16-285h-32gb-user")).toBe(true);
-    expect(hardwareCatalog.filter((item) => item.operatingSystemFamily === "macos")).toHaveLength(4);
+    expect(hardwareCatalog.filter((item) => item.operatingSystemFamily === "macos")).toHaveLength(5);
+    expect(hardwareCatalog.filter((item) => item.cpuVendor === "intel").length).toBeGreaterThanOrEqual(10);
     const scenario = createDefaultScenario(16);
     const createdResponse = await app.request("/api/scenarios", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario }) });
     expect(createdResponse.status).toBe(201);
@@ -47,9 +49,12 @@ describe("Qual Hardware API and reports", () => {
     expect(json.status).toBe(200);
     expect(json.headers.get("content-type")).toContain("application/json");
     expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-3-configuracoes.json"');
-    const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[] };
-    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/2.2.0");
+    const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[]; executiveNarrative: { paragraphs: string[] }; qualifiedOptions: unknown[] };
+    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/2.3.0");
     expect(jsonReport.recommendations.map((item) => item.policy)).toEqual(["minimum", "recommended", "n_plus_one"]);
+    expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("FPS de leitura RTSP");
+    expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("AiQ/Qwen local");
+    expect(jsonReport.qualifiedOptions.length).toBeGreaterThanOrEqual(6);
 
     const pdf = await app.request(`/api/recommendations/${recommendation.id}/export/pdf`);
     const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
@@ -65,7 +70,8 @@ describe("Qual Hardware API and reports", () => {
     expect(Array.from(spreadsheetBytes.slice(0, 2))).toEqual([0x50, 0x4b]);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(spreadsheetBytes.buffer);
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Scenario", "3 Configurations", "BOM", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Qualified Options", "BOM", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
+    expect(workbook.getWorksheet("Executive Summary")!.getCell("B2").value).toContain("RTSP");
     const configurations = workbook.getWorksheet("3 Configurations")!;
     expect(configurations.rowCount).toBe(4);
     expect([2, 3, 4].map((row) => configurations.getRow(row).getCell(1).value)).toEqual(["minimum", "recommended", "n_plus_one"]);

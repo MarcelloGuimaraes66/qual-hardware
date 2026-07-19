@@ -1,0 +1,54 @@
+name: Desktop CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-desktop:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows 11 x64
+            os: windows-2025
+            platform: windows
+          - name: macOS 26 arm64
+            os: macos-26
+            platform: macos
+          - name: Ubuntu 24.04 x64
+            os: ubuntu-24.04
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx electron-builder --dir --publish never
+      - name: Smoke test packaged desktop
+        if: matrix.platform != 'linux'
+        run: npm run desktop:smoke
+      - name: Configure Chromium sandbox helper for unpacked Linux smoke
+        if: matrix.platform == 'linux'
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
+      - name: Smoke test packaged desktop under Xvfb
+        if: matrix.platform == 'linux'
+        run: xvfb-run --auto-servernum npm run desktop:smoke

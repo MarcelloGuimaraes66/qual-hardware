@@ -1,7 +1,15 @@
-export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/1.1.0" as const;
+export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/2.0.0" as const;
 export type WorkloadContractVersion =
   | typeof WORKLOAD_CONTRACT_VERSION
+  | "perceptrum-workload/1.1.0"
   | "perceptrum-workload/1.0.0";
+
+export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0" as const;
+export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
+export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/2.0.0" as const;
+export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/1.0.0" as const;
+export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
+export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
 
 export type Market = "BR" | "US" | "DE";
 export type Currency = "BRL" | "USD" | "EUR";
@@ -23,8 +31,33 @@ export type InferenceModel =
   | "aiq-3.7-max"
   | "opencv-portal-counter";
 export type RecommendationPolicy = "minimum" | "recommended" | "n_plus_one";
-export type RecommendationVariant = "balanced" | "lower_capex" | "expansion";
-export type RecommendationConfidence = "estimated" | "validated";
+export type RecommendationVariant = "balanced" | "lower_capex" | "expansion" | "cost_ordered";
+export type RecommendationConfidence =
+  | "estimated"
+  | "validated"
+  | "validated_local"
+  | "extrapolated_high"
+  | "extrapolated_medium"
+  | "reference_only"
+  | "incompatible";
+export type CalibrationConfidenceClass = "A" | "B" | "C" | "none";
+export type CalibrationStatus =
+  | "validated_local"
+  | "extrapolated_high"
+  | "extrapolated_medium"
+  | "reference_only"
+  | "incompatible";
+export type CalibrationStage =
+  | "rtsp_ingest"
+  | "video_decode"
+  | "bgr_processing"
+  | "video_encode"
+  | "disk_write"
+  | "disk_read"
+  | "local_inference"
+  | "memory_bandwidth"
+  | "network_ingest"
+  | "thermal_sustain";
 
 export interface AgentFeatures {
   onlyCaptureOnMotion: boolean;
@@ -55,11 +88,11 @@ export interface CameraSourceProfile {
 }
 
 export interface CameraStoragePolicy {
-  /** @deprecated Storage policy is read only for compatibility and is not a sizing constraint. */
+  /** Legacy scenarios remain readable; workload v2 uses this policy for rolling clip capacity. */
   storeVideo: boolean;
-  /** @deprecated Temporary-media deletion remains controlled by Perceptrum camera settings. */
+  /** Retention increases capacity demand only when storeVideo is enabled. */
   retentionDays: number;
-  /** @deprecated RAID no longer participates in Qual Hardware capacity calculations. */
+  /** Redundancy multiplier used for retained source media. */
   raidFactor: number;
 }
 
@@ -149,6 +182,7 @@ export interface HardwareNodeTemplate {
   generation: "current" | "previous" | "two_generations_back";
   cpuVendor: CpuVendor;
   cpuModel: string;
+  cpuArchitecture?: string;
   physicalCores: number;
   /** Conservative sustained factor until a matching Perceptrum benchmark replaces it. */
   sustainedComputeFactor?: number;
@@ -160,6 +194,7 @@ export interface HardwareNodeTemplate {
   ecc: boolean;
   gpuVendor: GpuVendor;
   gpuModel: string;
+  gpuArchitecture?: string;
   gpuCount: number;
   memoryArchitecture: MemoryArchitecture;
   gpuVramGbTotal: number;
@@ -172,6 +207,7 @@ export interface HardwareNodeTemplate {
   nicGbps: number;
   powerSupply: string;
   cooling: string;
+  thermalClass?: "mobile" | "compact" | "tower" | "rack";
   chassis: string;
   operatingSystemFamily: OperatingSystemFamily;
   windowsEdition: string;
@@ -181,7 +217,8 @@ export interface HardwareNodeTemplate {
 
 export interface PriceQuote {
   id: string;
-  hardwareTemplateId: string;
+  hardwareTemplateId: string | null;
+  componentId?: string | null;
   mpn: string;
   seller: string;
   market: Market;
@@ -197,6 +234,132 @@ export interface PriceQuote {
   url: string;
   observedAt: string;
   sourceKind: "official_api" | "allowed_page" | "curated";
+  sourceId?: string;
+  scope?: "component" | "system";
+  gtin?: string | null;
+  sku?: string | null;
+  contentHash?: string;
+  evidenceLocator?: string;
+  retrievedAt?: string;
+  validUntil?: string;
+}
+
+export type CatalogSourceCategory = "specification" | "oem" | "price" | "benchmark" | "exchange_rate";
+export type CatalogSourceParser = "api" | "json_ld" | "sitemap" | "csv" | "html_table" | "pdf";
+export type CatalogSourceState = "active" | "degraded" | "unavailable" | "disabled";
+
+export interface CatalogSource {
+  id: string;
+  organization: string;
+  primaryUrl: string;
+  discoveryUrls: string[];
+  allowedHosts: string[];
+  allowedRedirectHosts: string[];
+  category: CatalogSourceCategory;
+  markets: Market[];
+  currencies: Currency[];
+  parser: CatalogSourceParser;
+  products: string[];
+  trustTier: 1 | 2 | 3;
+  maxRequestsPerRun: number;
+  minimumIntervalMs: number;
+  robotsRequired: boolean;
+  state: CatalogSourceState;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  notes: string[];
+}
+
+export interface SourceRegistry {
+  schemaVersion: typeof SOURCE_REGISTRY_VERSION;
+  generatedAt: string;
+  sources: CatalogSource[];
+}
+
+export interface SourceFetchRun {
+  id: string;
+  sourceId: string;
+  startedAt: string;
+  completedAt: string | null;
+  status: "collected" | "skipped" | "failed";
+  httpStatus: number | null;
+  observationCount: number;
+  rejectedCount: number;
+  message: string;
+  error: string | null;
+}
+
+export interface SourceObservation {
+  id: string;
+  sourceId: string;
+  retrievedAt: string;
+  url: string;
+  contentType: string;
+  contentHash: string;
+  evidenceLocator: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CatalogBundleSourceHealth {
+  active: number;
+  healthy: number;
+  degraded: number;
+  unavailable: number;
+  failedPercent: number;
+}
+
+export interface CatalogBundle {
+  schemaVersion: typeof CATALOG_BUNDLE_VERSION;
+  channel: "stable";
+  sequence: number;
+  publicationId: string;
+  catalogVersion: string;
+  generatedAt: string;
+  publishedAt: string;
+  validUntil: string;
+  previousBundleSha256: string | null;
+  collectorCommit: string;
+  qwen: {
+    model: "Qwen/Qwen3-1.7B-GGUF:Q8_0";
+    modelSha256: string;
+    promptVersion: string;
+    used: boolean;
+  };
+  markets: Market[];
+  hardware: HardwareNodeTemplate[];
+  components: HardwareComponent[];
+  benchmarks: PublicBenchmarkObservation[];
+  prices: PriceQuote[];
+  sources: CatalogSource[];
+  sourceHealth: CatalogBundleSourceHealth;
+  summary: {
+    added: number;
+    updated: number;
+    unchanged: number;
+    rejected: number;
+    checkedWithoutChanges: boolean;
+  };
+}
+
+export interface SignedCatalogBundle {
+  payload: CatalogBundle;
+  keyId: string;
+  signature: string;
+}
+
+export interface CatalogPublication {
+  sequence: number;
+  publicationId: string;
+  catalogVersion: string;
+  bundleSha256: string;
+  previousBundleSha256: string | null;
+  keyId: string;
+  publishedAt: string;
+  validUntil: string;
+  etag: string | null;
+  sourceHealth: CatalogBundleSourceHealth;
+  summary: CatalogBundle["summary"];
 }
 
 export interface CatalogStatus {
@@ -212,6 +375,35 @@ export interface CatalogStatus {
   configurationWritable: boolean;
   remoteUrl: string | null;
   lastError: string | null;
+  lastUpdate?: CatalogUpdateRun | null;
+  channel: "official_public" | "legacy_admin" | "bundled";
+  automatic: boolean;
+  latestSequence: number | null;
+  lastPublicationAt: string | null;
+  nextCollectionExpectedAt: string | null;
+  publicationDelayDays: number;
+  markets: Market[];
+  componentCount: number;
+  benchmarkCount: number;
+  sourceHealth: CatalogBundleSourceHealth;
+  latestSummary: CatalogBundle["summary"] | null;
+}
+
+export interface CatalogUpdateRun {
+  id: string;
+  updateType: "inventory_prices" | "evidence";
+  status: "checking" | "verified" | "applied" | "failed";
+  startedAt: string;
+  completedAt: string | null;
+  source: "remote" | "imported" | "cached";
+  fromVersion: string | null;
+  toVersion: string | null;
+  added: number;
+  updated: number;
+  unchanged: number;
+  rejected: number;
+  message: string;
+  error: string | null;
 }
 
 export interface PriceSummary {
@@ -263,6 +455,7 @@ export interface RecommendationAlternative {
   maximumAdditionalCameras: number;
   price: PriceSummary;
   warnings: string[];
+  calibration?: CapacityPrediction;
 }
 
 export interface CapacityRecommendation {
@@ -352,6 +545,205 @@ export interface BenchmarkResultRecord {
   passed: boolean;
   failures: string[];
   metrics: BenchmarkMetrics;
+}
+
+export interface HardwareFingerprint {
+  hardwareTemplateId: string | null;
+  hostnameHash: string;
+  cpuModel: string;
+  cpuArchitecture: string;
+  physicalCores: number;
+  logicalCores: number;
+  cpuPowerLimitWatts: number | null;
+  gpuModel: string;
+  gpuArchitecture: string;
+  gpuCount: number;
+  gpuVramBytes: number;
+  gpuDriver: string;
+  ramBytes: number;
+  memoryChannels: number | null;
+  memorySpeedMtps: number | null;
+  storageModel: string;
+  filesystem: string;
+  nicModel: string;
+  operatingSystem: OperatingSystemFamily;
+  operatingSystemVersion: string;
+  powerProfile: string;
+  formFactor: Exclude<InfrastructureKind, "either">;
+  coolingProfile: string;
+  perceptrumBuildHash: string;
+  aiqModel: string;
+  aiqModelHash: string;
+  inferenceBackend: string;
+}
+
+export interface CalibrationStageMetric {
+  stage: CalibrationStage;
+  safeCameraCapacity: number;
+  throughput: number;
+  throughputUnit: string;
+  p95LatencyMs: number;
+  peakUtilizationPercent: number;
+  queueGrowthPerMinute: number;
+  thermalThrottlePercent: number;
+}
+
+export interface CalibrationPhaseMetric {
+  name: "warmup" | "sustained" | "surge";
+  durationSeconds: number;
+  loadPercent: number;
+  cameraCount: number;
+  inferenceSuccessRate: number;
+  maxQueueDepth: number;
+  queueGrowthPerMinute: number;
+  outOfMemoryCount: number;
+}
+
+export interface LocalCalibrationRun {
+  schemaVersion: typeof LOCAL_CALIBRATION_VERSION;
+  id: string;
+  planId: string;
+  createdAt: string;
+  startedAt: string;
+  completedAt: string;
+  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
+  mode: "quick" | "full";
+  executionMode?: "readiness" | "production_pipeline";
+  developmentOnly?: true;
+  fingerprint: HardwareFingerprint;
+  requestedSourceFps: number;
+  measuredSourceFps: number;
+  requestedInferenceFps: number;
+  effectiveInferenceFps: number;
+  framesPlanned: number;
+  framesExtracted: number;
+  framesPacked: number;
+  framesInferred: number;
+  rtspOrigin: string;
+  aiqOrigin: string;
+  networkPolicy: "loopback_only";
+  externalRequestCount: 0;
+  openAiRequestCount: 0;
+  mediaFieldCount: 0;
+  credentialFieldCount: 0;
+  stages: CalibrationStageMetric[];
+  phases: CalibrationPhaseMetric[];
+  overallSafeCameraCapacity: number;
+  bottleneck: CalibrationStage;
+  pipelineEvidence?: {
+    complete: boolean;
+    isolatedDatabase: boolean;
+    sourceRegistered: boolean;
+    rtspClipProvided: boolean;
+    intelligenceJobQueued: boolean;
+    schedulerClaimedJob: boolean;
+    aiqLocalCompleted: boolean;
+    resultPersisted: boolean;
+    [key: string]: unknown;
+  };
+  qualityGate?: {
+    eligibleForCapacityExtrapolation: boolean;
+    evidenceLevel: "validated_local" | "representative_only";
+    failures: string[];
+    warnings: string[];
+  };
+  notes: string[];
+}
+
+export interface CalibrationPlan {
+  schemaVersion: typeof CALIBRATION_PLAN_VERSION;
+  id: string;
+  createdAt: string;
+  mode: "quick" | "full";
+  executionMode: "readiness" | "production_pipeline";
+  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
+  targetHardwareTemplateId: string | null;
+  scenario: CapacityScenario;
+  localOnly: true;
+  rtspOrigin: "rtsp://127.0.0.1";
+  aiqOrigin: "http://127.0.0.1";
+  inferenceProvider: "aiq_local";
+  phases: Array<{ name: "warmup" | "sustained" | "surge"; durationSeconds: number; loadPercent: number }>;
+  sourceProfiles: Array<Pick<CameraSourceProfile, "codec" | "width" | "height" | "sourceFps" | "bitrateMbps">>;
+  requestedInferenceFps: number[];
+  instructions: string[];
+}
+
+export type HardwareComponentKind = "cpu" | "gpu" | "memory" | "storage" | "network" | "system";
+
+export interface HardwareComponent {
+  id: string;
+  kind: HardwareComponentKind;
+  manufacturer: string;
+  sku: string;
+  architecture: string;
+  specifications: Record<string, string | number | boolean | null>;
+  sourceUrls: string[];
+}
+
+export interface PublicBenchmarkObservation {
+  id: string;
+  hardwareTemplateId: string;
+  stage: CalibrationStage;
+  profileId: string;
+  benchmarkName: string;
+  benchmarkVersion: string;
+  score: number;
+  unit: string;
+  higherIsBetter: boolean;
+  componentId?: string;
+  componentKind?: HardwareComponentKind;
+  sourceTier: 1 | 2 | 3;
+  sourceUrl: string;
+  observedAt: string;
+  operatingSystem: OperatingSystemFamily | "any";
+  configuration: string;
+  powerWatts?: number | null;
+  driverVersion?: string | null;
+  coolingProfile?: string | null;
+  sampleCount?: number;
+  qualityFlags?: string[];
+}
+
+export interface EvidenceCatalogSnapshot {
+  schemaVersion: typeof EVIDENCE_CATALOG_VERSION;
+  catalogVersion: string;
+  generatedAt: string;
+  components?: HardwareComponent[];
+  observations: PublicBenchmarkObservation[];
+}
+
+export interface StagePrediction {
+  stage: CalibrationStage;
+  profileId: string;
+  anchorRunIds: string[];
+  anchorHardwareIds: string[];
+  ratios: number[];
+  rawCameraCapacity: number;
+  safeCameraCapacity: number;
+  reservePercent: number;
+  empiricalOverpredictionPercent?: number;
+  repeatVariabilityPercent?: number;
+  medianAbsoluteErrorPercent?: number;
+  sourceUrls: string[];
+}
+
+export interface CapacityPrediction {
+  schemaVersion: typeof CAPACITY_PREDICTION_VERSION;
+  id: string;
+  hardwareTemplateId: string;
+  generatedAt: string;
+  status: CalibrationStatus;
+  confidenceClass: CalibrationConfidenceClass;
+  safeCameraMinimum: number | null;
+  safeCameraMaximum: number | null;
+  bottleneck: CalibrationStage | null;
+  reservePercent: number;
+  exactCalibrationRunId: string | null;
+  stagePredictions: StagePrediction[];
+  leaveOneOutUnsafeOverestimateCount: number;
+  medianAbsoluteErrorPercent?: number | null;
+  reasons: string[];
 }
 
 export interface CatalogCollectionResult {

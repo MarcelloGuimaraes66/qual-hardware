@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MarcelloGuimaraes66/qual-hardware/contracts/qual-hardware-catalog-bundle-v1.schema.json",
+  "title": "qual-hardware-catalog-bundle/1.0.0",
+  "type": "object",
+  "required": ["schemaVersion", "channel", "sequence", "publicationId", "catalogVersion", "generatedAt", "publishedAt", "validUntil", "previousBundleSha256", "collectorCommit", "qwen", "markets", "hardware", "components", "benchmarks", "prices", "sources", "sourceHealth", "summary"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-catalog-bundle/1.0.0" },
+    "channel": { "const": "stable" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "publicationId": { "type": "string", "pattern": "^catalog-[0-9]{4}-[0-9]{2}-[0-9]{2}\\.[0-9]+$" },
+    "previousBundleSha256": { "type": ["string", "null"] },
+    "hardware": { "type": "array", "minItems": 1 },
+    "components": { "type": "array" },
+    "benchmarks": { "type": "array" },
+    "prices": { "type": "array" },
+    "sources": { "type": "array", "minItems": 1 }
+  },
+  "additionalProperties": true
+}

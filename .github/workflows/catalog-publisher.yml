@@ -1,0 +1,262 @@
+name: Catalog publisher
+
+on:
+  schedule:
+    # Manaus is UTC-4 year-round: 07:17 UTC = 03:17 America/Manaus.
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish after validation (leave false for homologation)"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: catalog-publisher
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  due:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      due: ${{ steps.gate.outputs.due }}
+      previous_sha: ${{ steps.gate.outputs.previous_sha }}
+      previous_sequence: ${{ steps.gate.outputs.previous_sequence }}
+      previous_tag: ${{ steps.gate.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith("catalog-")))] | sort_by(.published_at) | last // empty')"
+          if [ -z "$latest" ]; then
+            mkdir -p previous
+            printf '{"firstPublication":true}\n' > previous/none.json
+            echo "due=true" >> "$GITHUB_OUTPUT"
+            echo "previous_sha=" >> "$GITHUB_OUTPUT"
+            echo "previous_sequence=0" >> "$GITHUB_OUTPUT"
+            echo "previous_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag="$(jq -r '.tag_name' <<<"$latest")"
+          published="$(jq -r '.published_at' <<<"$latest")"
+          mkdir -p previous
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern catalog-bundle.json --dir previous
+          previous_sha="$(sha256sum previous/catalog-bundle.json | cut -d' ' -f1)"
+          previous_sequence="$(node -e 'const fs=require("fs"); console.log(JSON.parse(fs.readFileSync("previous/catalog-bundle.json","utf8")).payload.sequence)')"
+          due="$(npm run --silent catalog:publisher -- due --last "$published")"
+          echo "due=$due" >> "$GITHUB_OUTPUT"
+          echo "previous_sha=$previous_sha" >> "$GITHUB_OUTPUT"
+          echo "previous_sequence=$previous_sequence" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalog-previous
+          path: previous
+          if-no-files-found: error
+
+  collect:
+    needs: due
+    if: needs.due.outputs.due == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run catalog:publisher -- collect --output artifacts/collection
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalog-collection
+          path: artifacts/collection
+          if-no-files-found: error
+
+  validate_collection:
+    needs: [due, collect]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-collection
+          path: artifacts/collection
+      - run: npm run catalog:publisher -- validate --file artifacts/collection/collection.json
+      - run: npm run catalog:publisher -- validate --file artifacts/collection/source-registry.json
+
+  qwen:
+    needs: [due, validate_collection]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-collection
+          path: artifacts/collection
+      - id: candidates
+        run: echo "count=$(node -e 'const f=require("./artifacts/collection/collection.json"); console.log(f.qwenCandidates.length)')" >> "$GITHUB_OUTPUT"
+      - if: steps.candidates.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/qwen/runtime artifacts/qwen/model
+          curl --fail --location --retry 3 --output artifacts/qwen/llama.zip https://github.com/ggml-org/llama.cpp/releases/download/b6000/llama-b6000-bin-ubuntu-x64.zip
+          echo "66244356dd242ae3a2510929ec4a840db65a3f9e7ad712918dbf02a266badfa5  artifacts/qwen/llama.zip" | sha256sum --check
+          unzip -q artifacts/qwen/llama.zip -d artifacts/qwen/runtime
+          curl --fail --location --retry 3 --output artifacts/qwen/model/Qwen3-1.7B-Q8_0.gguf https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf
+          echo "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a  artifacts/qwen/model/Qwen3-1.7B-Q8_0.gguf" | sha256sum --check
+      - env:
+          QWEN_MODEL_PATH: ${{ github.workspace }}/artifacts/qwen/model/Qwen3-1.7B-Q8_0.gguf
+        run: |
+          if [ "${{ steps.candidates.outputs.count }}" != "0" ]; then
+            export LLAMA_CPP_PATH="$(find artifacts/qwen/runtime -type f -name llama-cli -print -quit)"
+            test -n "$LLAMA_CPP_PATH"
+            chmod +x "$LLAMA_CPP_PATH"
+          fi
+          npm run catalog:publisher -- qwen --collection artifacts/collection/collection.json --output artifacts/qwen/qwen.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalog-qwen
+          path: artifacts/qwen/qwen.json
+          if-no-files-found: error
+
+  final_validation:
+    needs: [due, collect, qwen]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-collection
+          path: artifacts/collection
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-qwen
+          path: artifacts/qwen
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-previous
+          path: artifacts/previous
+      - run: |
+          set -euo pipefail
+          previous_args=()
+          if [ -f artifacts/previous/catalog-bundle.json ]; then
+            previous_args=(--previous-bundle artifacts/previous/catalog-bundle.json)
+          fi
+          npm run catalog:publisher -- build \
+            --collection artifacts/collection/collection.json \
+            --qwen artifacts/qwen/qwen.json \
+            --output artifacts/final \
+            --sequence ${{ fromJSON(needs.due.outputs.previous_sequence) + 1 }} \
+            --previous-sha "${{ needs.due.outputs.previous_sha }}" \
+            "${previous_args[@]}"
+      - run: npm run catalog:publisher -- validate --file artifacts/final/catalog-payload.json
+      - run: npm run catalog:publisher -- validate --file artifacts/final/source-registry.json
+      - run: npm run catalog:publisher -- validate --file artifacts/final/publication-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalog-final-unsigned
+          path: artifacts/final
+          if-no-files-found: error
+
+  publish:
+    needs: [due, final_validation]
+    if: github.event_name == 'schedule' || inputs.publish == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-final-unsigned
+          path: artifacts/signed
+      - env:
+          CATALOG_SIGNING_PRIVATE_KEY: ${{ secrets.CATALOG_SIGNING_PRIVATE_KEY }}
+        run: npm run catalog:publisher -- sign --payload artifacts/signed/catalog-payload.json --output artifacts/signed
+      - run: npm run catalog:publisher -- validate --file artifacts/signed/catalog-bundle.json
+      - run: npm run catalog:publisher -- validate --file artifacts/signed/publication-report.json
+      - id: identity
+        run: echo "tag=$(node -e 'const f=require("./artifacts/signed/catalog-bundle.json"); console.log(f.payload.publicationId)')" >> "$GITHUB_OUTPUT"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing release $TAG" >&2
+            exit 1
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/catalog-data" >/dev/null 2>&1; then
+            main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${GITHUB_REF_NAME}" --jq .object.sha)"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref=refs/heads/catalog-data -f sha="$main_sha" >/dev/null
+          fi
+          for file in catalog-bundle.json source-registry.json publication-report.json SHA256SUMS; do
+            path="publications/${TAG}/${file}"
+            if gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=catalog-data" >/dev/null 2>&1; then
+              echo "Refusing to overwrite $path" >&2
+              exit 1
+            fi
+            content="$(base64 -w0 "artifacts/signed/${file}")"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="catalog: publish ${TAG} ${file}" -f content="$content" -f branch=catalog-data >/dev/null
+          done
+          gh release create "$TAG" artifacts/signed/catalog-bundle.json artifacts/signed/source-registry.json artifacts/signed/publication-report.json artifacts/signed/SHA256SUMS --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "Publicação automática assinada e append-only do catálogo público Qual Hardware."
+
+  health:
+    needs: [due, collect, validate_collection, qwen, final_validation, publish]
+    if: always() && needs.due.outputs.due == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SUCCESS: ${{ (needs.final_validation.result == 'success') && (needs.publish.result == 'success' || needs.publish.result == 'skipped') }}
+        run: |
+          set -euo pipefail
+          issue="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'Catalog publisher health in:title' --json number --jq '.[0].number // empty')"
+          if [ "$SUCCESS" = "true" ]; then
+            if [ -n "$issue" ]; then gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --comment "A rotina voltou a concluir com sucesso. O histórico anterior foi preservado."; fi
+          elif [ -n "$issue" ]; then
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "Nova tentativa falhou: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. O catálogo válido anterior permanece ativo."
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "Catalog publisher health" --body "A atualização automática falhou: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. A rotina tentará novamente no próximo disparo diário; o catálogo anterior permanece ativo."
+          fi
