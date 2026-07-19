@@ -88,16 +88,22 @@ async function launchDesktop(executable: string, userData: string): Promise<Runn
   child.stdout.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
   child.stderr.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
 
-  const page = await waitFor("the packaged renderer", async () => {
-    if (child.exitCode !== null) throw new Error(`desktop exited with ${child.exitCode}: ${logs.join("")}`);
-    const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(2_000) });
-    if (!response.ok) return null;
-    const pages = await response.json() as Array<{ type?: string; url?: string; webSocketDebuggerUrl?: string }>;
-    const candidate = pages.find((entry) => entry.type === "page" && entry.url?.startsWith("http://127.0.0.1:"));
-    return candidate?.url && candidate.webSocketDebuggerUrl
-      ? { origin: new URL(candidate.url).origin, debuggerUrl: candidate.webSocketDebuggerUrl }
-      : null;
-  });
+  let page: { origin: string; debuggerUrl: string };
+  try {
+    page = await waitFor("the packaged renderer", async () => {
+      if (child.exitCode !== null) throw new Error(`desktop exited with ${child.exitCode}: ${logs.join("")}`);
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(2_000) });
+      if (!response.ok) return null;
+      const pages = await response.json() as Array<{ type?: string; url?: string; webSocketDebuggerUrl?: string }>;
+      const candidate = pages.find((entry) => entry.type === "page" && entry.url?.startsWith("http://127.0.0.1:"));
+      return candidate?.url && candidate.webSocketDebuggerUrl
+        ? { origin: new URL(candidate.url).origin, debuggerUrl: candidate.webSocketDebuggerUrl }
+        : null;
+    }, 90_000);
+  } catch (error) {
+    child.kill("SIGTERM");
+    throw new Error(`${error instanceof Error ? error.message : "desktop_start_failed"}; electron logs: ${logs.join("").slice(-4_000)}`);
+  }
   assert.equal(new URL(page.origin).hostname, "127.0.0.1");
   return { child, ...page, logs };
 }

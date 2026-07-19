@@ -31,4 +31,6 @@
 
 Primeira execução remota: macOS aprovado; Windows compilou/empacotou e revelou que a saída do utilitário ASAR usa `\\` naquele sistema. O smoke foi corrigido para normalizar separadores antes de inspecionar o conteúdo e precisa ser reexecutado. A falha não ocorreu dentro do aplicativo.
 
+Ubuntu também compilou/empacotou, mas o Xvfb atingiu o limite de 30 segundos antes de expor o renderer após a consulta segura ao canal. O limite exclusivo do smoke foi elevado para 90 segundos e uma nova falha passará a incluir os logs do Electron. Nenhum timeout do aplicativo foi relaxado.
+
 Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.
