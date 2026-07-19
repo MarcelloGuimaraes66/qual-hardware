@@ -1,0 +1,3373 @@
+{
+  "payload": {
+    "schemaVersion": "qual-hardware-catalog-bundle/1.0.0",
+    "channel": "stable",
+    "sequence": 1,
+    "publicationId": "catalog-2026-07-19.1",
+    "catalogVersion": "hardware-reference/catalog-2026-07-19.1",
+    "generatedAt": "2026-07-19T00:25:00.862Z",
+    "publishedAt": "2026-07-19T00:25:00.862Z",
+    "validUntil": "2026-08-06T00:25:00.862Z",
+    "previousBundleSha256": null,
+    "collectorCommit": "570cd4efd6d1bf77b09f08ace871be249a51c305",
+    "qwen": {
+      "model": "Qwen/Qwen3-1.7B-GGUF:Q8_0",
+      "modelSha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+      "promptVersion": "qual-hardware-catalog-normalizer/1.0.0",
+      "used": false
+    },
+    "markets": [
+      "BR",
+      "US",
+      "DE"
+    ],
+    "hardware": [
+      {
+        "id": "ws-rtx4070tis-7950x",
+        "name": "Compact CUDA workstation",
+        "kind": "workstation",
+        "generation": "previous",
+        "cpuVendor": "amd",
+        "cpuModel": "AMD Ryzen 9 7950X",
+        "physicalCores": 16,
+        "motherboard": "X670E workstation board, 2× PCIe x16 physical",
+        "ramGb": 128,
+        "ecc": false,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA GeForce RTX 4070 Ti SUPER 16 GB",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 16,
+        "localAiqSlots": 3,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 24,
+        "storageModel": "1× 2 TB NVMe for OS and temporary inference workspace",
+        "usableStorageTb": 2,
+        "diskWriteMbps": 700,
+        "nicGbps": 2.5,
+        "powerSupply": "1000 W 80 Plus Gold",
+        "cooling": "360 mm CPU liquid cooling and high-airflow GPU path",
+        "chassis": "Full tower",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 48,
+        "sources": [
+          {
+            "title": "NVIDIA GeForce comparison",
+            "url": "https://www.nvidia.com/en-us/geforce/graphics-cards/compare/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "AMD processor specifications",
+            "url": "https://www.amd.com/en/products/specifications/processors.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "ws-rtx5090-9950x",
+        "name": "Balanced Blackwell workstation",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "amd",
+        "cpuModel": "AMD Ryzen 9 9950X",
+        "physicalCores": 16,
+        "motherboard": "X870E workstation board, PCIe 5.0 x16",
+        "ramGb": 192,
+        "ecc": false,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA GeForce RTX 5090 32 GB",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 32,
+        "localAiqSlots": 6,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 48,
+        "storageModel": "1× 4 TB NVMe for OS and temporary inference workspace",
+        "usableStorageTb": 4,
+        "diskWriteMbps": 1400,
+        "nicGbps": 10,
+        "powerSupply": "1600 W ATX 3.1 80 Plus Platinum",
+        "cooling": "360 mm CPU liquid cooling and dedicated GPU intake",
+        "chassis": "High-airflow full tower",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 62,
+        "sources": [
+          {
+            "title": "NVIDIA GeForce RTX 5090 specifications",
+            "url": "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "AMD processor specifications",
+            "url": "https://www.amd.com/en/products/specifications/processors.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "ws-rtxpro5000-trpro",
+        "name": "Expandable RTX PRO workstation",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "amd",
+        "cpuModel": "AMD Ryzen Threadripper PRO 7975WX",
+        "physicalCores": 32,
+        "motherboard": "WRX90 workstation board with ECC and seven PCIe 5.0 slots",
+        "ramGb": 512,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX PRO 5000 Blackwell 72 GB",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 72,
+        "localAiqSlots": 13,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 72,
+        "storageModel": "2× 4 TB enterprise NVMe, mirrored OS/temp workspace",
+        "usableStorageTb": 4,
+        "diskWriteMbps": 2600,
+        "nicGbps": 25,
+        "powerSupply": "2000 W redundant-capable workstation PSU",
+        "cooling": "Workstation-class CPU loop and dual-slot blower GPU",
+        "chassis": "E-ATX workstation tower",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 90,
+        "sources": [
+          {
+            "title": "NVIDIA RTX PRO desktop specifications",
+            "url": "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "AMD processor specifications",
+            "url": "https://www.amd.com/en/products/specifications/processors.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "ws-w7900-trpro",
+        "name": "Vulkan workstation (CPU RTSP decode)",
+        "kind": "workstation",
+        "generation": "previous",
+        "cpuVendor": "amd",
+        "cpuModel": "AMD Ryzen Threadripper PRO 7975WX",
+        "physicalCores": 32,
+        "motherboard": "WRX90 workstation board with ECC",
+        "ramGb": 512,
+        "ecc": true,
+        "gpuVendor": "amd",
+        "gpuModel": "AMD Radeon PRO W7900 48 GB",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 48,
+        "localAiqSlots": 9,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "2× 4 TB enterprise NVMe, mirrored OS/temp workspace",
+        "usableStorageTb": 4,
+        "diskWriteMbps": 2400,
+        "nicGbps": 25,
+        "powerSupply": "1600 W 80 Plus Platinum",
+        "cooling": "Workstation CPU loop and triple-slot GPU airflow",
+        "chassis": "E-ATX workstation tower",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 82,
+        "sources": [
+          {
+            "title": "AMD Radeon PRO W7900 specifications",
+            "url": "https://www.amd.com/en/products/graphics/workstations/radeon-pro/w7900.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "AMD processor specifications",
+            "url": "https://www.amd.com/en/products/specifications/processors.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "rack-2x-pro6000-xeon",
+        "name": "Dual-GPU RTX PRO rack server",
+        "kind": "rack",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Xeon 674X (28 cores)",
+        "physicalCores": 28,
+        "motherboard": "Single-socket Xeon 6 server platform, PCIe 5.0",
+        "ramGb": 512,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX PRO 6000 Blackwell Server Edition 96 GB",
+        "gpuCount": 2,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 192,
+        "localAiqSlots": 32,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 160,
+        "storageModel": "2× 3.84 TB enterprise NVMe, mirrored OS/temp workspace",
+        "usableStorageTb": 3.84,
+        "diskWriteMbps": 5200,
+        "nicGbps": 25,
+        "powerSupply": "2× 2200 W hot-swap redundant",
+        "cooling": "4U high-static-pressure redundant fans",
+        "chassis": "4U GPU server",
+        "operatingSystemFamily": "ubuntu",
+        "windowsEdition": "Ubuntu Server 24.04 LTS (Linux runtime port required)",
+        "expansionScore": 94,
+        "sources": [
+          {
+            "title": "NVIDIA RTX PRO 6000 Blackwell family",
+            "url": "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000-family/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "Intel Xeon 6 product specifications",
+            "url": "https://www.intel.com/content/www/us/en/ark/products/series/240357/intel-xeon-6-processors.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "rack-4x-pro6000-dualxeon",
+        "name": "Dense four-GPU RTX PRO rack server",
+        "kind": "rack",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "2× Intel Xeon 6962P (144 cores total)",
+        "physicalCores": 144,
+        "motherboard": "Dual-socket Xeon 6 platform with four PCIe 5.0 x16 GPU links",
+        "ramGb": 1024,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX PRO 6000 Blackwell Server Edition 96 GB",
+        "gpuCount": 4,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 384,
+        "localAiqSlots": 64,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 320,
+        "storageModel": "2× 7.68 TB enterprise NVMe, mirrored OS/temp workspace",
+        "usableStorageTb": 7.68,
+        "diskWriteMbps": 9600,
+        "nicGbps": 100,
+        "powerSupply": "4× 3000 W hot-swap, 2+2 redundant",
+        "cooling": "5U redundant high-static-pressure fan wall",
+        "chassis": "5U four-GPU server",
+        "operatingSystemFamily": "ubuntu",
+        "windowsEdition": "Ubuntu Server 24.04 LTS (Linux runtime port required)",
+        "expansionScore": 100,
+        "sources": [
+          {
+            "title": "NVIDIA RTX PRO 6000 Blackwell family",
+            "url": "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000-family/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "Intel Xeon 6 product specifications",
+            "url": "https://www.intel.com/content/www/us/en/ark/products/series/240357/intel-xeon-6-processors.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "ws-rtxa6000-trpro5975wx",
+        "name": "Ampere ECC legacy-generation workstation",
+        "kind": "workstation",
+        "generation": "two_generations_back",
+        "cpuVendor": "amd",
+        "cpuModel": "AMD Ryzen Threadripper PRO 5975WX",
+        "physicalCores": 32,
+        "motherboard": "WRX80 workstation board, 8-channel ECC DDR4",
+        "ramGb": 256,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX A6000 48 GB",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 48,
+        "localAiqSlots": 8,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 48,
+        "storageModel": "2× 2 TB enterprise NVMe, mirrored OS/temp workspace",
+        "usableStorageTb": 2,
+        "diskWriteMbps": 900,
+        "nicGbps": 10,
+        "powerSupply": "1200 W 80 Plus Platinum",
+        "cooling": "High-airflow tower with workstation CPU cooling",
+        "chassis": "Full tower workstation",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 78,
+        "sources": [
+          {
+            "title": "NVIDIA RTX A6000 specifications",
+            "url": "https://www.nvidia.com/en-in/products/workstations/rtx-a6000/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "AMD Ryzen Threadripper PRO 5975WX specifications",
+            "url": "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen-threadripper-pro/ryzen-threadripper-pro-5000wx-series/amd-ryzen-threadripper-pro-5975wx.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "laptop-vivobook-s16-225h-16gb",
+        "name": "ASUS Vivobook S 16 entry laptop",
+        "kind": "laptop",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Core Ultra 5 225H (14 cores / 16 threads)",
+        "physicalCores": 14,
+        "sustainedComputeFactor": 0.25,
+        "ffmpegProcessesPerSecondCapacity": 10,
+        "inferenceRequestsPerSecondCapacity": 3,
+        "motherboard": "ASUS S5606CA mobile platform; Intel AI Boost NPU up to 13 TOPS",
+        "ramGb": 16,
+        "ecc": false,
+        "gpuVendor": "intel",
+        "gpuModel": "Integrated Intel Arc graphics",
+        "gpuCount": 1,
+        "memoryArchitecture": "shared",
+        "gpuVramGbTotal": 0,
+        "localAiqSlots": 1,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "1 TB NVMe PCIe 4.0 for OS and temporary inference workspace",
+        "usableStorageTb": 1,
+        "diskWriteMbps": 650,
+        "nicGbps": 2.5,
+        "powerSupply": "USB-C mobile power adapter; wired 2.5 GbE adapter included in BOM",
+        "cooling": "Thin-laptop dual-fan cooling; sustained-load benchmark required",
+        "chassis": "16-inch mobile laptop",
+        "operatingSystemFamily": "ubuntu",
+        "windowsEdition": "Ubuntu 26.04 LTS (CPU decode; validate the exact installed build)",
+        "expansionScore": 8,
+        "sources": [
+          {
+            "title": "ASUS Vivobook S 16 OLED S5606 technical specifications",
+            "url": "https://www.asus.com/laptops/for-home/vivobook/asus-vivobook-s-16-oled-s5606/techspec/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "laptop-vivobook-s16-285h-32gb-user",
+        "name": "ASUS Vivobook S 16 OLED S5606CA — tested configuration",
+        "kind": "laptop",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Core Ultra 9 285H (16 cores / 16 threads, up to 5.4 GHz)",
+        "physicalCores": 16,
+        "sustainedComputeFactor": 0.35,
+        "ffmpegProcessesPerSecondCapacity": 16,
+        "inferenceRequestsPerSecondCapacity": 5,
+        "motherboard": "ASUS S5606CA; Intel AI Boost NPU 13 TOPS / 99 TOPS total theoretical (user supplied); user-observed Perceptrum execution",
+        "ramGb": 32,
+        "ecc": false,
+        "gpuVendor": "intel",
+        "gpuModel": "Intel Arc 140T integrated (8 Xe cores, shared memory)",
+        "gpuCount": 1,
+        "memoryArchitecture": "shared",
+        "gpuVramGbTotal": 0,
+        "localAiqSlots": 1,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "WD PC SN5000S 1 TB NVMe PCIe 4.0 for OS and temporary inference workspace",
+        "usableStorageTb": 1,
+        "diskWriteMbps": 750,
+        "nicGbps": 2.5,
+        "powerSupply": "75 Wh battery / USB-C adapter; wired 2.5 GbE adapter included in BOM",
+        "cooling": "1.50 kg thin-laptop cooling; keep on AC power and validate sustained thermals",
+        "chassis": "ASUS Vivobook S 16 OLED S5606CA laptop",
+        "operatingSystemFamily": "ubuntu",
+        "windowsEdition": "Ubuntu 26.04 LTS, kernel 7.0, GNOME 50.1 / Wayland (user-tested)",
+        "expansionScore": 12,
+        "sources": [
+          {
+            "title": "ASUS Vivobook S 16 OLED S5606 technical specifications",
+            "url": "https://www.asus.com/tw/laptops/for-home/vivobook/asus-vivobook-s-16-oled-s5606/techspec/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          },
+          {
+            "title": "Configuration supplied and operationally observed by Aiquimist",
+            "url": "https://aiquimist.ai/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "laptop-zephyrus-g16-285h-rtx5070",
+        "name": "ASUS ROG Zephyrus G16 CUDA laptop",
+        "kind": "laptop",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Core Ultra 9 285H (16 cores / 16 threads)",
+        "physicalCores": 16,
+        "sustainedComputeFactor": 0.6,
+        "ffmpegProcessesPerSecondCapacity": 28,
+        "inferenceRequestsPerSecondCapacity": 8,
+        "motherboard": "ASUS GU605 mobile platform; Intel AI Boost NPU",
+        "ramGb": 32,
+        "ecc": false,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA GeForce RTX 5070 Laptop GPU 8 GB",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 8,
+        "localAiqSlots": 1,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 12,
+        "storageModel": "2 TB NVMe PCIe 4.0 for OS and temporary inference workspace",
+        "usableStorageTb": 2,
+        "diskWriteMbps": 900,
+        "nicGbps": 2.5,
+        "powerSupply": "Mobile 200–240 W adapter; wired 2.5 GbE adapter included in BOM",
+        "cooling": "ROG vapor chamber / tri-fan cooling; benchmark at the selected power profile",
+        "chassis": "16-inch performance laptop",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro",
+        "expansionScore": 14,
+        "sources": [
+          {
+            "title": "ASUS ROG Zephyrus G16 (2025) GU605 specifications",
+            "url": "https://rog.asus.com/laptops/rog-zephyrus/rog-zephyrus-g16-2025-gu605/spec/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "apple-macbook-pro-m4max-14c-32gpu-36gb",
+        "name": "Apple MacBook Pro M4 Max 36 GB — calibration anchor",
+        "kind": "laptop",
+        "generation": "current",
+        "cpuVendor": "apple",
+        "cpuModel": "Apple M4 Max (14-core CPU; 10 performance + 4 efficiency)",
+        "cpuArchitecture": "arm64",
+        "physicalCores": 14,
+        "sustainedComputeFactor": 0.65,
+        "ffmpegProcessesPerSecondCapacity": 24,
+        "inferenceRequestsPerSecondCapacity": 7,
+        "motherboard": "Apple M4 Max SoC with hardware H.264/HEVC/ProRes media engines",
+        "ramGb": 36,
+        "ecc": false,
+        "gpuVendor": "apple",
+        "gpuModel": "Apple M4 Max integrated 32-core GPU",
+        "gpuArchitecture": "arm64",
+        "gpuCount": 1,
+        "memoryArchitecture": "unified",
+        "gpuVramGbTotal": 0,
+        "localAiqSlots": 2,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "1 TB integrated SSD for macOS and temporary inference workspace",
+        "usableStorageTb": 1,
+        "diskWriteMbps": 900,
+        "nicGbps": 1,
+        "powerSupply": "140 W USB-C power adapter; battery bypassed during sustained calibration",
+        "cooling": "MacBook Pro dual-fan active cooling on AC power",
+        "thermalClass": "mobile",
+        "chassis": "16-inch MacBook Pro",
+        "operatingSystemFamily": "macos",
+        "windowsEdition": "macOS (Perceptrum native desktop and local AiQ/Qwen)",
+        "expansionScore": 5,
+        "sources": [
+          {
+            "title": "Apple MacBook Pro technical specifications",
+            "url": "https://www.apple.com/macbook-pro/specs/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "apple-mac-mini-m4-24gb",
+        "name": "Apple Mac mini M4 24 GB",
+        "kind": "mini_pc",
+        "generation": "current",
+        "cpuVendor": "apple",
+        "cpuModel": "Apple M4 (10-core CPU; 4 performance + 6 efficiency)",
+        "physicalCores": 10,
+        "sustainedComputeFactor": 0.45,
+        "ffmpegProcessesPerSecondCapacity": 12,
+        "inferenceRequestsPerSecondCapacity": 4,
+        "motherboard": "Apple M4 SoC with 16-core Neural Engine and hardware H.264/HEVC media engine",
+        "ramGb": 24,
+        "ecc": false,
+        "gpuVendor": "apple",
+        "gpuModel": "Apple M4 integrated 10-core GPU",
+        "gpuCount": 1,
+        "memoryArchitecture": "unified",
+        "gpuVramGbTotal": 0,
+        "localAiqSlots": 1,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "512 GB integrated SSD for macOS and temporary inference workspace",
+        "usableStorageTb": 0.5,
+        "diskWriteMbps": 500,
+        "nicGbps": 10,
+        "powerSupply": "Integrated 155 W maximum continuous power supply",
+        "cooling": "Integrated Mac mini active cooling",
+        "chassis": "Mac mini 5-inch enclosure",
+        "operatingSystemFamily": "macos",
+        "windowsEdition": "macOS (Perceptrum macOS port and matching benchmark required)",
+        "expansionScore": 6,
+        "sources": [
+          {
+            "title": "Apple Mac mini technical specifications",
+            "url": "https://www.apple.com/mac-mini/specs/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "apple-mac-mini-m4pro-48gb",
+        "name": "Apple Mac mini M4 Pro 48 GB",
+        "kind": "mini_pc",
+        "generation": "current",
+        "cpuVendor": "apple",
+        "cpuModel": "Apple M4 Pro (14-core CPU; 10 performance + 4 efficiency)",
+        "physicalCores": 14,
+        "sustainedComputeFactor": 0.65,
+        "ffmpegProcessesPerSecondCapacity": 24,
+        "inferenceRequestsPerSecondCapacity": 7,
+        "motherboard": "Apple M4 Pro SoC with 16-core Neural Engine and hardware H.264/HEVC media engine",
+        "ramGb": 48,
+        "ecc": false,
+        "gpuVendor": "apple",
+        "gpuModel": "Apple M4 Pro integrated 20-core GPU",
+        "gpuCount": 1,
+        "memoryArchitecture": "unified",
+        "gpuVramGbTotal": 0,
+        "localAiqSlots": 2,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "1 TB integrated SSD for macOS and temporary inference workspace",
+        "usableStorageTb": 1,
+        "diskWriteMbps": 750,
+        "nicGbps": 10,
+        "powerSupply": "Integrated 155 W maximum continuous power supply",
+        "cooling": "Integrated Mac mini active cooling",
+        "chassis": "Mac mini 5-inch enclosure",
+        "operatingSystemFamily": "macos",
+        "windowsEdition": "macOS (Perceptrum macOS port and matching benchmark required)",
+        "expansionScore": 10,
+        "sources": [
+          {
+            "title": "Apple Mac mini technical specifications",
+            "url": "https://www.apple.com/mac-mini/specs/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "apple-mac-studio-m4max-64gb",
+        "name": "Apple Mac Studio M4 Max 64 GB",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "apple",
+        "cpuModel": "Apple M4 Max (16-core CPU; 12 performance + 4 efficiency)",
+        "physicalCores": 16,
+        "sustainedComputeFactor": 0.8,
+        "ffmpegProcessesPerSecondCapacity": 36,
+        "inferenceRequestsPerSecondCapacity": 10,
+        "motherboard": "Apple M4 Max SoC with 16-core Neural Engine and dedicated media engines",
+        "ramGb": 64,
+        "ecc": false,
+        "gpuVendor": "apple",
+        "gpuModel": "Apple M4 Max integrated 40-core GPU",
+        "gpuCount": 1,
+        "memoryArchitecture": "unified",
+        "gpuVramGbTotal": 0,
+        "localAiqSlots": 4,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "1 TB integrated SSD for macOS and temporary inference workspace",
+        "usableStorageTb": 1,
+        "diskWriteMbps": 1100,
+        "nicGbps": 10,
+        "powerSupply": "Integrated 480 W maximum continuous power supply",
+        "cooling": "Integrated Mac Studio high-throughput active cooling",
+        "chassis": "Mac Studio compact workstation",
+        "operatingSystemFamily": "macos",
+        "windowsEdition": "macOS (Perceptrum macOS port and matching benchmark required)",
+        "expansionScore": 14,
+        "sources": [
+          {
+            "title": "Apple Mac Studio technical specifications",
+            "url": "https://www.apple.com/mac-studio/specs/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "apple-mac-studio-m3ultra-96gb",
+        "name": "Apple Mac Studio M3 Ultra 96 GB",
+        "kind": "workstation",
+        "generation": "previous",
+        "cpuVendor": "apple",
+        "cpuModel": "Apple M3 Ultra (28-core CPU; 20 performance + 8 efficiency)",
+        "physicalCores": 28,
+        "sustainedComputeFactor": 0.85,
+        "ffmpegProcessesPerSecondCapacity": 64,
+        "inferenceRequestsPerSecondCapacity": 18,
+        "motherboard": "Apple M3 Ultra SoC with 32-core Neural Engine and two video decode engines",
+        "ramGb": 96,
+        "ecc": false,
+        "gpuVendor": "apple",
+        "gpuModel": "Apple M3 Ultra integrated 60-core GPU",
+        "gpuCount": 1,
+        "memoryArchitecture": "unified",
+        "gpuVramGbTotal": 0,
+        "localAiqSlots": 6,
+        "supportsPerceptrumGpuDecode": false,
+        "gpuDecode1080p30Streams": 0,
+        "storageModel": "1 TB integrated SSD for macOS and temporary inference workspace",
+        "usableStorageTb": 1,
+        "diskWriteMbps": 1300,
+        "nicGbps": 10,
+        "powerSupply": "Integrated 480 W maximum continuous power supply",
+        "cooling": "Integrated Mac Studio high-throughput active cooling",
+        "chassis": "Mac Studio compact workstation",
+        "operatingSystemFamily": "macos",
+        "windowsEdition": "macOS (Perceptrum macOS port and matching benchmark required)",
+        "expansionScore": 18,
+        "sources": [
+          {
+            "title": "Apple Mac Studio technical specifications",
+            "url": "https://www.apple.com/mac-studio/specs/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "dell-precision-3680-i9-rtx4000ada",
+        "name": "Dell Precision 3680 Intel/NVIDIA workstation",
+        "kind": "workstation",
+        "generation": "previous",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Core i9-14900K (24 cores / 32 threads)",
+        "cpuArchitecture": "Raptor Lake Refresh",
+        "physicalCores": 24,
+        "sustainedComputeFactor": 0.72,
+        "ffmpegProcessesPerSecondCapacity": 44,
+        "inferenceRequestsPerSecondCapacity": 12,
+        "motherboard": "Dell Precision 3680 W680 workstation platform",
+        "ramGb": 128,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX 4000 Ada Generation 20 GB",
+        "gpuArchitecture": "Ada Lovelace",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 20,
+        "localAiqSlots": 4,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 32,
+        "storageModel": "2 TB enterprise NVMe",
+        "usableStorageTb": 2,
+        "diskWriteMbps": 1100,
+        "nicGbps": 2.5,
+        "powerSupply": "1000 W Dell workstation PSU",
+        "cooling": "Dell Precision sustained workstation cooling",
+        "thermalClass": "tower",
+        "chassis": "Dell Precision 3680 32 L tower",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 42,
+        "sources": [
+          {
+            "title": "Dell Precision 3680 official specifications",
+            "url": "https://www.dell.com/en-us/shop/desktop-computers/precision-3680-tower-workstation/spd/precision-t3680-workstation",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "hp-z2-g1i-ultra9-rtx4500ada",
+        "name": "HP Z2 Tower G1i Intel/NVIDIA workstation",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Core Ultra 9 285K (24 cores / 24 threads)",
+        "cpuArchitecture": "Arrow Lake",
+        "physicalCores": 24,
+        "sustainedComputeFactor": 0.7,
+        "ffmpegProcessesPerSecondCapacity": 46,
+        "inferenceRequestsPerSecondCapacity": 14,
+        "motherboard": "HP Z2 G1i workstation platform",
+        "ramGb": 128,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX 4500 Ada Generation 24 GB",
+        "gpuArchitecture": "Ada Lovelace",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 24,
+        "localAiqSlots": 4,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 36,
+        "storageModel": "2 TB enterprise NVMe",
+        "usableStorageTb": 2,
+        "diskWriteMbps": 1200,
+        "nicGbps": 2.5,
+        "powerSupply": "HP Z workstation high-output PSU",
+        "cooling": "HP Z sustained tower cooling",
+        "thermalClass": "tower",
+        "chassis": "HP Z2 Tower G1i",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 46,
+        "sources": [
+          {
+            "title": "HP Z workstation desktop specifications",
+            "url": "https://www.hp.com/us-en/workstations/desktop-workstation-pc.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "lenovo-p3-gen2-ultra9-rtx4000ada",
+        "name": "Lenovo ThinkStation P3 Gen 2 Intel/NVIDIA workstation",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Core Ultra 9 285K (24 cores / 24 threads)",
+        "cpuArchitecture": "Arrow Lake",
+        "physicalCores": 24,
+        "sustainedComputeFactor": 0.68,
+        "ffmpegProcessesPerSecondCapacity": 42,
+        "inferenceRequestsPerSecondCapacity": 12,
+        "motherboard": "Lenovo ThinkStation P3 Gen 2 workstation platform",
+        "ramGb": 128,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX 4000 Ada Generation 20 GB",
+        "gpuArchitecture": "Ada Lovelace",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 20,
+        "localAiqSlots": 4,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 32,
+        "storageModel": "2 TB enterprise NVMe",
+        "usableStorageTb": 2,
+        "diskWriteMbps": 1100,
+        "nicGbps": 2.5,
+        "powerSupply": "Lenovo ThinkStation tower PSU",
+        "cooling": "Lenovo ThinkStation sustained tower cooling",
+        "thermalClass": "tower",
+        "chassis": "Lenovo ThinkStation P3 Tower Gen 2",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 44,
+        "sources": [
+          {
+            "title": "Lenovo ThinkStation P Series",
+            "url": "https://www.lenovo.com/us/en/c/workstations/thinkstation-p-series/",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "dell-precision-7960-xeonw-rtx5000ada",
+        "name": "Dell Precision 7960 Xeon/NVIDIA workstation",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "Intel Xeon W7-2495X (24 cores / 48 threads)",
+        "cpuArchitecture": "Sapphire Rapids",
+        "physicalCores": 24,
+        "sustainedComputeFactor": 0.9,
+        "ffmpegProcessesPerSecondCapacity": 64,
+        "inferenceRequestsPerSecondCapacity": 20,
+        "motherboard": "Dell Precision 7960 W790 workstation platform",
+        "ramGb": 256,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX 5000 Ada Generation 32 GB",
+        "gpuArchitecture": "Ada Lovelace",
+        "gpuCount": 1,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 32,
+        "localAiqSlots": 6,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 48,
+        "storageModel": "2× 2 TB enterprise NVMe mirrored",
+        "usableStorageTb": 2,
+        "diskWriteMbps": 1800,
+        "nicGbps": 10,
+        "powerSupply": "Dell Precision redundant-capable 1400 W PSU",
+        "cooling": "Dell Precision high-throughput workstation cooling",
+        "thermalClass": "tower",
+        "chassis": "Dell Precision 7960 full tower",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 76,
+        "sources": [
+          {
+            "title": "Dell Precision fixed workstations",
+            "url": "https://www.dell.com/en-us/shop/dell-desktops-and-all-in-one-pcs/scr/desktops/appref=precision-product-line",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "hp-z8-g5-dualxeon-2xrtx6000ada",
+        "name": "HP Z8 G5 dual-Xeon NVIDIA workstation",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "2× Intel Xeon workstation processors (64 cores total)",
+        "cpuArchitecture": "Sapphire Rapids",
+        "physicalCores": 64,
+        "sustainedComputeFactor": 0.92,
+        "ffmpegProcessesPerSecondCapacity": 150,
+        "inferenceRequestsPerSecondCapacity": 42,
+        "motherboard": "HP Z8 G5 dual-socket workstation platform",
+        "ramGb": 512,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX 6000 Ada Generation 48 GB",
+        "gpuArchitecture": "Ada Lovelace",
+        "gpuCount": 2,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 96,
+        "localAiqSlots": 16,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 96,
+        "storageModel": "2× 3.84 TB enterprise NVMe mirrored",
+        "usableStorageTb": 3.84,
+        "diskWriteMbps": 4200,
+        "nicGbps": 25,
+        "powerSupply": "HP Z8 dual redundant-capable PSU",
+        "cooling": "HP Z8 sustained dual-socket/GPU cooling",
+        "thermalClass": "tower",
+        "chassis": "HP Z8 G5 full tower workstation",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 92,
+        "sources": [
+          {
+            "title": "HP Z8 G5 official specifications",
+            "url": "https://www.hp.com/us-en/workstations/z8.html",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "lenovo-thinkstation-px-dualxeon-2xrtx6000ada",
+        "name": "Lenovo ThinkStation PX dual-Xeon NVIDIA workstation",
+        "kind": "workstation",
+        "generation": "current",
+        "cpuVendor": "intel",
+        "cpuModel": "2× Intel Xeon Scalable processors (64 cores total)",
+        "cpuArchitecture": "Sapphire Rapids",
+        "physicalCores": 64,
+        "sustainedComputeFactor": 0.92,
+        "ffmpegProcessesPerSecondCapacity": 150,
+        "inferenceRequestsPerSecondCapacity": 42,
+        "motherboard": "Lenovo ThinkStation PX dual-socket platform",
+        "ramGb": 512,
+        "ecc": true,
+        "gpuVendor": "nvidia",
+        "gpuModel": "NVIDIA RTX 6000 Ada Generation 48 GB",
+        "gpuArchitecture": "Ada Lovelace",
+        "gpuCount": 2,
+        "memoryArchitecture": "dedicated",
+        "gpuVramGbTotal": 96,
+        "localAiqSlots": 16,
+        "supportsPerceptrumGpuDecode": true,
+        "gpuDecode1080p30Streams": 96,
+        "storageModel": "2× 3.84 TB enterprise NVMe mirrored",
+        "usableStorageTb": 3.84,
+        "diskWriteMbps": 4200,
+        "nicGbps": 25,
+        "powerSupply": "ThinkStation PX redundant-capable PSU",
+        "cooling": "Aston Martin-inspired sustained workstation cooling",
+        "thermalClass": "tower",
+        "chassis": "Lenovo ThinkStation PX rack-optimized tower",
+        "operatingSystemFamily": "windows",
+        "windowsEdition": "Windows 11 Pro for Workstations",
+        "expansionScore": 94,
+        "sources": [
+          {
+            "title": "Lenovo ThinkStation PX official product page",
+            "url": "https://www.lenovo.com/us/en/p/workstations/thinkstation-p-series/lenovo-thinkstation-px-intel-tower-workstation/len102s0013",
+            "observedAt": "2026-07-18T13:30:00.000Z"
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "id": "cpu:amd:amd-ryzen-9-7950x",
+        "kind": "cpu",
+        "manufacturer": "amd",
+        "sku": "AMD Ryzen 9 7950X",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 16
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/geforce/graphics-cards/compare/",
+          "https://www.amd.com/en/products/specifications/processors.html"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-geforce-rtx-4070-ti-super-16-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA GeForce RTX 4070 Ti SUPER 16 GB",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 16,
+          "decodeStreams": 24
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/geforce/graphics-cards/compare/",
+          "https://www.amd.com/en/products/specifications/processors.html"
+        ]
+      },
+      {
+        "id": "cpu:amd:amd-ryzen-9-9950x",
+        "kind": "cpu",
+        "manufacturer": "amd",
+        "sku": "AMD Ryzen 9 9950X",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 16
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/",
+          "https://www.amd.com/en/products/specifications/processors.html"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-geforce-rtx-5090-32-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA GeForce RTX 5090 32 GB",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 32,
+          "decodeStreams": 48
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/",
+          "https://www.amd.com/en/products/specifications/processors.html"
+        ]
+      },
+      {
+        "id": "cpu:amd:amd-ryzen-threadripper-pro-7975wx",
+        "kind": "cpu",
+        "manufacturer": "amd",
+        "sku": "AMD Ryzen Threadripper PRO 7975WX",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 32
+        },
+        "sourceUrls": [
+          "https://www.amd.com/en/products/graphics/workstations/radeon-pro/w7900.html",
+          "https://www.amd.com/en/products/specifications/processors.html"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-rtx-pro-5000-blackwell-72-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA RTX PRO 5000 Blackwell 72 GB",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 72,
+          "decodeStreams": 72
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/",
+          "https://www.amd.com/en/products/specifications/processors.html"
+        ]
+      },
+      {
+        "id": "gpu:amd:amd-radeon-pro-w7900-48-gb",
+        "kind": "gpu",
+        "manufacturer": "amd",
+        "sku": "AMD Radeon PRO W7900 48 GB",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 48,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.amd.com/en/products/graphics/workstations/radeon-pro/w7900.html",
+          "https://www.amd.com/en/products/specifications/processors.html"
+        ]
+      },
+      {
+        "id": "cpu:intel:intel-xeon-674x-28-cores-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "Intel Xeon 674X (28 cores)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 28
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000-family/",
+          "https://www.intel.com/content/www/us/en/ark/products/series/240357/intel-xeon-6-processors.html"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-rtx-pro-6000-blackwell-server-edition-96-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA RTX PRO 6000 Blackwell Server Edition 96 GB",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 4,
+          "vramGb": 384,
+          "decodeStreams": 320
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000-family/",
+          "https://www.intel.com/content/www/us/en/ark/products/series/240357/intel-xeon-6-processors.html"
+        ]
+      },
+      {
+        "id": "cpu:intel:2-intel-xeon-6962p-144-cores-total-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "2× Intel Xeon 6962P (144 cores total)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 144
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000-family/",
+          "https://www.intel.com/content/www/us/en/ark/products/series/240357/intel-xeon-6-processors.html"
+        ]
+      },
+      {
+        "id": "cpu:amd:amd-ryzen-threadripper-pro-5975wx",
+        "kind": "cpu",
+        "manufacturer": "amd",
+        "sku": "AMD Ryzen Threadripper PRO 5975WX",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 32
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-in/products/workstations/rtx-a6000/",
+          "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen-threadripper-pro/ryzen-threadripper-pro-5000wx-series/amd-ryzen-threadripper-pro-5975wx.html"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-rtx-a6000-48-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA RTX A6000 48 GB",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 48,
+          "decodeStreams": 48
+        },
+        "sourceUrls": [
+          "https://www.nvidia.com/en-in/products/workstations/rtx-a6000/",
+          "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen-threadripper-pro/ryzen-threadripper-pro-5000wx-series/amd-ryzen-threadripper-pro-5975wx.html"
+        ]
+      },
+      {
+        "id": "cpu:intel:intel-core-ultra-5-225h-14-cores-16-threads-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "Intel Core Ultra 5 225H (14 cores / 16 threads)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 14
+        },
+        "sourceUrls": [
+          "https://www.asus.com/laptops/for-home/vivobook/asus-vivobook-s-16-oled-s5606/techspec/"
+        ]
+      },
+      {
+        "id": "gpu:intel:integrated-intel-arc-graphics",
+        "kind": "gpu",
+        "manufacturer": "intel",
+        "sku": "Integrated Intel Arc graphics",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 0,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.asus.com/laptops/for-home/vivobook/asus-vivobook-s-16-oled-s5606/techspec/"
+        ]
+      },
+      {
+        "id": "cpu:intel:intel-core-ultra-9-285h-16-cores-16-threads-up-to-5-4-ghz-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "Intel Core Ultra 9 285H (16 cores / 16 threads, up to 5.4 GHz)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 16
+        },
+        "sourceUrls": [
+          "https://www.asus.com/tw/laptops/for-home/vivobook/asus-vivobook-s-16-oled-s5606/techspec/",
+          "https://aiquimist.ai/"
+        ]
+      },
+      {
+        "id": "gpu:intel:intel-arc-140t-integrated-8-xe-cores-shared-memory-",
+        "kind": "gpu",
+        "manufacturer": "intel",
+        "sku": "Intel Arc 140T integrated (8 Xe cores, shared memory)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 0,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.asus.com/tw/laptops/for-home/vivobook/asus-vivobook-s-16-oled-s5606/techspec/",
+          "https://aiquimist.ai/"
+        ]
+      },
+      {
+        "id": "cpu:intel:intel-core-ultra-9-285h-16-cores-16-threads-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "Intel Core Ultra 9 285H (16 cores / 16 threads)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 16
+        },
+        "sourceUrls": [
+          "https://rog.asus.com/laptops/rog-zephyrus/rog-zephyrus-g16-2025-gu605/spec/"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-geforce-rtx-5070-laptop-gpu-8-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA GeForce RTX 5070 Laptop GPU 8 GB",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 8,
+          "decodeStreams": 12
+        },
+        "sourceUrls": [
+          "https://rog.asus.com/laptops/rog-zephyrus/rog-zephyrus-g16-2025-gu605/spec/"
+        ]
+      },
+      {
+        "id": "cpu:apple:apple-m4-max-14-core-cpu-10-performance-4-efficiency-",
+        "kind": "cpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 Max (14-core CPU; 10 performance + 4 efficiency)",
+        "architecture": "arm64",
+        "specifications": {
+          "physicalCores": 14
+        },
+        "sourceUrls": [
+          "https://www.apple.com/macbook-pro/specs/"
+        ]
+      },
+      {
+        "id": "gpu:apple:apple-m4-max-integrated-32-core-gpu",
+        "kind": "gpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 Max integrated 32-core GPU",
+        "architecture": "arm64",
+        "specifications": {
+          "count": 1,
+          "vramGb": 0,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.apple.com/macbook-pro/specs/"
+        ]
+      },
+      {
+        "id": "cpu:apple:apple-m4-10-core-cpu-4-performance-6-efficiency-",
+        "kind": "cpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 (10-core CPU; 4 performance + 6 efficiency)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 10
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-mini/specs/"
+        ]
+      },
+      {
+        "id": "gpu:apple:apple-m4-integrated-10-core-gpu",
+        "kind": "gpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 integrated 10-core GPU",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 0,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-mini/specs/"
+        ]
+      },
+      {
+        "id": "cpu:apple:apple-m4-pro-14-core-cpu-10-performance-4-efficiency-",
+        "kind": "cpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 Pro (14-core CPU; 10 performance + 4 efficiency)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 14
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-mini/specs/"
+        ]
+      },
+      {
+        "id": "gpu:apple:apple-m4-pro-integrated-20-core-gpu",
+        "kind": "gpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 Pro integrated 20-core GPU",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 0,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-mini/specs/"
+        ]
+      },
+      {
+        "id": "cpu:apple:apple-m4-max-16-core-cpu-12-performance-4-efficiency-",
+        "kind": "cpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 Max (16-core CPU; 12 performance + 4 efficiency)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 16
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-studio/specs/"
+        ]
+      },
+      {
+        "id": "gpu:apple:apple-m4-max-integrated-40-core-gpu",
+        "kind": "gpu",
+        "manufacturer": "apple",
+        "sku": "Apple M4 Max integrated 40-core GPU",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 0,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-studio/specs/"
+        ]
+      },
+      {
+        "id": "cpu:apple:apple-m3-ultra-28-core-cpu-20-performance-8-efficiency-",
+        "kind": "cpu",
+        "manufacturer": "apple",
+        "sku": "Apple M3 Ultra (28-core CPU; 20 performance + 8 efficiency)",
+        "architecture": "undisclosed",
+        "specifications": {
+          "physicalCores": 28
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-studio/specs/"
+        ]
+      },
+      {
+        "id": "gpu:apple:apple-m3-ultra-integrated-60-core-gpu",
+        "kind": "gpu",
+        "manufacturer": "apple",
+        "sku": "Apple M3 Ultra integrated 60-core GPU",
+        "architecture": "undisclosed",
+        "specifications": {
+          "count": 1,
+          "vramGb": 0,
+          "decodeStreams": 0
+        },
+        "sourceUrls": [
+          "https://www.apple.com/mac-studio/specs/"
+        ]
+      },
+      {
+        "id": "cpu:intel:intel-core-i9-14900k-24-cores-32-threads-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "Intel Core i9-14900K (24 cores / 32 threads)",
+        "architecture": "Raptor Lake Refresh",
+        "specifications": {
+          "physicalCores": 24
+        },
+        "sourceUrls": [
+          "https://www.dell.com/en-us/shop/desktop-computers/precision-3680-tower-workstation/spd/precision-t3680-workstation"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-rtx-4000-ada-generation-20-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA RTX 4000 Ada Generation 20 GB",
+        "architecture": "Ada Lovelace",
+        "specifications": {
+          "count": 1,
+          "vramGb": 20,
+          "decodeStreams": 32
+        },
+        "sourceUrls": [
+          "https://www.lenovo.com/us/en/c/workstations/thinkstation-p-series/"
+        ]
+      },
+      {
+        "id": "cpu:intel:intel-core-ultra-9-285k-24-cores-24-threads-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "Intel Core Ultra 9 285K (24 cores / 24 threads)",
+        "architecture": "Arrow Lake",
+        "specifications": {
+          "physicalCores": 24
+        },
+        "sourceUrls": [
+          "https://www.lenovo.com/us/en/c/workstations/thinkstation-p-series/"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-rtx-4500-ada-generation-24-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA RTX 4500 Ada Generation 24 GB",
+        "architecture": "Ada Lovelace",
+        "specifications": {
+          "count": 1,
+          "vramGb": 24,
+          "decodeStreams": 36
+        },
+        "sourceUrls": [
+          "https://www.hp.com/us-en/workstations/desktop-workstation-pc.html"
+        ]
+      },
+      {
+        "id": "cpu:intel:intel-xeon-w7-2495x-24-cores-48-threads-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "Intel Xeon W7-2495X (24 cores / 48 threads)",
+        "architecture": "Sapphire Rapids",
+        "specifications": {
+          "physicalCores": 24
+        },
+        "sourceUrls": [
+          "https://www.dell.com/en-us/shop/dell-desktops-and-all-in-one-pcs/scr/desktops/appref=precision-product-line"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-rtx-5000-ada-generation-32-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA RTX 5000 Ada Generation 32 GB",
+        "architecture": "Ada Lovelace",
+        "specifications": {
+          "count": 1,
+          "vramGb": 32,
+          "decodeStreams": 48
+        },
+        "sourceUrls": [
+          "https://www.dell.com/en-us/shop/dell-desktops-and-all-in-one-pcs/scr/desktops/appref=precision-product-line"
+        ]
+      },
+      {
+        "id": "cpu:intel:2-intel-xeon-workstation-processors-64-cores-total-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "2× Intel Xeon workstation processors (64 cores total)",
+        "architecture": "Sapphire Rapids",
+        "specifications": {
+          "physicalCores": 64
+        },
+        "sourceUrls": [
+          "https://www.hp.com/us-en/workstations/z8.html"
+        ]
+      },
+      {
+        "id": "gpu:nvidia:nvidia-rtx-6000-ada-generation-48-gb",
+        "kind": "gpu",
+        "manufacturer": "nvidia",
+        "sku": "NVIDIA RTX 6000 Ada Generation 48 GB",
+        "architecture": "Ada Lovelace",
+        "specifications": {
+          "count": 2,
+          "vramGb": 96,
+          "decodeStreams": 96
+        },
+        "sourceUrls": [
+          "https://www.lenovo.com/us/en/p/workstations/thinkstation-p-series/lenovo-thinkstation-px-intel-tower-workstation/len102s0013"
+        ]
+      },
+      {
+        "id": "cpu:intel:2-intel-xeon-scalable-processors-64-cores-total-",
+        "kind": "cpu",
+        "manufacturer": "intel",
+        "sku": "2× Intel Xeon Scalable processors (64 cores total)",
+        "architecture": "Sapphire Rapids",
+        "specifications": {
+          "physicalCores": 64
+        },
+        "sourceUrls": [
+          "https://www.lenovo.com/us/en/p/workstations/thinkstation-p-series/lenovo-thinkstation-px-intel-tower-workstation/len102s0013"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:475647",
+        "kind": "gpu",
+        "manufacturer": "Gigabyte",
+        "sku": "475647",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Placa de Vídeo RX 7600 GAMING OC 8G AMD Radeon Gigabyte, 8GB, GDDR6, 128bits, RGB - GV-R76GAMING OC-8GD",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/475647/placa-de-video-rx-7600-gaming-oc-8g-amd-radeon-gigabyte-8gb-gddr6-128bits-rgb-gv-r76gaming-oc-8gd"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:369658",
+        "kind": "system",
+        "manufacturer": "MSI",
+        "sku": "369658",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Fonte MSI MAG A650BN, 650W, 80 Plus Bronze, PFC Ativo, Com Cabo, Preto - 306-7ZP2B22-CE0",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/369658/fonte-msi-mag-a650bn-650w-80-plus-bronze-pfc-ativo-com-cabo-preto-306-7zp2b22-ce0"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:895040",
+        "kind": "system",
+        "manufacturer": "Cooler Master",
+        "sku": "895040",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Fonte Cooler Master MWE Gold 850 V3, 850W, 80 Plus Ouro, ATX 3.1, PFC Ativo, Preto - MPE-8506-ACAG-BBR",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/895040/fonte-cooler-master-mwe-gold-850-v3-850w-80-plus-ouro-atx-3-1-pfc-ativo-preto-mpe-8506-acag-bbr"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:383892",
+        "kind": "memory",
+        "manufacturer": "Rise Mode",
+        "sku": "383892",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Memória RAM Rise Mode Z, 8GB, 3200MHz, DDR4, CL19, Preto - RM-D4-8G-3200Z",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/383892/memoria-ram-rise-mode-z-8gb-3200mhz-ddr4-cl19-preto-rm-d4-8g-3200z"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:907600",
+        "kind": "system",
+        "manufacturer": "Gigabyte",
+        "sku": "907600",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Fonte Gigabyte P650G PG5, 650W, 80 PLUS Gold, PFC Ativo, Preto - 28200-P65G5-1CBRR",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/907600/fonte-gigabyte-p650g-pg5-650w-80-plus-gold-pfc-ativo-preto-28200-p65g5-1cbrr"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:172366",
+        "kind": "memory",
+        "manufacturer": "Kingston",
+        "sku": "172366",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Memória RAM Kingston Fury Beast, 16GB, 3200MHz, DDR4, CL16, Preto - KF432C16BB1/16",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/172366/memoria-ram-kingston-fury-beast-16gb-3200mhz-ddr4-cl16-preto-kf432c16bb1-16"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:621162",
+        "kind": "storage",
+        "manufacturer": "Kingston",
+        "sku": "621162",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "SSD Kingston NV3, 1 TB, M.2 2280, PCIe 4.0 x4, NVMe, Leitura: 6000 MB/s, Gravação: 4000 MB/s, Azul - SNV3S/1000G",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/621162/ssd-kingston-nv3-1-tb-m-2-2280-pcie-4-0-x4-nvme-leitura-6000-mb-s-gravacao-4000-mb-s-azul-snv3s-1000g"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:114781",
+        "kind": "memory",
+        "manufacturer": "Gigabyte",
+        "sku": "114781",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Placa-Mãe Gigabyte B550M Aorus Elite Rev. 1.3, AMD AM4, Micro ATX, DDR4, Preto - B550M AORUS ELITE",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/114781/placa-mae-gigabyte-b550m-aorus-elite-rev-1-3-amd-am4-micro-atx-ddr4-preto-b550m-aorus-elite"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:105104",
+        "kind": "storage",
+        "manufacturer": "Rise Mode",
+        "sku": "105104",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "SSD Rise Mode Gamer Line, 120GB, SATA III, Leitura: 530MB/s, Gravação: 520MB/s, Preto - RM-SSD-120",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/105104/ssd-rise-mode-gamer-line-120gb-sata-iii-leitura-530mb-s-gravacao-520mb-s-preto-rm-ssd-120"
+        ]
+      },
+      {
+        "id": "observed:price-br-kabum:912182",
+        "kind": "system",
+        "manufacturer": "MACH1",
+        "sku": "912182",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Fonte MACH1 Steady, 650W, 80 Plus Bronze, PFC Ativo, Preto - 650Steady",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.kabum.com.br/produto/912182/fonte-mach1-steady-650w-80-plus-bronze-pfc-ativo-preto-650steady"
+        ]
+      },
+      {
+        "id": "observed:price-us-apple:z1jv-cgyf-cgyl-cgyx-cjxq-ck0q-ck4m",
+        "kind": "gpu",
+        "manufacturer": "Apple",
+        "sku": "Z1JV+CGYF+CGYL+CGYX+CJXQ+CK0Q+CK4M",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Mac mini, M4 Pro Chip, 14-core CPU, 20-core GPU, 48GB memory, 1TB storage",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.apple.com/shop/buy-mac/mac-mini/m4-pro-chip-14-core-cpu-20-core-gpu-48gb-memory-1tb-storage"
+        ]
+      },
+      {
+        "id": "observed:price-de-apple:z1cf-cgyc-cgyj-cgyx-ch00-ch3p-ch3t-cjy7-dch3k",
+        "kind": "gpu",
+        "manufacturer": "Apple",
+        "sku": "Z1CF+CGYC+CGYJ+CGYX+CH00+CH3P+CH3T+CJY7+DCH3K",
+        "architecture": "reference_only",
+        "specifications": {
+          "name": "Mac mini, M4 Chip, 10‑Core CPU, 10‑Core GPU, 24 GB Arbeitsspeicher, 1 TB Speicher",
+          "evidenceLocator": "json-ld:Product[0]"
+        },
+        "sourceUrls": [
+          "https://www.apple.com/de/shop/buy-mac/mac-mini/m4-chip-10%E2%80%91core-cpu-10%E2%80%91core-gpu-24-gb-arbeitsspeicher-1tb-speicher"
+        ]
+      }
+    ],
+    "benchmarks": [
+      {
+        "id": "blender:ws-rtx4070tis-7950x:7d011954c6eb569e",
+        "hardwareTemplateId": "ws-rtx4070tis-7950x",
+        "stage": "local_inference",
+        "profileId": "blender-opendata-device-median-v1",
+        "benchmarkName": "Blender Open Data",
+        "benchmarkVersion": "current-device-median",
+        "score": 7089.541410957855,
+        "unit": "blender_score",
+        "higherIsBetter": true,
+        "componentId": "gpu:nvidia:nvidia-geforce-rtx-4070-ti-super-16-gb",
+        "componentKind": "gpu",
+        "sourceTier": 2,
+        "sourceUrl": "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%204070%20Ti%20SUPER/",
+        "observedAt": "2026-07-19T00:23:40.762Z",
+        "operatingSystem": "any",
+        "configuration": "Public device median across 1999 disclosed Blender Open Data submission(s); retained as a GPU-compute ratio only and never substituted for the AiQ model profile.",
+        "sampleCount": 1999,
+        "qualityFlags": [
+          "public_device_median",
+          "profile_not_aiq",
+          "do_not_substitute_stage_profile"
+        ]
+      },
+      {
+        "id": "blender:ws-rtx5090-9950x:ecb9b2ff7057743a",
+        "hardwareTemplateId": "ws-rtx5090-9950x",
+        "stage": "local_inference",
+        "profileId": "blender-opendata-device-median-v1",
+        "benchmarkName": "Blender Open Data",
+        "benchmarkVersion": "current-device-median",
+        "score": 15041.507596595204,
+        "unit": "blender_score",
+        "higherIsBetter": true,
+        "componentId": "gpu:nvidia:nvidia-geforce-rtx-5090-32-gb",
+        "componentKind": "gpu",
+        "sourceTier": 2,
+        "sourceUrl": "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%205090/",
+        "observedAt": "2026-07-19T00:23:41.767Z",
+        "operatingSystem": "any",
+        "configuration": "Public device median across 3066 disclosed Blender Open Data submission(s); retained as a GPU-compute ratio only and never substituted for the AiQ model profile.",
+        "sampleCount": 3066,
+        "qualityFlags": [
+          "public_device_median",
+          "profile_not_aiq",
+          "do_not_substitute_stage_profile"
+        ]
+      },
+      {
+        "id": "blender:hp-z8-g5-dualxeon-2xrtx6000ada:9539051b542f3f3d",
+        "hardwareTemplateId": "hp-z8-g5-dualxeon-2xrtx6000ada",
+        "stage": "local_inference",
+        "profileId": "blender-opendata-device-median-v1",
+        "benchmarkName": "Blender Open Data",
+        "benchmarkVersion": "current-device-median",
+        "score": 11087.80246549353,
+        "unit": "blender_score",
+        "higherIsBetter": true,
+        "componentId": "gpu:nvidia:nvidia-rtx-6000-ada-generation-48-gb",
+        "componentKind": "gpu",
+        "sourceTier": 2,
+        "sourceUrl": "https://opendata.blender.org/devices/NVIDIA%20RTX%206000%20Ada%20Generation/",
+        "observedAt": "2026-07-19T00:23:42.752Z",
+        "operatingSystem": "any",
+        "configuration": "Public device median across 113 disclosed Blender Open Data submission(s); retained as a GPU-compute ratio only and never substituted for the AiQ model profile.",
+        "sampleCount": 113,
+        "qualityFlags": [
+          "public_device_median",
+          "profile_not_aiq",
+          "do_not_substitute_stage_profile"
+        ]
+      },
+      {
+        "id": "blender:lenovo-thinkstation-px-dualxeon-2xrtx6000ada:9539051b542f3f3d",
+        "hardwareTemplateId": "lenovo-thinkstation-px-dualxeon-2xrtx6000ada",
+        "stage": "local_inference",
+        "profileId": "blender-opendata-device-median-v1",
+        "benchmarkName": "Blender Open Data",
+        "benchmarkVersion": "current-device-median",
+        "score": 11087.80246549353,
+        "unit": "blender_score",
+        "higherIsBetter": true,
+        "componentId": "gpu:nvidia:nvidia-rtx-6000-ada-generation-48-gb",
+        "componentKind": "gpu",
+        "sourceTier": 2,
+        "sourceUrl": "https://opendata.blender.org/devices/NVIDIA%20RTX%206000%20Ada%20Generation/",
+        "observedAt": "2026-07-19T00:23:42.752Z",
+        "operatingSystem": "any",
+        "configuration": "Public device median across 113 disclosed Blender Open Data submission(s); retained as a GPU-compute ratio only and never substituted for the AiQ model profile.",
+        "sampleCount": 113,
+        "qualityFlags": [
+          "public_device_median",
+          "profile_not_aiq",
+          "do_not_substitute_stage_profile"
+        ]
+      },
+      {
+        "id": "blender:apple-mac-mini-m4pro-48gb:002c76257d0980ce",
+        "hardwareTemplateId": "apple-mac-mini-m4pro-48gb",
+        "stage": "local_inference",
+        "profileId": "blender-opendata-device-median-v1",
+        "benchmarkName": "Blender Open Data",
+        "benchmarkVersion": "current-device-median",
+        "score": 344.34966928196627,
+        "unit": "blender_score",
+        "higherIsBetter": true,
+        "componentId": "gpu:apple:apple-m4-pro-integrated-20-core-gpu",
+        "componentKind": "gpu",
+        "sourceTier": 2,
+        "sourceUrl": "https://opendata.blender.org/devices/Apple%20M4%20Pro/",
+        "observedAt": "2026-07-19T00:23:43.739Z",
+        "operatingSystem": "any",
+        "configuration": "Public device median across 622 disclosed Blender Open Data submission(s); retained as a GPU-compute ratio only and never substituted for the AiQ model profile.",
+        "sampleCount": 622,
+        "qualityFlags": [
+          "public_device_median",
+          "profile_not_aiq",
+          "do_not_substitute_stage_profile"
+        ]
+      }
+    ],
+    "prices": [
+      {
+        "id": "price:price-br-kabum:475647:e527858aeb67",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:475647",
+        "mpn": "475647",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 1599.99,
+        "originalAmount": 1599.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/475647/placa-de-video-rx-7600-gaming-oc-8g-amd-radeon-gigabyte-8gb-gddr6-128bits-rgb-gv-r76gaming-oc-8gd",
+        "observedAt": "2026-07-19T00:23:49.350Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "475647",
+        "contentHash": "e527858aeb671e426a5812eb43720c9c73e575ee697d90b05d558ce67a31a974",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:49.350Z",
+        "validUntil": "2026-08-06T00:23:49.350Z"
+      },
+      {
+        "id": "price:price-br-kabum:369658:b5ee36ae3e55",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:369658",
+        "mpn": "369658",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 349.99,
+        "originalAmount": 349.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/369658/fonte-msi-mag-a650bn-650w-80-plus-bronze-pfc-ativo-com-cabo-preto-306-7zp2b22-ce0",
+        "observedAt": "2026-07-19T00:23:50.545Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "369658",
+        "contentHash": "b5ee36ae3e5501b86b53be378b3378d51c1e1ba50a17dfd3229398963aa231d1",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:50.545Z",
+        "validUntil": "2026-08-06T00:23:50.545Z"
+      },
+      {
+        "id": "price:price-br-kabum:895040:dc955d70088f",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:895040",
+        "mpn": "895040",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 399.99,
+        "originalAmount": 399.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/895040/fonte-cooler-master-mwe-gold-850-v3-850w-80-plus-ouro-atx-3-1-pfc-ativo-preto-mpe-8506-acag-bbr",
+        "observedAt": "2026-07-19T00:23:51.549Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "895040",
+        "contentHash": "dc955d70088faaa573a2bee114e711208d002c8968f05ede36cc1513155c40fb",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:51.549Z",
+        "validUntil": "2026-08-06T00:23:51.549Z"
+      },
+      {
+        "id": "price:price-br-kabum:383892:af03d83a1f0b",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:383892",
+        "mpn": "383892",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 429.99,
+        "originalAmount": 429.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/383892/memoria-ram-rise-mode-z-8gb-3200mhz-ddr4-cl19-preto-rm-d4-8g-3200z",
+        "observedAt": "2026-07-19T00:23:52.488Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "383892",
+        "contentHash": "af03d83a1f0b9393827acd782ddb9fb9872ef3152e8246f7aba7229b633c9703",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:52.488Z",
+        "validUntil": "2026-08-06T00:23:52.488Z"
+      },
+      {
+        "id": "price:price-br-kabum:907600:fe705fe15c71",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:907600",
+        "mpn": "907600",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 239.99,
+        "originalAmount": 239.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/907600/fonte-gigabyte-p650g-pg5-650w-80-plus-gold-pfc-ativo-preto-28200-p65g5-1cbrr",
+        "observedAt": "2026-07-19T00:23:53.513Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "907600",
+        "contentHash": "fe705fe15c71d524d71592d7daea3e845287eb2f20b42a8047355f36f432e1f6",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:53.513Z",
+        "validUntil": "2026-08-06T00:23:53.513Z"
+      },
+      {
+        "id": "price:price-br-kabum:172366:fb4d36ddad84",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:172366",
+        "mpn": "172366",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 729.99,
+        "originalAmount": 729.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/172366/memoria-ram-kingston-fury-beast-16gb-3200mhz-ddr4-cl16-preto-kf432c16bb1-16",
+        "observedAt": "2026-07-19T00:23:54.445Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "172366",
+        "contentHash": "fb4d36ddad84d2dc5170a11961f0d04c89948feb29b121e1070ab26373dada07",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:54.445Z",
+        "validUntil": "2026-08-06T00:23:54.445Z"
+      },
+      {
+        "id": "price:price-br-kabum:621162:76a8a35b44b9",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:621162",
+        "mpn": "621162",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 1079.99,
+        "originalAmount": 1079.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/621162/ssd-kingston-nv3-1-tb-m-2-2280-pcie-4-0-x4-nvme-leitura-6000-mb-s-gravacao-4000-mb-s-azul-snv3s-1000g",
+        "observedAt": "2026-07-19T00:23:55.392Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "621162",
+        "contentHash": "76a8a35b44b9af211b13b921f81029756359b84d4797c4c0726bd12b9ab29dd7",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:55.392Z",
+        "validUntil": "2026-08-06T00:23:55.392Z"
+      },
+      {
+        "id": "price:price-br-kabum:114781:548128f0a612",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:114781",
+        "mpn": "114781",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 699.99,
+        "originalAmount": 699.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/114781/placa-mae-gigabyte-b550m-aorus-elite-rev-1-3-amd-am4-micro-atx-ddr4-preto-b550m-aorus-elite",
+        "observedAt": "2026-07-19T00:23:56.340Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "114781",
+        "contentHash": "548128f0a612f342ac64f6d343984752f519f0da3c3c49eb3060062b47e4b7b6",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:56.340Z",
+        "validUntil": "2026-08-06T00:23:56.340Z"
+      },
+      {
+        "id": "price:price-br-kabum:105104:ad4e8bc0e4b6",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:105104",
+        "mpn": "105104",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 144.99,
+        "originalAmount": 144.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/105104/ssd-rise-mode-gamer-line-120gb-sata-iii-leitura-530mb-s-gravacao-520mb-s-preto-rm-ssd-120",
+        "observedAt": "2026-07-19T00:23:57.286Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "105104",
+        "contentHash": "ad4e8bc0e4b6a83a879b238aa7af265031da7619fee7a0807cf42ac2804a621c",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:57.286Z",
+        "validUntil": "2026-08-06T00:23:57.286Z"
+      },
+      {
+        "id": "price:price-br-kabum:912182:dbc526a90b0a",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-br-kabum:912182",
+        "mpn": "912182",
+        "seller": "KaBuM!",
+        "market": "BR",
+        "currency": "BRL",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 189.99,
+        "originalAmount": 189.99,
+        "originalCurrency": "BRL",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.kabum.com.br/produto/912182/fonte-mach1-steady-650w-80-plus-bronze-pfc-ativo-preto-650steady",
+        "observedAt": "2026-07-19T00:23:58.320Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-br-kabum",
+        "scope": "component",
+        "gtin": null,
+        "sku": "912182",
+        "contentHash": "dbc526a90b0a05fb3a829a26608437a43e3fb890453c35fb3176dff647946f5e",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:23:58.320Z",
+        "validUntil": "2026-08-06T00:23:58.320Z"
+      },
+      {
+        "id": "price:price-us-apple:apple-mac-mini-m4pro-48gb:fb40966cd6b8",
+        "hardwareTemplateId": "apple-mac-mini-m4pro-48gb",
+        "componentId": null,
+        "mpn": "Z1JV+CGYF+CGYL+CGYX+CJXQ+CK0Q+CK4M",
+        "seller": "Apple",
+        "market": "US",
+        "currency": "USD",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 2699,
+        "originalAmount": 2699,
+        "originalCurrency": "USD",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.apple.com/shop/buy-mac/mac-mini/m4-pro-chip-14-core-cpu-20-core-gpu-48gb-memory-1tb-storage",
+        "observedAt": "2026-07-19T00:23:59.105Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-us-apple",
+        "scope": "system",
+        "gtin": null,
+        "sku": "Z1JV+CGYF+CGYL+CGYX+CJXQ+CK0Q+CK4M",
+        "contentHash": "fb40966cd6b859cc8efc6811531657169409e2539f6d1dcf3d6b68a3f55b2888",
+        "evidenceLocator": "json-ld:Product[0].offers.price+shippingDetails",
+        "retrievedAt": "2026-07-19T00:23:59.105Z",
+        "validUntil": "2026-08-06T00:23:59.105Z"
+      },
+      {
+        "id": "price:price-de-apple:z1cf-cgyc-cgyj-cgyx-ch00-ch3p-ch3t-cjy7-dch3k:cea0194ef83b",
+        "hardwareTemplateId": null,
+        "componentId": "observed:price-de-apple:z1cf-cgyc-cgyj-cgyx-ch00-ch3p-ch3t-cjy7-dch3k",
+        "mpn": "Z1CF+CGYC+CGYJ+CGYX+CH00+CH3P+CH3T+CJY7+DCH3K",
+        "seller": "Apple",
+        "market": "DE",
+        "currency": "EUR",
+        "condition": "new",
+        "inStock": true,
+        "taxIncluded": null,
+        "amount": 1719,
+        "originalAmount": 1719,
+        "originalCurrency": "EUR",
+        "exchangeRate": 1,
+        "exchangeRateSource": null,
+        "url": "https://www.apple.com/de/shop/buy-mac/mac-mini/m4-chip-10%E2%80%91core-cpu-10%E2%80%91core-gpu-24-gb-arbeitsspeicher-1tb-speicher",
+        "observedAt": "2026-07-19T00:24:00.750Z",
+        "sourceKind": "allowed_page",
+        "sourceId": "price-de-apple",
+        "scope": "component",
+        "gtin": null,
+        "sku": null,
+        "contentHash": "cea0194ef83bc7f1b56788f32ffed3636f5456dc779493d89009768c363ac603",
+        "evidenceLocator": "json-ld:Product[0].offers.price+(availability|shippingDetails)",
+        "retrievedAt": "2026-07-19T00:24:00.750Z",
+        "validUntil": "2026-08-06T00:24:00.750Z"
+      }
+    ],
+    "sources": [
+      {
+        "id": "spec-intel-ark",
+        "organization": "Intel",
+        "primaryUrl": "https://www.intel.com/content/www/us/en/ark.html",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.intel.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.intel.com"
+        ],
+        "category": "specification",
+        "markets": [],
+        "currencies": [],
+        "parser": "html_table",
+        "products": [
+          "CPU",
+          "NPU",
+          "iGPU"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:37.271Z",
+        "lastSuccessAt": "2026-07-19T00:23:37.271Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "spec-amd-products",
+        "organization": "AMD",
+        "primaryUrl": "https://www.amd.com/en/products/specifications.html",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.amd.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.amd.com"
+        ],
+        "category": "specification",
+        "markets": [],
+        "currencies": [],
+        "parser": "html_table",
+        "products": [
+          "CPU",
+          "GPU",
+          "APU"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.271Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "spec-nvidia-products",
+        "organization": "NVIDIA",
+        "primaryUrl": "https://www.nvidia.com/en-us/geforce/graphics-cards/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.nvidia.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.nvidia.com"
+        ],
+        "category": "specification",
+        "markets": [],
+        "currencies": [],
+        "parser": "json_ld",
+        "products": [
+          "GPU",
+          "VRAM",
+          "NVDEC",
+          "NVENC"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:37.415Z",
+        "lastSuccessAt": "2026-07-19T00:23:37.415Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "spec-apple-mac",
+        "organization": "Apple",
+        "primaryUrl": "https://www.apple.com/mac/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.apple.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.apple.com"
+        ],
+        "category": "specification",
+        "markets": [],
+        "currencies": [],
+        "parser": "json_ld",
+        "products": [
+          "Apple Silicon",
+          "Mac"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:37.555Z",
+        "lastSuccessAt": "2026-07-19T00:23:37.555Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "oem-asus",
+        "organization": "ASUS / ROG",
+        "primaryUrl": "https://www.asus.com/laptops/for-gaming/rog-republic-of-gamers/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.asus.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.asus.com"
+        ],
+        "category": "oem",
+        "markets": [],
+        "currencies": [],
+        "parser": "sitemap",
+        "products": [
+          "laptop",
+          "desktop",
+          "workstation"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": "2026-07-19T00:23:37.704Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "oem-dell",
+        "organization": "Dell / Alienware / Precision / PowerEdge",
+        "primaryUrl": "https://www.dell.com/en-us/shop/dell-computer-laptops/scr/laptops",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.dell.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.dell.com"
+        ],
+        "category": "oem",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "laptop",
+          "workstation",
+          "server"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "oem-hp",
+        "organization": "HP",
+        "primaryUrl": "https://www.hp.com/us-en/shop/cat/laptops",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.hp.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.hp.com"
+        ],
+        "category": "oem",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "laptop",
+          "workstation"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "oem-hpe",
+        "organization": "HPE",
+        "primaryUrl": "https://www.hpe.com/us/en/servers.html",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.hpe.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.hpe.com"
+        ],
+        "category": "oem",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "sitemap",
+        "products": [
+          "server"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "oem-lenovo",
+        "organization": "Lenovo / Legion / ThinkStation / ThinkSystem",
+        "primaryUrl": "https://www.lenovo.com/us/en/c/workstations/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.lenovo.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.lenovo.com"
+        ],
+        "category": "oem",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "laptop",
+          "workstation",
+          "server"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "oem-acer",
+        "organization": "Acer / Predator",
+        "primaryUrl": "https://www.acer.com/us-en/predator/laptops",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.acer.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.acer.com"
+        ],
+        "category": "oem",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "laptop",
+          "desktop"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "oem-msi",
+        "organization": "MSI",
+        "primaryUrl": "https://us.msi.com/Laptops",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "us.msi.com"
+        ],
+        "allowedRedirectHosts": [
+          "us.msi.com"
+        ],
+        "category": "oem",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "sitemap",
+        "products": [
+          "laptop",
+          "desktop",
+          "workstation"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "oem-gigabyte",
+        "organization": "Gigabyte / Aorus",
+        "primaryUrl": "https://www.gigabyte.com/Laptop",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.gigabyte.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.gigabyte.com"
+        ],
+        "category": "oem",
+        "markets": [],
+        "currencies": [],
+        "parser": "sitemap",
+        "products": [
+          "laptop",
+          "workstation",
+          "server"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:37.704Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "oem-supermicro",
+        "organization": "Supermicro",
+        "primaryUrl": "https://www.supermicro.com/en/products/systems",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.supermicro.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.supermicro.com"
+        ],
+        "category": "oem",
+        "markets": [],
+        "currencies": [],
+        "parser": "sitemap",
+        "products": [
+          "workstation",
+          "server"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:38.158Z",
+        "lastSuccessAt": "2026-07-19T00:23:38.158Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "benchmark-mlcommons",
+        "organization": "MLCommons",
+        "primaryUrl": "https://mlcommons.org/benchmarks/inference-datacenter/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "mlcommons.org"
+        ],
+        "allowedRedirectHosts": [
+          "mlcommons.org"
+        ],
+        "category": "benchmark",
+        "markets": [],
+        "currencies": [],
+        "parser": "csv",
+        "products": [
+          "local_inference"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:38.554Z",
+        "lastSuccessAt": "2026-07-19T00:23:38.554Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "benchmark-openbenchmarking",
+        "organization": "OpenBenchmarking",
+        "primaryUrl": "https://openbenchmarking.org/suites/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "openbenchmarking.org"
+        ],
+        "allowedRedirectHosts": [
+          "openbenchmarking.org"
+        ],
+        "category": "benchmark",
+        "markets": [],
+        "currencies": [],
+        "parser": "api",
+        "products": [
+          "CPU",
+          "GPU",
+          "storage",
+          "memory"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": false,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:38.554Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "benchmark-blender",
+        "organization": "Blender Open Data",
+        "primaryUrl": "https://opendata.blender.org/",
+        "discoveryUrls": [
+          "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%204070%20Ti%20SUPER/",
+          "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%205090/",
+          "https://opendata.blender.org/devices/NVIDIA%20RTX%206000%20Ada%20Generation/",
+          "https://opendata.blender.org/devices/Apple%20M4%20Pro/"
+        ],
+        "allowedHosts": [
+          "opendata.blender.org"
+        ],
+        "allowedRedirectHosts": [
+          "opendata.blender.org"
+        ],
+        "category": "benchmark",
+        "markets": [],
+        "currencies": [],
+        "parser": "html_table",
+        "products": [
+          "CPU",
+          "GPU"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:43.739Z",
+        "lastSuccessAt": "2026-07-19T00:23:43.739Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "benchmark-spec",
+        "organization": "SPEC",
+        "primaryUrl": "https://www.spec.org/cpu2017/results/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.spec.org"
+        ],
+        "allowedRedirectHosts": [
+          "www.spec.org"
+        ],
+        "category": "benchmark",
+        "markets": [],
+        "currencies": [],
+        "parser": "html_table",
+        "products": [
+          "CPU sustained"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:44.522Z",
+        "lastSuccessAt": "2026-07-19T00:23:44.522Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "benchmark-nvidia-codec",
+        "organization": "NVIDIA Video Codec SDK",
+        "primaryUrl": "https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "developer.nvidia.com"
+        ],
+        "allowedRedirectHosts": [
+          "developer.nvidia.com"
+        ],
+        "category": "benchmark",
+        "markets": [],
+        "currencies": [],
+        "parser": "html_table",
+        "products": [
+          "NVDEC",
+          "NVENC"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:45.267Z",
+        "lastSuccessAt": "2026-07-19T00:23:45.267Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "price-br-dell",
+        "organization": "Dell Brasil",
+        "primaryUrl": "https://www.dell.com/pt-br/shop",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.dell.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.dell.com"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:45.895Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 1,
+        "notes": []
+      },
+      {
+        "id": "price-br-hp",
+        "organization": "HP Brasil",
+        "primaryUrl": "https://www.hp.com/br-pt/shop/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.hp.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.hp.com"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:45.895Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-br-lenovo",
+        "organization": "Lenovo Brasil",
+        "primaryUrl": "https://www.lenovo.com/br/pt/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.lenovo.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.lenovo.com"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:45.895Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-br-asus",
+        "organization": "ASUS Brasil",
+        "primaryUrl": "https://br.store.asus.com/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "br.store.asus.com"
+        ],
+        "allowedRedirectHosts": [
+          "br.store.asus.com"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "systems",
+          "components"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:45.895Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-br-apple",
+        "organization": "Apple Brasil",
+        "primaryUrl": "https://www.apple.com/br/shop/buy-mac",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.apple.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.apple.com"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:46.359Z",
+        "lastSuccessAt": "2026-07-19T00:23:46.359Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "price-br-kabum",
+        "organization": "KaBuM!",
+        "primaryUrl": "https://www.kabum.com.br/hardware",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.kabum.com.br"
+        ],
+        "allowedRedirectHosts": [
+          "www.kabum.com.br"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:58.320Z",
+        "lastSuccessAt": "2026-07-19T00:23:58.320Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "price-br-pichau",
+        "organization": "Pichau",
+        "primaryUrl": "https://www.pichau.com.br/hardware",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.pichau.com.br"
+        ],
+        "allowedRedirectHosts": [
+          "www.pichau.com.br"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:58.320Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-br-terabyte",
+        "organization": "TerabyteShop",
+        "primaryUrl": "https://www.terabyteshop.com.br/hardware",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.terabyteshop.com.br"
+        ],
+        "allowedRedirectHosts": [
+          "www.terabyteshop.com.br"
+        ],
+        "category": "price",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:58.320Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-us-nvidia",
+        "organization": "NVIDIA Marketplace",
+        "primaryUrl": "https://marketplace.nvidia.com/en-us/consumer/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "marketplace.nvidia.com"
+        ],
+        "allowedRedirectHosts": [
+          "marketplace.nvidia.com"
+        ],
+        "category": "price",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "GPU",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:58.320Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-us-newegg",
+        "organization": "Newegg",
+        "primaryUrl": "https://www.newegg.com/Components/Store/ID-1",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.newegg.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.newegg.com"
+        ],
+        "category": "price",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:58.661Z",
+        "lastSuccessAt": "2026-07-19T00:23:58.661Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "price-us-apple",
+        "organization": "Apple",
+        "primaryUrl": "https://www.apple.com/shop/buy-mac/mac-mini/m4-pro-chip-14-core-cpu-20-core-gpu-48gb-memory-1tb-storage",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.apple.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.apple.com"
+        ],
+        "category": "price",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:23:59.106Z",
+        "lastSuccessAt": "2026-07-19T00:23:59.106Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "price-us-bh",
+        "organization": "B&H",
+        "primaryUrl": "https://www.bhphotovideo.com/c/browse/computers-solutions/ci/9581",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.bhphotovideo.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.bhphotovideo.com"
+        ],
+        "category": "price",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:59.106Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-us-bestbuy",
+        "organization": "Best Buy",
+        "primaryUrl": "https://www.bestbuy.com/site/computers-pcs/computer-cards-components/abcat0507000.c",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.bestbuy.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.bestbuy.com"
+        ],
+        "category": "price",
+        "markets": [
+          "US"
+        ],
+        "currencies": [
+          "USD"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:23:59.106Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-de-alternate",
+        "organization": "Alternate",
+        "primaryUrl": "https://www.alternate.de/Hardware",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.alternate.de"
+        ],
+        "allowedRedirectHosts": [
+          "www.alternate.de"
+        ],
+        "category": "price",
+        "markets": [
+          "DE"
+        ],
+        "currencies": [
+          "EUR"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:24:00.281Z",
+        "lastSuccessAt": "2026-07-19T00:24:00.281Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "price-de-apple",
+        "organization": "Apple",
+        "primaryUrl": "https://www.apple.com/de/shop/buy-mac/mac-mini/m4-chip-10%E2%80%91core-cpu-10%E2%80%91core-gpu-24-gb-arbeitsspeicher-1tb-speicher",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.apple.com"
+        ],
+        "allowedRedirectHosts": [
+          "www.apple.com"
+        ],
+        "category": "price",
+        "markets": [
+          "DE"
+        ],
+        "currencies": [
+          "EUR"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:24:00.751Z",
+        "lastSuccessAt": "2026-07-19T00:24:00.751Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "price-de-cyberport",
+        "organization": "Cyberport",
+        "primaryUrl": "https://www.cyberport.de/pc-und-zubehoer.html",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.cyberport.de"
+        ],
+        "allowedRedirectHosts": [
+          "www.cyberport.de"
+        ],
+        "category": "price",
+        "markets": [
+          "DE"
+        ],
+        "currencies": [
+          "EUR"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:24:00.751Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-de-notebooksbilliger",
+        "organization": "notebooksbilliger",
+        "primaryUrl": "https://www.notebooksbilliger.de/pc+hardware",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.notebooksbilliger.de"
+        ],
+        "allowedRedirectHosts": [
+          "www.notebooksbilliger.de"
+        ],
+        "category": "price",
+        "markets": [
+          "DE"
+        ],
+        "currencies": [
+          "EUR"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components",
+          "systems"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:24:00.751Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "price-de-mindfactory",
+        "organization": "Mindfactory",
+        "primaryUrl": "https://www.mindfactory.de/Hardware.html",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.mindfactory.de"
+        ],
+        "allowedRedirectHosts": [
+          "www.mindfactory.de"
+        ],
+        "category": "price",
+        "markets": [
+          "DE"
+        ],
+        "currencies": [
+          "EUR"
+        ],
+        "parser": "json_ld",
+        "products": [
+          "components"
+        ],
+        "trustTier": 2,
+        "maxRequestsPerRun": 80,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "unavailable",
+        "lastRunAt": "2026-07-19T00:24:00.751Z",
+        "lastSuccessAt": null,
+        "consecutiveFailures": 0,
+        "notes": [
+          "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+        ]
+      },
+      {
+        "id": "fx-bcb-ptax",
+        "organization": "Banco Central do Brasil",
+        "primaryUrl": "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/aplicacao#!/recursos",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "olinda.bcb.gov.br"
+        ],
+        "allowedRedirectHosts": [
+          "olinda.bcb.gov.br"
+        ],
+        "category": "exchange_rate",
+        "markets": [
+          "BR"
+        ],
+        "currencies": [
+          "BRL"
+        ],
+        "parser": "api",
+        "products": [
+          "USD/BRL",
+          "EUR/BRL"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": false,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:24:01.849Z",
+        "lastSuccessAt": "2026-07-19T00:24:01.849Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "fx-ecb",
+        "organization": "European Central Bank",
+        "primaryUrl": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.ecb.europa.eu"
+        ],
+        "allowedRedirectHosts": [
+          "www.ecb.europa.eu"
+        ],
+        "category": "exchange_rate",
+        "markets": [
+          "DE",
+          "US"
+        ],
+        "currencies": [
+          "EUR",
+          "USD"
+        ],
+        "parser": "api",
+        "products": [
+          "EUR/USD"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": false,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:24:02.424Z",
+        "lastSuccessAt": "2026-07-19T00:24:02.424Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      },
+      {
+        "id": "fx-federal-reserve",
+        "organization": "Federal Reserve",
+        "primaryUrl": "https://www.federalreserve.gov/releases/h10/current/",
+        "discoveryUrls": [],
+        "allowedHosts": [
+          "www.federalreserve.gov"
+        ],
+        "allowedRedirectHosts": [
+          "www.federalreserve.gov"
+        ],
+        "category": "exchange_rate",
+        "markets": [
+          "US",
+          "DE"
+        ],
+        "currencies": [
+          "USD",
+          "EUR"
+        ],
+        "parser": "html_table",
+        "products": [
+          "USD/EUR"
+        ],
+        "trustTier": 1,
+        "maxRequestsPerRun": 30,
+        "minimumIntervalMs": 750,
+        "robotsRequired": true,
+        "state": "active",
+        "lastRunAt": "2026-07-19T00:24:02.761Z",
+        "lastSuccessAt": "2026-07-19T00:24:02.761Z",
+        "consecutiveFailures": 0,
+        "notes": []
+      }
+    ],
+    "sourceHealth": {
+      "active": 19,
+      "healthy": 19,
+      "degraded": 0,
+      "unavailable": 20,
+      "failedPercent": 0
+    },
+    "summary": {
+      "added": 87,
+      "updated": 0,
+      "unchanged": 0,
+      "rejected": 0,
+      "checkedWithoutChanges": false
+    }
+  },
+  "keyId": "catalog-2026-01",
+  "signature": "WwvkaDTmOtdpePGT2/YecF7bKTgda3TcL4cP8a+9sjU/IMOWNF8CwfGXyCamn/S/B5cxZyDTeSqI/Ofi4sdRBw=="
+}
