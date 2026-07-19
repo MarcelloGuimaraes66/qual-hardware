@@ -7,6 +7,7 @@
 - Exportação atual: `capacity-recommendation-export/4.0.0`.
 - Catálogo auditado no dry-run: 21 sistemas históricos, 218 componentes, 18 observações, zero órfãos.
 - SPEC: duas observações elegíveis para CPU. MLPerf: 16 observações preservadas como referência por incompatibilidade de modelo Qwen.
+- A varredura ampliada coletou 22 observações em onze fontes, mas o gate de saúde bloqueou o snapshot devido às falhas de OpenBenchmarking/AMD. Não contornar esse gate é uma decisão de segurança.
 - Nenhuma recomendação está apta para aquisição sem três calibrações físicas completas comparáveis e cobertura integral.
 - Nenhum push, Release, cron ou segredo foi alterado.
 - Próximo passo operacional: distribuir o manual do Perceptrum, coletar três calibrações completas comparáveis (cinco como alvo), importar os `.qhcal.json` e executar leave-one-out antes de qualquer decisão de compra.

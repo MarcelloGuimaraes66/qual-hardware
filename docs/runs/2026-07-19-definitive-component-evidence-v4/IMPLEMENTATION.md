@@ -19,5 +19,6 @@
 8. O dry-run público baixou 18 observações: duas SPEC elegíveis para CPU e 16 MLPerf preservadas como referência porque o modelo Qwen3-VL 235B não é comparável ao AiQ/Qwen 2B/4B do Perceptrum.
 9. Nenhum valor foi extraído ou decidido pelo Qwen. Nenhuma assinatura, Release, cron ou push foi executado.
 10. A aquisição permanece corretamente bloqueada: não existem três calibrações completas comparáveis e nenhum componente possui hoje cobertura integral dos quinze estágios.
+11. Uma varredura adicional das onze fontes de benchmark registrou 22 observações e o estado de cada fonte. O snapshot ampliado foi intencionalmente bloqueado pelo gate de falha superior a 20%; essa falha segura foi preservada como evidência, não contornada.
 
 Não houve desvio destrutivo do orçamento. Bancos e evidências existentes não foram tocados.

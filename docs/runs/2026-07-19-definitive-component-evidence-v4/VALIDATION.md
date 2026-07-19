@@ -27,12 +27,14 @@
 - `npm run desktop:package:dir`: aplicativo macOS arm64 empacotado sem assinatura.
 - `npm run desktop:smoke`: aprovado após alinhar o gate ao contrato de exportação 4.0; o smoke removeu seu diretório temporário.
 - Dry-run público: 21 sistemas, 218 componentes, 18 benchmarks, zero órfãos, duas observações SPEC elegíveis para CPU e zero componentes qualificados.
+- Varredura de onze fontes: 22 observações coletadas; construção recusada pelo gate de saúde porque cinco fontes falharam. Nenhum snapshot incompleto foi ativado.
 
 ## Limites que permanecem visíveis
 
 - Windows e Ubuntu têm código, CI e adaptadores comuns, mas a homologação física futura não foi simulada neste Mac.
 - Não há três calibrações físicas completas comparáveis. Logo, nenhuma configuração foi liberada para aquisição.
 - As 16 observações MLPerf coletadas usam outro tamanho de Qwen e permanecem corretamente `reference_only`.
+- STREAM, fio, FFmpeg e OpenCV públicos ainda não possuem observações importadas: as páginas cadastradas exigiram acesso interativo e nenhuma proteção foi contornada.
 - O bundle desta execução é um dry-run não assinado e não foi publicado.
 
 Resultado: implementação técnica aprovada no macOS, com gate comercial deliberadamente bloqueado até a coleta física mínima.

@@ -32,3 +32,9 @@ Marketing, overclock não equivalente, resultado anônimo, unidade ambígua, con
 - Parsers determinísticos geram observações normalizadas e relatórios de rejeição.
 - Qwen pode sugerir a correspondência de nomes com trecho literal, mas não cria nem confirma valores.
 - Fixtures derivadas das estruturas públicas exercitam cada parser sem tornar a suíte dependente da disponibilidade externa.
+
+## Varredura real das fontes cadastradas
+
+Em 19 de julho de 2026, a varredura das onze fontes de benchmark ativas produziu 22 observações: 16 MLPerf, quatro Blender e duas SPEC. As quatro páginas OpenBenchmarking retornaram exigência de acesso interativo; a página AMD excedeu o timeout; NVIDIA, Intel e Apple responderam, mas não expuseram uma série numérica determinística utilizável pelos parsers atuais. O gate de saúde bloqueou corretamente a construção do snapshot, pois mais de 20% das fontes ativas falharam. Os arquivos estão em `public-benchmark-source-scan/`.
+
+Consequência: STREAM, fio, FFmpeg, OpenCV e throughput sustentado de codecs continuam dependendo de conectores oficiais estruturados ou das medições físicas padronizadas. Nenhum zero, score genérico ou número inferido foi criado para preencher essas lacunas.

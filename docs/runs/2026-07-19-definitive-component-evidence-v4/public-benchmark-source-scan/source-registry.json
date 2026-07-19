@@ -1,0 +1,338 @@
+{
+  "schemaVersion": "qual-hardware-source-registry/1.0.0",
+  "generatedAt": "2026-07-19T23:21:20.244Z",
+  "sources": [
+    {
+      "id": "benchmark-mlcommons",
+      "organization": "MLCommons",
+      "primaryUrl": "https://raw.githubusercontent.com/mlcommons/inference_results_v6.0/main/summary_results.json",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "raw.githubusercontent.com"
+      ],
+      "allowedRedirectHosts": [
+        "raw.githubusercontent.com"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "api",
+      "products": [
+        "local_inference",
+        "Qwen3-VL",
+        "GPU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": false,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:39.678Z",
+      "lastSuccessAt": "2026-07-19T23:20:39.678Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-openbenchmarking-stream",
+      "organization": "OpenBenchmarking / STREAM",
+      "primaryUrl": "https://openbenchmarking.org/test/pts/stream",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "openbenchmarking.org"
+      ],
+      "allowedRedirectHosts": [
+        "openbenchmarking.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "memory_bandwidth"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:40.861Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 1,
+      "notes": []
+    },
+    {
+      "id": "benchmark-openbenchmarking-fio",
+      "organization": "OpenBenchmarking / fio",
+      "primaryUrl": "https://openbenchmarking.org/test/pts/fio",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "openbenchmarking.org"
+      ],
+      "allowedRedirectHosts": [
+        "openbenchmarking.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "disk_read",
+        "disk_write",
+        "IOPS",
+        "latency"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:41.479Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 1,
+      "notes": []
+    },
+    {
+      "id": "benchmark-openbenchmarking-ffmpeg",
+      "organization": "OpenBenchmarking / FFmpeg",
+      "primaryUrl": "https://openbenchmarking.org/test/pts/ffmpeg",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "openbenchmarking.org"
+      ],
+      "allowedRedirectHosts": [
+        "openbenchmarking.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "video_decode",
+        "video_encode",
+        "CPU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:42.101Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 1,
+      "notes": []
+    },
+    {
+      "id": "benchmark-openbenchmarking-opencv",
+      "organization": "OpenBenchmarking / OpenCV",
+      "primaryUrl": "https://openbenchmarking.org/test/pts/opencv",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "openbenchmarking.org"
+      ],
+      "allowedRedirectHosts": [
+        "openbenchmarking.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "bgr_processing",
+        "CPU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:42.711Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 1,
+      "notes": []
+    },
+    {
+      "id": "benchmark-blender",
+      "organization": "Blender Open Data",
+      "primaryUrl": "https://opendata.blender.org/",
+      "discoveryUrls": [
+        "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%204070%20Ti%20SUPER/",
+        "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%205090/",
+        "https://opendata.blender.org/devices/NVIDIA%20RTX%206000%20Ada%20Generation/",
+        "https://opendata.blender.org/devices/Apple%20M4%20Pro/"
+      ],
+      "allowedHosts": [
+        "opendata.blender.org"
+      ],
+      "allowedRedirectHosts": [
+        "opendata.blender.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "CPU",
+        "GPU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:49.848Z",
+      "lastSuccessAt": "2026-07-19T23:20:49.848Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-spec",
+      "organization": "SPEC",
+      "primaryUrl": "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250126-46110.csv",
+      "discoveryUrls": [
+        "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250126-46114.csv",
+        "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250127-46190.csv"
+      ],
+      "allowedHosts": [
+        "www.spec.org"
+      ],
+      "allowedRedirectHosts": [
+        "www.spec.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "csv",
+      "products": [
+        "CPU sustained"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:56.127Z",
+      "lastSuccessAt": "2026-07-19T23:20:56.127Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-nvidia-codec",
+      "organization": "NVIDIA Video Codec SDK",
+      "primaryUrl": "https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "developer.nvidia.com"
+      ],
+      "allowedRedirectHosts": [
+        "developer.nvidia.com"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "NVDEC",
+        "NVENC"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:57.912Z",
+      "lastSuccessAt": "2026-07-19T23:20:57.912Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-intel-vpl",
+      "organization": "Intel Video Processing Library",
+      "primaryUrl": "https://www.intel.com/content/www/us/en/developer/tools/vpl/overview.html",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.intel.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.intel.com"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "Intel decode",
+        "Intel encode",
+        "video processing"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:20:58.920Z",
+      "lastSuccessAt": "2026-07-19T23:20:58.920Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-amd-video",
+      "organization": "AMD Video and Streaming",
+      "primaryUrl": "https://www.amd.com/en/products/software/adrenalin/video-streaming.html",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.amd.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.amd.com"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "AMD VCN",
+        "H.264",
+        "H.265",
+        "AV1"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:21:18.925Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 1,
+      "notes": []
+    },
+    {
+      "id": "benchmark-apple-videotoolbox",
+      "organization": "Apple VideoToolbox",
+      "primaryUrl": "https://developer.apple.com/documentation/videotoolbox",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "developer.apple.com"
+      ],
+      "allowedRedirectHosts": [
+        "developer.apple.com"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "Apple hardware decode",
+        "Apple hardware encode"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T23:21:20.243Z",
+      "lastSuccessAt": "2026-07-19T23:21:20.243Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    }
+  ]
+}
