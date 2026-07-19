@@ -1,0 +1,1293 @@
+{
+  "schemaVersion": "qual-hardware-source-registry/1.0.0",
+  "generatedAt": "2026-07-19T00:24:02.761Z",
+  "sources": [
+    {
+      "id": "spec-intel-ark",
+      "organization": "Intel",
+      "primaryUrl": "https://www.intel.com/content/www/us/en/ark.html",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.intel.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.intel.com"
+      ],
+      "category": "specification",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "CPU",
+        "NPU",
+        "iGPU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:37.271Z",
+      "lastSuccessAt": "2026-07-19T00:23:37.271Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "spec-amd-products",
+      "organization": "AMD",
+      "primaryUrl": "https://www.amd.com/en/products/specifications.html",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.amd.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.amd.com"
+      ],
+      "category": "specification",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "CPU",
+        "GPU",
+        "APU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.271Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "spec-nvidia-products",
+      "organization": "NVIDIA",
+      "primaryUrl": "https://www.nvidia.com/en-us/geforce/graphics-cards/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.nvidia.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.nvidia.com"
+      ],
+      "category": "specification",
+      "markets": [],
+      "currencies": [],
+      "parser": "json_ld",
+      "products": [
+        "GPU",
+        "VRAM",
+        "NVDEC",
+        "NVENC"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:37.415Z",
+      "lastSuccessAt": "2026-07-19T00:23:37.415Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "spec-apple-mac",
+      "organization": "Apple",
+      "primaryUrl": "https://www.apple.com/mac/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.apple.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.apple.com"
+      ],
+      "category": "specification",
+      "markets": [],
+      "currencies": [],
+      "parser": "json_ld",
+      "products": [
+        "Apple Silicon",
+        "Mac"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:37.555Z",
+      "lastSuccessAt": "2026-07-19T00:23:37.555Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "oem-asus",
+      "organization": "ASUS / ROG",
+      "primaryUrl": "https://www.asus.com/laptops/for-gaming/rog-republic-of-gamers/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.asus.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.asus.com"
+      ],
+      "category": "oem",
+      "markets": [],
+      "currencies": [],
+      "parser": "sitemap",
+      "products": [
+        "laptop",
+        "desktop",
+        "workstation"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": "2026-07-19T00:23:37.704Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "oem-dell",
+      "organization": "Dell / Alienware / Precision / PowerEdge",
+      "primaryUrl": "https://www.dell.com/en-us/shop/dell-computer-laptops/scr/laptops",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.dell.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.dell.com"
+      ],
+      "category": "oem",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "laptop",
+        "workstation",
+        "server"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "oem-hp",
+      "organization": "HP",
+      "primaryUrl": "https://www.hp.com/us-en/shop/cat/laptops",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.hp.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.hp.com"
+      ],
+      "category": "oem",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "laptop",
+        "workstation"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "oem-hpe",
+      "organization": "HPE",
+      "primaryUrl": "https://www.hpe.com/us/en/servers.html",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.hpe.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.hpe.com"
+      ],
+      "category": "oem",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "sitemap",
+      "products": [
+        "server"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "oem-lenovo",
+      "organization": "Lenovo / Legion / ThinkStation / ThinkSystem",
+      "primaryUrl": "https://www.lenovo.com/us/en/c/workstations/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.lenovo.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.lenovo.com"
+      ],
+      "category": "oem",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "laptop",
+        "workstation",
+        "server"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "oem-acer",
+      "organization": "Acer / Predator",
+      "primaryUrl": "https://www.acer.com/us-en/predator/laptops",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.acer.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.acer.com"
+      ],
+      "category": "oem",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "laptop",
+        "desktop"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "oem-msi",
+      "organization": "MSI",
+      "primaryUrl": "https://us.msi.com/Laptops",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "us.msi.com"
+      ],
+      "allowedRedirectHosts": [
+        "us.msi.com"
+      ],
+      "category": "oem",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "sitemap",
+      "products": [
+        "laptop",
+        "desktop",
+        "workstation"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "oem-gigabyte",
+      "organization": "Gigabyte / Aorus",
+      "primaryUrl": "https://www.gigabyte.com/Laptop",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.gigabyte.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.gigabyte.com"
+      ],
+      "category": "oem",
+      "markets": [],
+      "currencies": [],
+      "parser": "sitemap",
+      "products": [
+        "laptop",
+        "workstation",
+        "server"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:37.704Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "oem-supermicro",
+      "organization": "Supermicro",
+      "primaryUrl": "https://www.supermicro.com/en/products/systems",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.supermicro.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.supermicro.com"
+      ],
+      "category": "oem",
+      "markets": [],
+      "currencies": [],
+      "parser": "sitemap",
+      "products": [
+        "workstation",
+        "server"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:38.158Z",
+      "lastSuccessAt": "2026-07-19T00:23:38.158Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-mlcommons",
+      "organization": "MLCommons",
+      "primaryUrl": "https://mlcommons.org/benchmarks/inference-datacenter/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "mlcommons.org"
+      ],
+      "allowedRedirectHosts": [
+        "mlcommons.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "csv",
+      "products": [
+        "local_inference"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:38.554Z",
+      "lastSuccessAt": "2026-07-19T00:23:38.554Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-openbenchmarking",
+      "organization": "OpenBenchmarking",
+      "primaryUrl": "https://openbenchmarking.org/suites/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "openbenchmarking.org"
+      ],
+      "allowedRedirectHosts": [
+        "openbenchmarking.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "api",
+      "products": [
+        "CPU",
+        "GPU",
+        "storage",
+        "memory"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": false,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:38.554Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "benchmark-blender",
+      "organization": "Blender Open Data",
+      "primaryUrl": "https://opendata.blender.org/",
+      "discoveryUrls": [
+        "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%204070%20Ti%20SUPER/",
+        "https://opendata.blender.org/devices/NVIDIA%20GeForce%20RTX%205090/",
+        "https://opendata.blender.org/devices/NVIDIA%20RTX%206000%20Ada%20Generation/",
+        "https://opendata.blender.org/devices/Apple%20M4%20Pro/"
+      ],
+      "allowedHosts": [
+        "opendata.blender.org"
+      ],
+      "allowedRedirectHosts": [
+        "opendata.blender.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "CPU",
+        "GPU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:43.739Z",
+      "lastSuccessAt": "2026-07-19T00:23:43.739Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-spec",
+      "organization": "SPEC",
+      "primaryUrl": "https://www.spec.org/cpu2017/results/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.spec.org"
+      ],
+      "allowedRedirectHosts": [
+        "www.spec.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "CPU sustained"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:44.522Z",
+      "lastSuccessAt": "2026-07-19T00:23:44.522Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-nvidia-codec",
+      "organization": "NVIDIA Video Codec SDK",
+      "primaryUrl": "https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "developer.nvidia.com"
+      ],
+      "allowedRedirectHosts": [
+        "developer.nvidia.com"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "html_table",
+      "products": [
+        "NVDEC",
+        "NVENC"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:45.267Z",
+      "lastSuccessAt": "2026-07-19T00:23:45.267Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "price-br-dell",
+      "organization": "Dell Brasil",
+      "primaryUrl": "https://www.dell.com/pt-br/shop",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.dell.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.dell.com"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:45.895Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 1,
+      "notes": []
+    },
+    {
+      "id": "price-br-hp",
+      "organization": "HP Brasil",
+      "primaryUrl": "https://www.hp.com/br-pt/shop/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.hp.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.hp.com"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:45.895Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-br-lenovo",
+      "organization": "Lenovo Brasil",
+      "primaryUrl": "https://www.lenovo.com/br/pt/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.lenovo.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.lenovo.com"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:45.895Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-br-asus",
+      "organization": "ASUS Brasil",
+      "primaryUrl": "https://br.store.asus.com/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "br.store.asus.com"
+      ],
+      "allowedRedirectHosts": [
+        "br.store.asus.com"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "systems",
+        "components"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:45.895Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-br-apple",
+      "organization": "Apple Brasil",
+      "primaryUrl": "https://www.apple.com/br/shop/buy-mac",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.apple.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.apple.com"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:46.359Z",
+      "lastSuccessAt": "2026-07-19T00:23:46.359Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "price-br-kabum",
+      "organization": "KaBuM!",
+      "primaryUrl": "https://www.kabum.com.br/hardware",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.kabum.com.br"
+      ],
+      "allowedRedirectHosts": [
+        "www.kabum.com.br"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:58.320Z",
+      "lastSuccessAt": "2026-07-19T00:23:58.320Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "price-br-pichau",
+      "organization": "Pichau",
+      "primaryUrl": "https://www.pichau.com.br/hardware",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.pichau.com.br"
+      ],
+      "allowedRedirectHosts": [
+        "www.pichau.com.br"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:58.320Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-br-terabyte",
+      "organization": "TerabyteShop",
+      "primaryUrl": "https://www.terabyteshop.com.br/hardware",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.terabyteshop.com.br"
+      ],
+      "allowedRedirectHosts": [
+        "www.terabyteshop.com.br"
+      ],
+      "category": "price",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:58.320Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-us-nvidia",
+      "organization": "NVIDIA Marketplace",
+      "primaryUrl": "https://marketplace.nvidia.com/en-us/consumer/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "marketplace.nvidia.com"
+      ],
+      "allowedRedirectHosts": [
+        "marketplace.nvidia.com"
+      ],
+      "category": "price",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "GPU",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:58.320Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-us-newegg",
+      "organization": "Newegg",
+      "primaryUrl": "https://www.newegg.com/Components/Store/ID-1",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.newegg.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.newegg.com"
+      ],
+      "category": "price",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:58.661Z",
+      "lastSuccessAt": "2026-07-19T00:23:58.661Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "price-us-apple",
+      "organization": "Apple",
+      "primaryUrl": "https://www.apple.com/shop/buy-mac/mac-mini/m4-pro-chip-14-core-cpu-20-core-gpu-48gb-memory-1tb-storage",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.apple.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.apple.com"
+      ],
+      "category": "price",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:23:59.106Z",
+      "lastSuccessAt": "2026-07-19T00:23:59.106Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "price-us-bh",
+      "organization": "B&H",
+      "primaryUrl": "https://www.bhphotovideo.com/c/browse/computers-solutions/ci/9581",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.bhphotovideo.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.bhphotovideo.com"
+      ],
+      "category": "price",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:59.106Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-us-bestbuy",
+      "organization": "Best Buy",
+      "primaryUrl": "https://www.bestbuy.com/site/computers-pcs/computer-cards-components/abcat0507000.c",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.bestbuy.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.bestbuy.com"
+      ],
+      "category": "price",
+      "markets": [
+        "US"
+      ],
+      "currencies": [
+        "USD"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:23:59.106Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-de-alternate",
+      "organization": "Alternate",
+      "primaryUrl": "https://www.alternate.de/Hardware",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.alternate.de"
+      ],
+      "allowedRedirectHosts": [
+        "www.alternate.de"
+      ],
+      "category": "price",
+      "markets": [
+        "DE"
+      ],
+      "currencies": [
+        "EUR"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:24:00.281Z",
+      "lastSuccessAt": "2026-07-19T00:24:00.281Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "price-de-apple",
+      "organization": "Apple",
+      "primaryUrl": "https://www.apple.com/de/shop/buy-mac/mac-mini/m4-chip-10%E2%80%91core-cpu-10%E2%80%91core-gpu-24-gb-arbeitsspeicher-1tb-speicher",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.apple.com"
+      ],
+      "allowedRedirectHosts": [
+        "www.apple.com"
+      ],
+      "category": "price",
+      "markets": [
+        "DE"
+      ],
+      "currencies": [
+        "EUR"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:24:00.751Z",
+      "lastSuccessAt": "2026-07-19T00:24:00.751Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "price-de-cyberport",
+      "organization": "Cyberport",
+      "primaryUrl": "https://www.cyberport.de/pc-und-zubehoer.html",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.cyberport.de"
+      ],
+      "allowedRedirectHosts": [
+        "www.cyberport.de"
+      ],
+      "category": "price",
+      "markets": [
+        "DE"
+      ],
+      "currencies": [
+        "EUR"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:24:00.751Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-de-notebooksbilliger",
+      "organization": "notebooksbilliger",
+      "primaryUrl": "https://www.notebooksbilliger.de/pc+hardware",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.notebooksbilliger.de"
+      ],
+      "allowedRedirectHosts": [
+        "www.notebooksbilliger.de"
+      ],
+      "category": "price",
+      "markets": [
+        "DE"
+      ],
+      "currencies": [
+        "EUR"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components",
+        "systems"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:24:00.751Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "price-de-mindfactory",
+      "organization": "Mindfactory",
+      "primaryUrl": "https://www.mindfactory.de/Hardware.html",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.mindfactory.de"
+      ],
+      "allowedRedirectHosts": [
+        "www.mindfactory.de"
+      ],
+      "category": "price",
+      "markets": [
+        "DE"
+      ],
+      "currencies": [
+        "EUR"
+      ],
+      "parser": "json_ld",
+      "products": [
+        "components"
+      ],
+      "trustTier": 2,
+      "maxRequestsPerRun": 80,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "unavailable",
+      "lastRunAt": "2026-07-19T00:24:00.751Z",
+      "lastSuccessAt": null,
+      "consecutiveFailures": 0,
+      "notes": [
+        "Registrada para auditoria; coleta desativada enquanto exigir acesso interativo ou não autorizar automação."
+      ]
+    },
+    {
+      "id": "fx-bcb-ptax",
+      "organization": "Banco Central do Brasil",
+      "primaryUrl": "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/aplicacao#!/recursos",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "olinda.bcb.gov.br"
+      ],
+      "allowedRedirectHosts": [
+        "olinda.bcb.gov.br"
+      ],
+      "category": "exchange_rate",
+      "markets": [
+        "BR"
+      ],
+      "currencies": [
+        "BRL"
+      ],
+      "parser": "api",
+      "products": [
+        "USD/BRL",
+        "EUR/BRL"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": false,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:24:01.849Z",
+      "lastSuccessAt": "2026-07-19T00:24:01.849Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "fx-ecb",
+      "organization": "European Central Bank",
+      "primaryUrl": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.ecb.europa.eu"
+      ],
+      "allowedRedirectHosts": [
+        "www.ecb.europa.eu"
+      ],
+      "category": "exchange_rate",
+      "markets": [
+        "DE",
+        "US"
+      ],
+      "currencies": [
+        "EUR",
+        "USD"
+      ],
+      "parser": "api",
+      "products": [
+        "EUR/USD"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": false,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:24:02.424Z",
+      "lastSuccessAt": "2026-07-19T00:24:02.424Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "fx-federal-reserve",
+      "organization": "Federal Reserve",
+      "primaryUrl": "https://www.federalreserve.gov/releases/h10/current/",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "www.federalreserve.gov"
+      ],
+      "allowedRedirectHosts": [
+        "www.federalreserve.gov"
+      ],
+      "category": "exchange_rate",
+      "markets": [
+        "US",
+        "DE"
+      ],
+      "currencies": [
+        "USD",
+        "EUR"
+      ],
+      "parser": "html_table",
+      "products": [
+        "USD/EUR"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T00:24:02.761Z",
+      "lastSuccessAt": "2026-07-19T00:24:02.761Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    }
+  ]
+}
