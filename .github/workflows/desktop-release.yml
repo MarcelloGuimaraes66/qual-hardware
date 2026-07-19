@@ -51,6 +51,11 @@ jobs:
       - name: Smoke test packaged desktop
         if: matrix.platform != 'linux'
         run: npm run desktop:smoke
+      - name: Configure Chromium sandbox helper for unpacked Linux smoke
+        if: matrix.platform == 'linux'
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
       - name: Smoke test packaged desktop under Xvfb
         if: matrix.platform == 'linux'
         run: xvfb-run --auto-servernum npm run desktop:smoke

@@ -33,4 +33,6 @@ Primeira execução remota: macOS aprovado; Windows compilou/empacotou e revelou
 
 Ubuntu também compilou/empacotou, mas o Xvfb atingiu o limite de 30 segundos antes de expor o renderer após a consulta segura ao canal. O limite exclusivo do smoke foi elevado para 90 segundos e uma nova falha passará a incluir os logs do Electron. Nenhum timeout do aplicativo foi relaxado.
 
+Segunda execução Ubuntu: os novos logs provaram que o Chromium abortou porque o `chrome-sandbox` do pacote descompactado não tinha proprietário root/modo `4755` no runner. Os workflows de CI e release agora configuram essas permissões antes do smoke Linux. Nenhum `--no-sandbox` foi introduzido; a proteção permanece obrigatória.
+
 Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.
