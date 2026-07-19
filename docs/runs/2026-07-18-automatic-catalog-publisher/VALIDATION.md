@@ -24,9 +24,7 @@
 - SHA-256, Ed25519, adulteração, sequência/cadeia, rollback e ativação atômica.
 - Abertura de banco v3 e migração v4 sem perda de linha existente.
 
-## Gates restantes antes da publicação
-
-- Dry-run do workflow, primeira Release assinada e smoke consumindo a Release.
+## Gates externos concluídos
 
 Primeira execução remota: macOS aprovado; Windows compilou/empacotou e revelou que a saída do utilitário ASAR usa `\\` naquele sistema. O smoke foi corrigido para normalizar separadores antes de inspecionar o conteúdo e precisa ser reexecutado. A falha não ocorreu dentro do aplicativo.
 
@@ -42,4 +40,22 @@ Dry-run corrigido aprovado no `main`: gate, coleta real, validação determinís
 
 Primeira tentativa assinada: assinatura do bundle, validação Ed25519 contra a chave pública compilada e assinatura/validação do relatório foram aprovadas. O upload ao branch `catalog-data` foi interrompido antes da Release porque o Base64 do bundle excedeu o limite de argumentos do shell. O workflow agora gera um JSON de requisição em arquivo e o fornece ao `gh api --input`, sem colocar o conteúdo na linha de comando. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666684682>. Nenhuma Release foi criada nessa tentativa.
 
-Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.
+A correção do upload passou novamente na matriz nativa: Windows 11 x64, macOS 26 arm64 e Ubuntu 24.04 x64/Xvfb. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666800350>.
+
+Primeira publicação real concluída em <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666855646>:
+
+- Release pública e append-only: <https://github.com/MarcelloGuimaraes66/qual-hardware/releases/tag/catalog-2026-07-19.1>;
+- sequência `1`, `keyId` `catalog-2026-01`, validade até `2026-08-06T00:25:00.862Z`;
+- 21 equipamentos, 49 componentes, 5 benchmarks, 12 preços e 39 fontes;
+- 19 fontes ativas e saudáveis, zero fonte ativa degradada/falha e 20 fontes indisponíveis preservadas sem contorno;
+- mercados BR/US/DE e moedas BRL/USD/EUR;
+- `catalog-bundle.json` SHA-256 `0265791336fb672fc14bd2a0982b9f457d1ba3806faa702c8cb18156749b9480`;
+- checksums dos três arquivos publicados, assinatura do bundle e assinatura do relatório revalidados após download;
+- os quatro arquivos também existem em `catalog-data/publications/catalog-2026-07-19.1/`;
+- a issue automática de saúde foi fechada no sucesso.
+
+O smoke do pacote macOS existente foi repetido depois da Release e aprovado. Em um `userData` temporário novo, o desktop encontrou a Release sem configuração, validou o canal oficial e ativou atomicamente a sequência `1` no SQLite com o mesmo hash do bundle.
+
+Uma nova execução com publicação habilitada foi disparada imediatamente. Somente o gate `due` executou; coleta, Qwen, validação final e publicação foram corretamente ignorados porque ainda não transcorreram 15 dias. Continuou existindo exatamente uma Release. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666984161>.
+
+Não restam gates de software desta entrega. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI e não deve ser descrita como teste físico já realizado.
