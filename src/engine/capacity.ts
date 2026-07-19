@@ -242,7 +242,7 @@ export function calculateScenarioDemand(scenario: CapacityScenario): {
 } {
   const groups = scenario.cameraGroups.map((group) => calculateCameraGroupDemand(
     group,
-    scenario.workloadContractVersion === WORKLOAD_CONTRACT_VERSION,
+    scenario.workloadContractVersion === WORKLOAD_CONTRACT_VERSION || scenario.workloadContractVersion === "perceptrum-workload/3.0.0",
   ));
   const fixed = calculateFixedWorkloadDemand(scenario);
   let aggregate = fixed;

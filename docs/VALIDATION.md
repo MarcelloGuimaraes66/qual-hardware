@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, 70+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 21-item catalog, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v6, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 3.0 exports, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, 80+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v7, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 4.0 exports, single-instance behavior and persistence after restart.
 
 ```sh
 npm ci
@@ -30,7 +30,7 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 4. All fifteen stages, four phase summaries, exact fingerprint/build/model hashes, temperatures and frame counters are present. The stages include frame extraction, Jobs, Intelligence, database persistence and concurrent dashboard queries in addition to media, memory, storage, network and thermal work.
 5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases but never creates importable evidence.
 6. Import rejects a selected catalog profile when CPU, GPU or form factor does not match the measured fingerprint.
-7. Results 1.0 and 1.1 remain readable as historical/diagnostic evidence. Version 2.0 is required for purchase eligibility and additionally requires workload 3.0, production-pipeline proof, fifteen-stage coverage and artifact SHA-256.
+7. Results 1.0 and 1.1 remain readable as historical/diagnostic evidence. Version 2.0 is required for purchase eligibility and additionally requires workload 3.1, production-pipeline proof concurrent with all four phases, fifteen-stage coverage and artifact SHA-256.
 8. Session tests cover token hashing, expiry, replay, callback authentication, protocol allowlisting, native Documents paths, live progress and automatic result persistence/recalculation.
 
 ## Audited source baseline

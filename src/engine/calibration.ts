@@ -17,24 +17,9 @@ import {
   LOCAL_CALIBRATION_VERSION,
   WORKLOAD_CONTRACT_VERSION,
 } from "../shared/types.js";
+import { isPublicObservationEligible, REQUIRED_EVIDENCE_STAGES } from "./evidence.js";
 
-export const REQUIRED_CALIBRATION_STAGES: CalibrationStage[] = [
-  "rtsp_ingest",
-  "video_decode",
-  "bgr_processing",
-  "video_encode",
-  "disk_write",
-  "disk_read",
-  "frame_extraction",
-  "local_inference",
-  "memory_bandwidth",
-  "network_ingest",
-  "job_scheduler",
-  "intelligence_scheduler",
-  "database_persistence",
-  "dashboard_queries",
-  "thermal_sustain",
-];
+export const REQUIRED_CALIBRATION_STAGES: CalibrationStage[] = REQUIRED_EVIDENCE_STAGES;
 
 const RESERVE_BY_CLASS: Record<Exclude<CalibrationConfidenceClass, "none">, number> = {
   A: 20,
@@ -59,18 +44,6 @@ function comparableBenchmark(
     (!target.componentKind || !anchor.componentKind || target.componentKind === anchor.componentKind);
 }
 
-function publicObservationEligible(observation: PublicBenchmarkObservation): boolean {
-  const rejectedFlags = new Set([
-    "anonymous", "overclock", "incomplete_configuration", "missing_driver", "missing_power",
-    "incompatible_version", "marketing_only", "unverified", "synthetic_projection",
-  ]);
-  return observation.sourceTier <= 2 &&
-    observation.reproducible === true &&
-    Boolean(observation.benchmarkSuiteId && observation.metricName && observation.evidenceLocator) &&
-    /^[0-9a-f]{64}$/i.test(observation.rawArtifactSha256 ?? "") &&
-    !(observation.qualityFlags ?? []).some((flag) => rejectedFlags.has(flag));
-}
-
 function benchmarkRatio(target: PublicBenchmarkObservation, anchor: PublicBenchmarkObservation): number {
   if (!comparableBenchmark(target, anchor)) return Number.NaN;
   return target.higherIsBetter ? target.score / anchor.score : anchor.score / target.score;
@@ -90,6 +63,9 @@ function calibrationRunEligible(run: LocalCalibrationRun): boolean {
     pipelineProof.databaseWritesPersisted === true &&
     pipelineProof.intelligenceSchedulerExecuted === true &&
     pipelineProof.dashboardQueriesExecuted === true &&
+    pipelineProof.concurrentWithLoad === true &&
+    ["warmup", "ramp", "sustained", "surge"].every((phase) =>
+      pipelineProof.phaseCoverage?.some((item) => item.phase === phase && item.completedProbeCount > 0)) &&
     run.qualityGate?.eligibleForCapacityExtrapolation === true &&
     run.externalRequestCount === 0 && run.openAiRequestCount === 0 &&
     REQUIRED_CALIBRATION_STAGES.every((stage) => {
@@ -138,13 +114,13 @@ function contributionsFor(
   observations: PublicBenchmarkObservation[],
   excludedRunId?: string,
 ): Contribution[] {
-  const targets = observations.filter((item) => item.hardwareTemplateId === target.id && item.stage === stage && publicObservationEligible(item));
+  const targets = observations.filter((item) => item.hardwareTemplateId === target.id && item.stage === stage && isPublicObservationEligible(item));
   const contributions: Contribution[] = [];
   for (const run of runs) {
     if (run.id === excludedRunId || !run.fingerprint.hardwareTemplateId || !calibrationRunEligible(run)) continue;
     const measured = run.stages.find((item) => item.stage === stage);
     if (!measured || measured.safeCameraCapacity === null || measured.safeCameraCapacity <= 0) continue;
-    const anchors = observations.filter((item) => item.hardwareTemplateId === run.fingerprint.hardwareTemplateId && item.stage === stage && publicObservationEligible(item));
+    const anchors = observations.filter((item) => item.hardwareTemplateId === run.fingerprint.hardwareTemplateId && item.stage === stage && isPublicObservationEligible(item));
     for (const targetObservation of targets) {
       const anchor = anchors.find((item) => comparableBenchmark(targetObservation, item));
       if (!anchor) continue;

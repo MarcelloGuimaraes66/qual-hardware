@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "qual-hardware-qwen-classification/1.0.0",
+  "metadata": {
+    "model": "Qwen/Qwen3-1.7B-GGUF:Q8_0",
+    "modelSha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+    "promptVersion": "qual-hardware-catalog-normalizer/1.0.0",
+    "temperature": 0,
+    "mode": "/no_think"
+  },
+  "used": false,
+  "classifications": []
+}

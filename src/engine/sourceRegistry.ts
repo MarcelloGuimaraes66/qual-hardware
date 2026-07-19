@@ -43,7 +43,14 @@ export const BUNDLED_SOURCE_REGISTRY: SourceRegistry = {
     source("oem-msi", "MSI", "https://us.msi.com/Laptops", "oem", "sitemap", ["laptop", "desktop", "workstation"], ["US"], ["USD"], "unavailable"),
     source("oem-gigabyte", "Gigabyte / Aorus", "https://www.gigabyte.com/Laptop", "oem", "sitemap", ["laptop", "workstation", "server"], [], [], "unavailable"),
     source("oem-supermicro", "Supermicro", "https://www.supermicro.com/en/products/systems", "oem", "sitemap", ["workstation", "server"]),
-    source("benchmark-mlcommons", "MLCommons", "https://mlcommons.org/benchmarks/inference-datacenter/", "benchmark", "csv", ["local_inference"]),
+    source(
+      "benchmark-mlcommons",
+      "MLCommons",
+      "https://raw.githubusercontent.com/mlcommons/inference_results_v6.0/main/summary_results.json",
+      "benchmark",
+      "api",
+      ["local_inference", "Qwen3-VL", "GPU"],
+    ),
     source("benchmark-openbenchmarking", "OpenBenchmarking", "https://openbenchmarking.org/suites/", "benchmark", "api", ["CPU", "GPU", "storage", "memory"], [], [], "unavailable"),
     source("benchmark-openbenchmarking-stream", "OpenBenchmarking / STREAM", "https://openbenchmarking.org/test/pts/stream", "benchmark", "html_table", ["memory_bandwidth"]),
     source("benchmark-openbenchmarking-fio", "OpenBenchmarking / fio", "https://openbenchmarking.org/test/pts/fio", "benchmark", "html_table", ["disk_read", "disk_write", "IOPS", "latency"]),
@@ -55,7 +62,10 @@ export const BUNDLED_SOURCE_REGISTRY: SourceRegistry = {
       "https://opendata.blender.org/devices/NVIDIA%20RTX%206000%20Ada%20Generation/",
       "https://opendata.blender.org/devices/Apple%20M4%20Pro/"
     ]),
-    source("benchmark-spec", "SPEC", "https://www.spec.org/cpu2017/results/", "benchmark", "html_table", ["CPU sustained"]),
+    source("benchmark-spec", "SPEC", "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250126-46110.csv", "benchmark", "csv", ["CPU sustained"], [], [], "active", [], [
+      "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250126-46114.csv",
+      "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250127-46190.csv",
+    ]),
     source("benchmark-nvidia-codec", "NVIDIA Video Codec SDK", "https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new", "benchmark", "html_table", ["NVDEC", "NVENC"]),
     source("benchmark-intel-vpl", "Intel Video Processing Library", "https://www.intel.com/content/www/us/en/developer/tools/vpl/overview.html", "benchmark", "html_table", ["Intel decode", "Intel encode", "video processing"]),
     source("benchmark-amd-video", "AMD Video and Streaming", "https://www.amd.com/en/products/software/adrenalin/video-streaming.html", "benchmark", "html_table", ["AMD VCN", "H.264", "H.265", "AV1"]),

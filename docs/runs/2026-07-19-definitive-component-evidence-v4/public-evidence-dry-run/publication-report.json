@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "qual-hardware-publication-report/1.0.0",
+  "publicationId": "catalog-2026-07-19.1",
+  "sequence": 1,
+  "generatedAt": "2026-07-19T22:45:11.786Z",
+  "checkedSources": 2,
+  "successfulSources": 2,
+  "skippedSources": 0,
+  "failedSources": [],
+  "observations": 18,
+  "componentInventory": {
+    "discovered": 218,
+    "qualified": 0
+  },
+  "benchmarkCoverage": {
+    "total": 18,
+    "eligible": 2,
+    "referenceOnly": 16,
+    "orphans": 0
+  },
+  "qwenUsed": false,
+  "qwen": {
+    "metadata": {
+      "model": "Qwen/Qwen3-1.7B-GGUF:Q8_0",
+      "modelSha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+      "promptVersion": "qual-hardware-catalog-normalizer/1.0.0",
+      "temperature": 0,
+      "mode": "/no_think"
+    },
+    "classifications": []
+  },
+  "summary": {
+    "added": 251,
+    "updated": 0,
+    "unchanged": 0,
+    "rejected": 0,
+    "checkedWithoutChanges": false
+  },
+  "guarantees": {
+    "openAiCalls": 0,
+    "paidAiCalls": 0,
+    "userDataUploaded": false,
+    "appendOnly": true
+  }
+}

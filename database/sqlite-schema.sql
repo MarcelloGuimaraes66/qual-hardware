@@ -333,4 +333,125 @@ CREATE TABLE IF NOT EXISTS capacity_prediction_validations (
   validated_at TEXT NOT NULL
 ) STRICT;
 
-PRAGMA user_version = 6;
+-- v7 adds an auditable component/BOM layer without changing or replacing the
+-- v1-v6 JSON records. Historical rows remain the source for legacy reports.
+CREATE TABLE IF NOT EXISTS component_identities (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  manufacturer TEXT NOT NULL,
+  canonical_mpn TEXT NOT NULL,
+  market_state TEXT NOT NULL CHECK (market_state IN ('active','discontinued','reference_only')),
+  inventory_state TEXT NOT NULL CHECK (inventory_state IN ('discovered_inventory','qualified_recommendation_universe')),
+  component_json TEXT NOT NULL CHECK (json_valid(component_json)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(manufacturer, canonical_mpn, kind)
+) STRICT;
+CREATE INDEX IF NOT EXISTS component_identities_kind_idx
+  ON component_identities(kind, inventory_state, market_state, manufacturer);
+
+CREATE TABLE IF NOT EXISTS component_aliases (
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  alias TEXT NOT NULL,
+  normalized_alias TEXT NOT NULL,
+  source_url TEXT,
+  PRIMARY KEY(component_id, normalized_alias)
+) STRICT;
+CREATE INDEX IF NOT EXISTS component_aliases_normalized_idx
+  ON component_aliases(normalized_alias);
+
+CREATE TABLE IF NOT EXISTS component_specification_versions (
+  id TEXT PRIMARY KEY,
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  specification_version TEXT NOT NULL,
+  specification_json TEXT NOT NULL CHECK (json_valid(specification_json)),
+  evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
+  raw_artifact_sha256 TEXT,
+  observed_at TEXT NOT NULL,
+  imported_at TEXT NOT NULL,
+  UNIQUE(component_id, specification_version, raw_artifact_sha256)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS component_compatibility_rules (
+  id TEXT PRIMARY KEY,
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  rule_type TEXT NOT NULL,
+  rule_json TEXT NOT NULL CHECK (json_valid(rule_json)),
+  evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS component_compatibility_rules_component_idx
+  ON component_compatibility_rules(component_id, rule_type);
+
+CREATE TABLE IF NOT EXISTS benchmark_artifacts (
+  sha256 TEXT PRIMARY KEY CHECK (length(sha256) = 64),
+  source_url TEXT NOT NULL,
+  content_type TEXT,
+  license_policy TEXT NOT NULL,
+  evidence_locator TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  metadata_json TEXT NOT NULL CHECK (json_valid(metadata_json))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS benchmark_observation_component_coverage (
+  observation_id TEXT NOT NULL REFERENCES public_benchmark_observations(id),
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  stage TEXT NOT NULL,
+  eligibility TEXT NOT NULL CHECK (eligibility IN ('eligible','reference_only','rejected')),
+  assessment_json TEXT NOT NULL CHECK (json_valid(assessment_json)),
+  PRIMARY KEY(observation_id, component_id, stage)
+) STRICT;
+CREATE INDEX IF NOT EXISTS benchmark_component_coverage_idx
+  ON benchmark_observation_component_coverage(component_id, stage, eligibility);
+
+CREATE TABLE IF NOT EXISTS component_builds (
+  id TEXT PRIMARY KEY,
+  build_kind TEXT NOT NULL CHECK (build_kind IN ('oem_exact','custom_bom','historical_template')),
+  hardware_template_id TEXT,
+  operating_system TEXT NOT NULL,
+  build_json TEXT NOT NULL CHECK (json_valid(build_json)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS component_build_items (
+  build_id TEXT NOT NULL REFERENCES component_builds(id),
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  role TEXT NOT NULL,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  required INTEGER NOT NULL CHECK (required IN (0,1)),
+  PRIMARY KEY(build_id, component_id, role)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS component_build_decisions (
+  id TEXT PRIMARY KEY,
+  build_id TEXT NOT NULL REFERENCES component_builds(id),
+  compatible INTEGER NOT NULL CHECK (compatible IN (0,1)),
+  decision_code TEXT NOT NULL,
+  decision_json TEXT NOT NULL CHECK (json_valid(decision_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS evidence_coverage_reports (
+  id TEXT PRIMARY KEY,
+  subject_type TEXT NOT NULL CHECK (subject_type IN ('component','build','catalog','prediction')),
+  subject_id TEXT NOT NULL,
+  report_json TEXT NOT NULL CHECK (json_valid(report_json)),
+  generated_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS evidence_coverage_subject_idx
+  ON evidence_coverage_reports(subject_type, subject_id, generated_at DESC);
+
+CREATE TABLE IF NOT EXISTS capacity_cross_validations (
+  id TEXT PRIMARY KEY,
+  model_version TEXT NOT NULL,
+  excluded_calibration_run_id TEXT NOT NULL,
+  predicted_capacity INTEGER,
+  measured_capacity INTEGER NOT NULL,
+  overprediction_percent REAL NOT NULL,
+  passed INTEGER NOT NULL CHECK (passed IN (0,1)),
+  validation_json TEXT NOT NULL CHECK (json_valid(validation_json)),
+  validated_at TEXT NOT NULL
+) STRICT;
+
+PRAGMA user_version = 7;

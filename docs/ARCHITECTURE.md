@@ -39,14 +39,14 @@
 ## Data flow
 
 1. A consultant defines camera groups and one or more agents per group.
-2. The engine normalizes the scenario against `perceptrum-workload/3.0.0`, generated from the production Perceptrum pipeline. Older contracts remain readable but cannot silently approve a purchase.
+2. The engine normalizes the scenario against `perceptrum-workload/3.1.0`, generated from the production Perceptrum pipeline. Older contracts remain readable but cannot silently approve a purchase.
 3. Demand is calculated independently for RTSP receive/decode, BGR processing, encode, frame extraction, CPU, RAM, GPU inference, VRAM/unified memory, disk read/write/capacity, LAN, Jobs, Steps, Agents, Intelligence, database/dashboard concurrency, queues and sustained thermals. RTSP FPS and AiQ inference FPS remain independent.
 4. Candidate hardware nodes are filtered by platform and runtime compatibility and evaluated with multidimensional compute/network allocation. Laptops and mini PCs compete for small CPU-decode/remote-model loads. Apple is opt-in; integrated/shared memory is never counted as dedicated NVIDIA VRAM. Every BOM still includes a modest NVMe workspace for the operating system and temporary inference files.
 5. The service emits minimum, recommended and N+1 designs, each with up to six compatible cost-ordered machines and Intel/AMD/OEM diversity after safety filtering.
 6. Qual Hardware creates an expiring authenticated session and opens `perceptrum://calibration/run`. Perceptrum downloads one exact plan over loopback, uses synthetic RTSP plus the real local AiQ/Qwen/Intelligence pipeline, saves `.qhcal.json` append-only in Documents and returns aggregate evidence and progress. Manual plan/result files remain recovery paths.
 7. Signed public stage observations scale physical anchors by a per-stage rule of three; the most conservative anchor and bottleneck win, followed by 20/30/40% margins and leave-one-out error checks.
 8. GitHub Actions checks the approved source registry every 15 days, validates structured observations, signs one immutable catalog bundle and publishes it as a `catalog-*` Release plus an append-only `catalog-data` history.
-9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically. SQLite v6 preserves all v1-v5 data and adds normalized benchmark suites, systems, runs, numerical metrics, quality assessments, model versions, per-stage results and cross-validations.
+9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically. SQLite v7 preserves all v1-v6 data and adds canonical component identities, aliases, versioned specifications, compatibility rules, BOMs, benchmark artifacts, coverage reports and cross-validations.
 
 ## Security model
 

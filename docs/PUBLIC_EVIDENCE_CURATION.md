@@ -4,7 +4,7 @@
 
 O inventário público é uma biblioteca ampla e atualizável de CPUs, GPUs, OEMs, memória, armazenamento e rede. Estar no inventário não transforma um componente em recomendação. O Qual Hardware só calcula capacidade de compra quando o componente possui evidência compatível com uma etapa real do Perceptrum e quando há calibrações físicas elegíveis para corrigir o benchmark público.
 
-O aplicativo não faz scraping ao vivo. O publicador central produz um snapshot `qual-hardware-evidence-catalog/3.0.0`, valida cada registro por regras determinísticas e o assina com Ed25519. A importação preserva todos os snapshots anteriores, ativa o novo conjunto apenas depois de validar schema, assinatura e ordem cronológica e registra um histórico compreensível para o operador.
+O aplicativo não faz scraping ao vivo. O publicador central produz um snapshot `qual-hardware-evidence-catalog/4.0.0`, valida cada registro por regras determinísticas e o assina com Ed25519. A importação preserva todos os snapshots anteriores, ativa o novo conjunto apenas depois de validar schema, assinatura e ordem cronológica e registra um histórico compreensível para o operador.
 
 ## Fontes aceitas por prioridade
 
@@ -16,7 +16,13 @@ Marketing isolado, score anônimo, overclock não equivalente, resultado sem dri
 
 ## Mapeamento obrigatório para o pipeline
 
-Cada observação identifica um único estágio entre os quinze do workload 3.0: ingestão RTSP, decode, BGR/movimento, encode, escrita, leitura, extração de quadros, inferência Qwen local, largura de memória, rede, Jobs, Intelligence, persistência do banco, consultas de dashboard e sustentação térmica. O registro inclui componente, benchmark, versão, perfil, unidade, direção do score, sistema, configuração, data, URL, localização da evidência, checksum do artefato e sinalizadores de reprodutibilidade.
+Cada observação identifica um único estágio entre os quinze do workload 3.1: ingestão RTSP, decode, BGR/movimento, encode, escrita, leitura, extração de quadros, inferência Qwen local, largura de memória, rede, Jobs, Intelligence, persistência do banco, consultas de dashboard e sustentação térmica. O registro inclui componente, benchmark, versão, perfil, unidade, direção do score, sistema, configuração, data, URL, localização da evidência, checksum do artefato e sinalizadores de reprodutibilidade.
+
+## Estado auditado em 19 de julho de 2026
+
+O dry-run público desta refatoração registrou 218 componentes derivados dos 21 sistemas históricos e importou 18 observações numéricas: duas divulgações SPEC CPU 2017 elegíveis para o estágio de CPU e 16 resultados MLPerf Inference v6 preservados como referência. Os resultados MLPerf usam Qwen3-VL 235B, não o Qwen visual 2B/4B do Perceptrum; por isso o sistema os rejeita para `local_inference`. Foram encontrados zero benchmarks órfãos e zero componentes qualificados para aquisição, situação correta enquanto não existirem as três calibrações físicas completas mínimas.
+
+Os artefatos auditáveis ficam em `docs/runs/2026-07-19-definitive-component-evidence-v4/public-evidence-dry-run/`. O coletor armazena hash, fonte e configuração; não redistribui as ferramentas licenciadas do SPEC. MLCommons é lido a partir do repositório público de resultados, e Qwen não extrai nem decide valores numéricos.
 
 Não é permitido usar um score de CPU para preencher GPU, disco ou rede. Para NVIDIA, NVDEC/NVENC oficial complementa — mas não substitui — a medição sustentada do Perceptrum. Para inferência, o benchmark precisa usar o modelo e backend comparáveis ao AiQ/Qwen local. FPS RTSP e FPS de inferência permanecem métricas diferentes.
 

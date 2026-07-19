@@ -3,11 +3,14 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { HARDWARE_CATALOG, SEED_PRICE_QUOTES } from "../engine/catalog.js";
+import { buildHistoricalComponentBuilds, deriveComponentCatalog, validateBuildCompatibility } from "../engine/componentCatalog.js";
 import { BUNDLED_SOURCE_REGISTRY } from "../engine/sourceRegistry.js";
 import { assertDedicatedSqlitePath, QUAL_HARDWARE_SQLITE_SCHEMA_VERSION } from "./database.js";
+import { isPublicObservationEligible } from "../engine/evidence.js";
 import type {
   BenchmarkManifest,
   BenchmarkResultRecord,
+  ComponentBuild,
   CapacityPrediction,
   CapacityRecommendation,
   CapacityScenario,
@@ -71,6 +74,10 @@ export interface PlannerStore {
   saveEvidenceSnapshot(snapshot: EvidenceCatalogSnapshot): Promise<void>;
   getActiveEvidenceSnapshot(): Promise<EvidenceCatalogSnapshot | null>;
   listHardwareComponents(): Promise<HardwareComponent[]>;
+  listCatalogComponents(): Promise<HardwareComponent[]>;
+  saveComponentBuilds(builds: ComponentBuild[]): Promise<void>;
+  listComponentBuilds(): Promise<ComponentBuild[]>;
+  getComponentBuild(id: string): Promise<ComponentBuild | null>;
   saveCatalogUpdateRun(run: CatalogUpdateRun): Promise<void>;
   listCatalogUpdateRuns(): Promise<CatalogUpdateRun[]>;
   saveSourceRegistry(sources: CatalogSource[]): Promise<void>;
@@ -105,9 +112,9 @@ export class MemoryPlannerStore implements PlannerStore {
   private calibrationRuns = new Map<string, LocalCalibrationRun>();
   private calibrationSessions = new Map<string, CalibrationSessionRecord>();
   private observations = new Map<string, PublicBenchmarkObservation>();
-  private components = new Map<string, HardwareComponent>();
+  private components = new Map<string, HardwareComponent>(deriveComponentCatalog(HARDWARE_CATALOG).components.map((item) => [item.id, item]));
   private activeObservationIds = new Set<string>();
-  private activeComponentIds = new Set<string>();
+  private activeComponentIds = new Set<string>(deriveComponentCatalog(HARDWARE_CATALOG).components.map((item) => item.id));
   private activeEvidenceSnapshot: EvidenceCatalogSnapshot | null = null;
   private catalogUpdateRuns = new Map<string, CatalogUpdateRun>();
   private catalogSources = new Map<string, CatalogSource>(BUNDLED_SOURCE_REGISTRY.sources.map((source) => [source.id, structuredClone(source)]));
@@ -116,6 +123,9 @@ export class MemoryPlannerStore implements PlannerStore {
   private publications = new Map<number, CatalogPublication>();
   private activePublication: CatalogPublication | null = null;
   private predictions = new Map<string, CapacityPrediction>();
+  private builds = new Map<string, ComponentBuild>(buildHistoricalComponentBuilds(
+    HARDWARE_CATALOG, deriveComponentCatalog(HARDWARE_CATALOG).components, [], [],
+  ).map((item) => [item.id, item]));
   private quotes = [...SEED_PRICE_QUOTES];
   private hardware = [...HARDWARE_CATALOG];
   private jobs: Array<ClaimedJob & { status: "queued" | "running" | "completed" | "failed" }> = [];
@@ -199,6 +209,19 @@ export class MemoryPlannerStore implements PlannerStore {
   }
   async listHardwareComponents(): Promise<HardwareComponent[]> {
     return [...this.activeComponentIds].map((id) => this.components.get(id)).filter((item): item is HardwareComponent => Boolean(item));
+  }
+  async listCatalogComponents(): Promise<HardwareComponent[]> {
+    return [...this.components.values()].map((item) => structuredClone(item)).sort((left, right) => left.id.localeCompare(right.id));
+  }
+  async saveComponentBuilds(builds: ComponentBuild[]): Promise<void> {
+    for (const build of builds) this.builds.set(build.id, structuredClone(build));
+  }
+  async listComponentBuilds(): Promise<ComponentBuild[]> {
+    return [...this.builds.values()].map((item) => structuredClone(item)).sort((left, right) => left.name.localeCompare(right.name));
+  }
+  async getComponentBuild(id: string): Promise<ComponentBuild | null> {
+    const build = this.builds.get(id);
+    return build ? structuredClone(build) : null;
   }
   async saveCatalogUpdateRun(run: CatalogUpdateRun): Promise<void> { this.catalogUpdateRuns.set(run.id, structuredClone(run)); }
   async listCatalogUpdateRuns(): Promise<CatalogUpdateRun[]> {
@@ -367,6 +390,73 @@ export class SqlitePlannerStore implements PlannerStore {
       rawArtifactSha256: observation.rawArtifactSha256 ?? null,
       sampleCount: observation.sampleCount ?? null,
     }), importedAt);
+    if (observation.rawArtifactSha256 && observation.evidenceLocator) {
+      this.database.prepare(
+        "INSERT INTO benchmark_artifacts(sha256,source_url,content_type,license_policy,evidence_locator,retrieved_at,metadata_json) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sha256) DO UPDATE SET source_url=excluded.source_url,license_policy=excluded.license_policy,evidence_locator=excluded.evidence_locator,metadata_json=excluded.metadata_json",
+      ).run(observation.rawArtifactSha256, observation.sourceUrl, null, observation.licensePolicy ?? "unspecified",
+        observation.evidenceLocator, observation.observedAt, JSON.stringify({ benchmarkName: observation.benchmarkName, benchmarkVersion: observation.benchmarkVersion }));
+    }
+    const componentIds = [...new Set([observation.componentId, ...(observation.componentIds ?? [])].filter((id): id is string => Boolean(id)))];
+    for (const componentId of componentIds) {
+      const exists = this.database.prepare("SELECT 1 AS present FROM component_identities WHERE id=?").get(componentId);
+      if (!exists) continue;
+      const eligibility = isPublicObservationEligible(observation) ? "eligible"
+        : observation.eligibility === "rejected" ? "rejected" : "reference_only";
+      this.database.prepare(
+        "INSERT INTO benchmark_observation_component_coverage(observation_id,component_id,stage,eligibility,assessment_json) VALUES(?,?,?,?,?) ON CONFLICT(observation_id,component_id,stage) DO UPDATE SET eligibility=excluded.eligibility,assessment_json=excluded.assessment_json",
+      ).run(observation.id, componentId, observation.stage, eligibility, JSON.stringify({
+        qualityFlags: observation.qualityFlags ?? [], rejectionReasons: observation.rejectionReasons ?? [],
+      }));
+    }
+  }
+
+  private upsertComponentIdentity(component: HardwareComponent, importedAt: string): void {
+    const canonicalMpn = component.canonicalMpn ?? component.sku;
+    const marketState = component.marketState ?? "reference_only";
+    const inventoryState = component.inventoryState ?? "discovered_inventory";
+    this.database.prepare(
+      "INSERT INTO hardware_components(id,component_json,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET component_json=excluded.component_json,updated_at=excluded.updated_at",
+    ).run(component.id, JSON.stringify(component), importedAt);
+    this.database.prepare(
+      "INSERT INTO component_identities(id,kind,manufacturer,canonical_mpn,market_state,inventory_state,component_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,manufacturer=excluded.manufacturer,canonical_mpn=excluded.canonical_mpn,market_state=excluded.market_state,inventory_state=excluded.inventory_state,component_json=excluded.component_json,updated_at=excluded.updated_at",
+    ).run(component.id, component.kind, component.manufacturer, canonicalMpn, marketState, inventoryState,
+      JSON.stringify(component), component.discoveredAt ?? importedAt, importedAt);
+    const aliases = [...new Set([component.sku, canonicalMpn, ...(component.aliases ?? [])])];
+    const insertAlias = this.database.prepare(
+      "INSERT INTO component_aliases(component_id,alias,normalized_alias,source_url) VALUES(?,?,?,?) ON CONFLICT(component_id,normalized_alias) DO UPDATE SET alias=excluded.alias,source_url=excluded.source_url",
+    );
+    for (const alias of aliases) insertAlias.run(component.id, alias, alias.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(), component.sourceUrls[0] ?? null);
+    const evidence = component.evidence ?? [];
+    const version = component.specificationVersion ?? "legacy-v1";
+    const artifactHash = evidence[0]?.rawArtifactSha256 ?? null;
+    this.database.prepare(
+      "INSERT INTO component_specification_versions(id,component_id,specification_version,specification_json,evidence_json,raw_artifact_sha256,observed_at,imported_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET specification_json=excluded.specification_json,evidence_json=excluded.evidence_json,raw_artifact_sha256=excluded.raw_artifact_sha256,observed_at=excluded.observed_at,imported_at=excluded.imported_at",
+    ).run(`spec:${component.id}:${version}:${artifactHash ?? "unverified"}`, component.id, version, JSON.stringify(component.specifications),
+      JSON.stringify(evidence), artifactHash, component.updatedAt ?? importedAt, importedAt);
+    if (component.compatibility) {
+      this.database.prepare(
+        "INSERT INTO component_compatibility_rules(id,component_id,rule_type,rule_json,evidence_json,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET rule_json=excluded.rule_json,evidence_json=excluded.evidence_json",
+      ).run(`compat:${component.id}:${version}`, component.id, "declared_capabilities", JSON.stringify(component.compatibility), JSON.stringify(evidence), importedAt);
+    }
+  }
+
+  private upsertComponentBuild(build: ComponentBuild, timestamp: string): void {
+    this.database.prepare(
+      "INSERT INTO component_builds(id,build_kind,hardware_template_id,operating_system,build_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET build_json=excluded.build_json,updated_at=excluded.updated_at",
+    ).run(build.id, build.kind, build.hardwareTemplateId, build.operatingSystem, JSON.stringify(build), build.createdAt, timestamp);
+    const insertItem = this.database.prepare(
+      "INSERT INTO component_build_items(build_id,component_id,role,quantity,required) VALUES(?,?,?,?,?) ON CONFLICT(build_id,component_id,role) DO UPDATE SET quantity=excluded.quantity,required=excluded.required",
+    );
+    for (const item of build.items) insertItem.run(build.id, item.componentId, item.role, item.quantity, item.required ? 1 : 0);
+    const insertDecision = this.database.prepare(
+      "INSERT INTO component_build_decisions(id,build_id,compatible,decision_code,decision_json,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET compatible=excluded.compatible,decision_json=excluded.decision_json",
+    );
+    for (const [index, decision] of build.compatibility.entries()) {
+      insertDecision.run(`decision:${build.id}:${index}:${decision.code}`, build.id, decision.compatible ? 1 : 0, decision.code, JSON.stringify(decision), timestamp);
+    }
+    this.database.prepare(
+      "INSERT INTO evidence_coverage_reports(id,subject_type,subject_id,report_json,generated_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET report_json=excluded.report_json,generated_at=excluded.generated_at",
+    ).run(`coverage:${build.id}:${build.createdAt}`, "build", build.id, JSON.stringify(build.coverage), timestamp);
   }
 
   private upsertNormalizedPrediction(prediction: CapacityPrediction): void {
@@ -421,6 +511,11 @@ export class SqlitePlannerStore implements PlannerStore {
       }
       for (const source of BUNDLED_SOURCE_REGISTRY.sources) {
         insertSource.run(source.id, JSON.stringify(source), source.state, source.lastRunAt, source.lastSuccessAt, source.consecutiveFailures, timestamp);
+      }
+      const derived = deriveComponentCatalog(HARDWARE_CATALOG);
+      for (const component of derived.components) this.upsertComponentIdentity(component, timestamp);
+      for (const build of buildHistoricalComponentBuilds(HARDWARE_CATALOG, derived.components, [], []).map((item) => validateBuildCompatibility(item, derived.components))) {
+        this.upsertComponentBuild(build, timestamp);
       }
       this.database.prepare("INSERT INTO catalog_snapshots(id,created_at) VALUES('bundled',?) ON CONFLICT(id) DO NOTHING").run(timestamp);
       const membership = this.database.prepare(
@@ -572,18 +667,19 @@ export class SqlitePlannerStore implements PlannerStore {
       this.database.prepare(
         "INSERT INTO evidence_catalog_snapshots(catalog_version,snapshot_json,generated_at,imported_at) VALUES(?,?,?,?) ON CONFLICT(catalog_version) DO UPDATE SET snapshot_json=excluded.snapshot_json,generated_at=excluded.generated_at,imported_at=excluded.imported_at",
       ).run(snapshot.catalogVersion, JSON.stringify(snapshot), snapshot.generatedAt, importedAt);
+      for (const component of snapshot.components ?? []) {
+        componentStatement.run(component.id, JSON.stringify(component), importedAt);
+        this.upsertComponentIdentity(component, importedAt);
+        this.database.prepare(
+          "INSERT INTO evidence_snapshot_components(catalog_version,component_id) VALUES(?,?) ON CONFLICT(catalog_version,component_id) DO NOTHING",
+        ).run(snapshot.catalogVersion, component.id);
+      }
       for (const observation of snapshot.observations) {
         observationStatement.run(observation.id, observation.hardwareTemplateId, observation.stage, observation.profileId, JSON.stringify(observation), observation.observedAt, importedAt);
         this.upsertNormalizedBenchmarkObservation(observation, importedAt);
         this.database.prepare(
           "INSERT INTO evidence_snapshot_observations(catalog_version,observation_id) VALUES(?,?) ON CONFLICT(catalog_version,observation_id) DO NOTHING",
         ).run(snapshot.catalogVersion, observation.id);
-      }
-      for (const component of snapshot.components ?? []) {
-        componentStatement.run(component.id, JSON.stringify(component), importedAt);
-        this.database.prepare(
-          "INSERT INTO evidence_snapshot_components(catalog_version,component_id) VALUES(?,?) ON CONFLICT(catalog_version,component_id) DO NOTHING",
-        ).run(snapshot.catalogVersion, component.id);
       }
       this.database.prepare(
         "INSERT INTO evidence_active_state(singleton,catalog_version,activated_at) VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET catalog_version=excluded.catalog_version,activated_at=excluded.activated_at",
@@ -602,6 +698,24 @@ export class SqlitePlannerStore implements PlannerStore {
     ).all());
     const selected = active.length ? active : rows(this.database.prepare("SELECT component_json FROM hardware_components ORDER BY id").all());
     return selected.map((row) => parseJson<HardwareComponent>(row.component_json));
+  }
+  async listCatalogComponents(): Promise<HardwareComponent[]> {
+    const result = rows(this.database.prepare("SELECT component_json FROM component_identities ORDER BY kind,manufacturer,canonical_mpn").all());
+    return result.map((row) => parseJson<HardwareComponent>(row.component_json));
+  }
+  async saveComponentBuilds(builds: ComponentBuild[]): Promise<void> {
+    this.inTransaction(() => {
+      const timestamp = now();
+      for (const build of builds) this.upsertComponentBuild(build, timestamp);
+    }, "IMMEDIATE");
+  }
+  async listComponentBuilds(): Promise<ComponentBuild[]> {
+    return rows(this.database.prepare("SELECT build_json FROM component_builds ORDER BY updated_at DESC,json_extract(build_json,'$.name') COLLATE NOCASE").all())
+      .map((row) => parseJson<ComponentBuild>(row.build_json));
+  }
+  async getComponentBuild(id: string): Promise<ComponentBuild | null> {
+    const row = this.database.prepare("SELECT build_json FROM component_builds WHERE id=?").get(id) as Record<string, unknown> | undefined;
+    return row ? parseJson<ComponentBuild>(row.build_json) : null;
   }
   async saveCatalogUpdateRun(run: CatalogUpdateRun): Promise<void> {
     this.database.prepare(
@@ -673,7 +787,10 @@ export class SqlitePlannerStore implements PlannerStore {
       this.database.prepare("INSERT INTO catalog_publications(sequence,publication_id,catalog_version,bundle_sha256,previous_bundle_sha256,key_id,publication_json,envelope_json,published_at,valid_until) VALUES(?,?,?,?,?,?,?,?,?,?)")
         .run(bundle.sequence, bundle.publicationId, bundle.catalogVersion, bundleSha256, bundle.previousBundleSha256, envelope.keyId, JSON.stringify(publication), JSON.stringify(envelope), bundle.publishedAt, bundle.validUntil);
       for (const item of bundle.hardware) insertHardware.run(item.id, JSON.stringify(item), timestamp);
-      for (const component of bundle.components) insertComponent.run(component.id, JSON.stringify(component), timestamp);
+      for (const component of bundle.components) {
+        insertComponent.run(component.id, JSON.stringify(component), timestamp);
+        this.upsertComponentIdentity(component, timestamp);
+      }
       for (const quote of bundle.prices) {
         if (quote.scope === "component" && quote.componentId) insertComponentQuote.run(quote.id, quote.componentId, bundle.sequence, JSON.stringify(quote), quote.observedAt);
         else if (quote.hardwareTemplateId) insertQuote.run(quote.id, quote.hardwareTemplateId, JSON.stringify(quote), quote.observedAt);

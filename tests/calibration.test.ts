@@ -54,6 +54,8 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
       intelligenceJobQueued: true, schedulerClaimedJob: true, aiqLocalCompleted: true, resultPersisted: true,
       jobSchedulerExecuted: true, jobRuntimeExecuted: true, jobStepRunsPersisted: true,
       databaseWritesPersisted: true, intelligenceSchedulerExecuted: true, dashboardQueriesExecuted: true,
+      concurrentWithLoad: true,
+      phaseCoverage: ["warmup", "ramp", "sustained", "surge"].map((phase) => ({ phase: phase as "warmup" | "ramp" | "sustained" | "surge", completedProbeCount: 1, failedProbeCount: 0 })),
     },
     qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", validationStatus: "anchor_approved", failures: [], warnings: [] },
     telemetryCapabilities: [{ id: "cpu.utilization", status: "measured", provider: "test" }],
@@ -67,7 +69,7 @@ function observations(): PublicBenchmarkObservation[] {
   const scores: Record<string, number> = { "anchor-a": 100, "anchor-b": 200, "anchor-d": 125, "target-c": 150 };
   return catalog.flatMap((hardware) => REQUIRED_CALIBRATION_STAGES.map((stage) => ({
     id: `${hardware.id}-${stage}`, hardwareTemplateId: hardware.id, stage,
-    profileId: `perceptrum-${stage}-v1`, benchmarkName: `Public ${stage}`,
+    profileId: `perceptrum-${stage}-v1`, benchmarkName: stage === "local_inference" ? "Qwen AiQ public inference" : `Public ${stage}`,
     benchmarkVersion: "1.0", score: scores[hardware.id]!, unit: "score", higherIsBetter: true as const,
     sourceTier: 1 as const, sourceUrl: `https://example.com/${stage}`, observedAt: "2026-07-18T12:00:00.000Z",
     operatingSystem: "windows" as const,

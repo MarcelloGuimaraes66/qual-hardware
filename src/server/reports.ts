@@ -308,6 +308,42 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
     ];
   }));
 
+  appendSheet(workbook, "Component Evidence", recommendations.flatMap((recommendation): ReportRow[] => {
+    const design = recommendation.primary;
+    const build = design.bom;
+    if (!build) return [{ policy: recommendation.policy, status: "Legacy recommendation without component BOM" }];
+    return build.items.map((item) => ({
+      policy: recommendation.policy,
+      buildId: build.id,
+      buildKind: build.kind,
+      componentId: item.componentId,
+      componentKind: item.kind,
+      role: item.role,
+      quantity: item.quantity,
+      required: item.required,
+      compatibility: build.compatibility.every((decision) => decision.compatible),
+      procurementEligibility: build.procurementGate.eligibility,
+      physicalAnchors: build.coverage.physicalAnchorCount,
+      coveragePercent: build.coverage.percent,
+      sourceUrls: build.sourceUrls.join("; "),
+    }));
+  }));
+
+  appendSheet(workbook, "Stage Evidence", recommendations.flatMap((recommendation): ReportRow[] => {
+    const design = recommendation.primary;
+    return (design.coverage?.stages ?? []).map((stage) => ({
+      policy: recommendation.policy,
+      hardware: design.hardware.name,
+      stage: stage.stage,
+      covered: stage.covered,
+      componentIds: stage.componentIds.join("; "),
+      eligibleBenchmarks: stage.eligibleObservationIds.join("; "),
+      referenceBenchmarks: stage.referenceObservationIds.join("; "),
+      physicalAnchors: stage.physicalAnchorRunIds.join("; "),
+      reasons: stage.reasons.join("; "),
+    }));
+  }));
+
   appendSheet(workbook, "Nodes", recommendations.flatMap((recommendation) => recommendation.primary.allocations.map((node) => ({
     policy: recommendation.policy,
     proposal: POLICY_LABELS[recommendation.policy],
@@ -516,6 +552,16 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   }
   writer.line(`Rede: ${hardware.nicGbps} GbE; fonte: ${hardware.powerSupply}; refrigeracao: ${hardware.cooling}.`);
   writer.line(`Chassi: ${hardware.chassis}; sistema operacional: ${hardware.windowsEdition}; indice de expansao: ${hardware.expansionScore}.`);
+
+  if (design.bom) {
+    writer.heading("BOM auditavel, compatibilidade e cobertura");
+    writer.line(`Build ${design.bom.id}; classe ${design.bom.kind}; gate ${design.bom.procurementGate.status}; cobertura ${design.bom.coverage.coveredStageCount}/${design.bom.coverage.requiredStageCount} estagios (${design.bom.coverage.percent}%); ancoras fisicas ${design.bom.coverage.physicalAnchorCount}/3.`, 9.5, true);
+    for (const item of design.bom.items) writer.line(`${item.role}: ${item.quantity} x ${item.componentId} (${item.kind})${item.required ? " - obrigatorio" : ""}.`);
+    for (const decision of design.bom.compatibility) writer.line(`${decision.compatible ? "COMPATIVEL" : "INCOMPATIVEL"} ${decision.code}: ${decision.message}`);
+    for (const stage of design.bom.coverage.stages) {
+      writer.line(`${stage.covered ? "COBERTO" : "BLOQUEADO"} ${stage.stage}: benchmarks ${stage.eligibleObservationIds.length}; ancoras ${stage.physicalAnchorRunIds.length}; ${stage.reasons.join(" ") || "evidencia completa"}.`);
+    }
+  }
 
   writer.heading("Custo por componente e total do projeto");
   if (design.price.componentEstimates?.length) {

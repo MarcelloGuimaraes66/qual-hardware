@@ -136,7 +136,7 @@ function stripMarkup(value: string): string {
 }
 
 function identifyingRecord(value: Record<string, unknown>): Record<string, unknown> | null {
-  const sku = value.sku ?? value.mpn ?? value.model ?? value.device ?? value.hardwareTemplateId ?? value.productId ?? value.product_id;
+  const sku = value.sku ?? value.mpn ?? value.model ?? value.device ?? value.name ?? value.hardwareTemplateId ?? value.productId ?? value.product_id;
   if (typeof sku !== "string" && typeof sku !== "number") return null;
   const normalized = { ...value };
   if (normalized.sku === undefined && normalized.mpn === undefined) normalized.sku = String(sku);
@@ -199,6 +199,9 @@ function deterministicRecords(contentType: string, text: string): Array<{ record
 }
 
 export function extractStructuredObservations(source: CatalogSource, url: string, contentType: string, text: string, retrievedAt: string): SourceObservation[] {
+  // The MLCommons summary has a purpose-built parser below. Recursively walking
+  // its JSON would create misleading component observations from nested values.
+  if (source.id === "benchmark-mlcommons" || source.id === "benchmark-spec") return [];
   const values: Record<string, unknown>[] = [];
   if (contentType.includes("json")) {
     try { values.push(...jsonLdValues(JSON.parse(text))); } catch { throw new Error("invalid_source_json"); }
@@ -262,6 +265,156 @@ function booleanValue(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+function mlCommonsObservations(source: CatalogSource, url: string, contentType: string, text: string, retrievedAt: string): SourceObservation[] {
+  if (source.id !== "benchmark-mlcommons" || !contentType.includes("json")) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { throw new Error("invalid_mlcommons_json"); }
+  if (!Array.isArray(parsed)) throw new Error("invalid_mlcommons_summary_shape");
+  const contentHash = createHash("sha256").update(text).digest("hex");
+  const results: SourceObservation[] = [];
+  for (const [index, item] of parsed.entries()) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const model = String(record.Model ?? record.UsedModel ?? "").trim();
+    if (!/qwen3-vl/i.test(model)) continue;
+    const device = String(record.Accelerator ?? "").trim();
+    const score = numericValue(record.Performance_Result);
+    const unit = String(record.Performance_Units ?? "").trim();
+    const scenario = String(record.Scenario ?? "").trim();
+    const version = String(record.version ?? "").trim();
+    const system = String(record.System ?? "").trim();
+    const platform = String(record.Platform ?? "").trim();
+    const software = String(record.Software ?? "").trim();
+    const operatingSystem = String(record.operating_system ?? "").trim();
+    const details = String(record.Details ?? "").trim();
+    const code = String(record.Code ?? "").trim();
+    const errors = numericValue(record.errors) ?? 0;
+    if (!device || score === null || score <= 0 || !unit || !scenario || !version || !system || !platform) continue;
+    const manufacturer = device.split(/\s+/, 1)[0] || "Unknown";
+    const configuration = JSON.stringify({
+      submissionId: record.ID,
+      submitter: record.Submitter,
+      category: record.Category,
+      suite: record.Suite,
+      system,
+      platform,
+      model,
+      scenario,
+      nodes: record.Nodes,
+      processor: record.Processor,
+      hostProcessorsPerNode: record.host_processors_per_node,
+      hostProcessorCoreCount: record.host_processor_core_count,
+      accelerator: device,
+      acceleratorsPerNode: record["a#"],
+      totalAccelerators: record["Total Accelerators"],
+      software,
+      operatingSystem,
+      accuracy: record.Accuracy,
+      weightDataTypes: record.weight_data_types,
+      compliance: record.compliance,
+      details,
+      code,
+    });
+    const reproducible = errors === 0 && Boolean(software && operatingSystem && details && code);
+    results.push({
+      id: `${source.id}:${contentHash}:${String(record.ID ?? index)}:${scenario.toLowerCase()}`,
+      sourceId: source.id,
+      retrievedAt,
+      url,
+      contentType,
+      contentHash,
+      evidenceLocator: `json:entry[${index}].Performance_Result`,
+      payload: {
+        kind: "public_benchmark",
+        benchmarkName: "MLPerf Inference",
+        benchmarkVersion: version,
+        manufacturer,
+        sku: device,
+        name: `${device} GPU accelerator`,
+        device,
+        stage: "local_inference",
+        profileId: `${model}:${scenario.toLowerCase()}:${unit.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+        metricName: `${scenario.toLowerCase()}_throughput`,
+        score,
+        unit,
+        sampleCount: 1,
+        higherIsBetter: true,
+        operatingSystem,
+        driverVersion: software,
+        configuration,
+        reproducible,
+        modelId: model,
+        // Perceptrum currently runs qwen3-vl-2b/4b. The v6.0 public suite
+        // exercises the 235B model, so it is useful relational evidence but
+        // cannot directly unlock procurement for the installed AiQ workload.
+        perceptrumComparable: /qwen3-vl-(?:2b|4b)(?:\b|-)/i.test(model),
+      },
+    });
+  }
+  return results;
+}
+
+function specCpuObservations(source: CatalogSource, url: string, contentType: string, text: string, retrievedAt: string): SourceObservation[] {
+  if (source.id !== "benchmark-spec" || !contentType.includes("csv")) return [];
+  const rows = csvRows(text);
+  const lookup = (label: string): string => {
+    const row = rows.find((candidate) => String(candidate[0] ?? "").trim().toLowerCase() === label.trim().toLowerCase());
+    return String(row?.[1] ?? "").trim();
+  };
+  const resultRow = rows.find((row) => /^SPECrate2017_(?:int|fp)_base$/i.test(String(row[0] ?? "").trim()));
+  const cpuName = lookup("CPU Name");
+  const score = numericValue(resultRow?.slice(1).find((value) => numericValue(value) !== null));
+  if (!resultRow || !cpuName || score === null || score <= 0 || !/^valid\s*,\s*1/im.test(text)) return [];
+  const metricName = String(resultRow[0]).trim().toLowerCase();
+  const manufacturer = /^amd\b/i.test(cpuName) ? "AMD" : /^intel\b/i.test(cpuName) ? "Intel" : cpuName.split(/\s+/, 1)[0] || "Unknown";
+  const configuration = JSON.stringify({
+    hardwareVendor: lookup("Hardware Vendor:"),
+    hardwareModel: lookup("Hardware Model:"),
+    dateTested: lookup("Date tested:"),
+    cpuName,
+    enabled: lookup("Enabled"),
+    orderable: lookup("Orderable"),
+    memory: lookup("Memory"),
+    storage: lookup("Storage"),
+    operatingSystem: lookup("OS"),
+    compiler: lookup("Compiler"),
+    cooling: lookup("  Other"),
+    powerManagement: lookup("Power Management"),
+    runNumber: lookup("Run number:"),
+  });
+  const contentHash = createHash("sha256").update(text).digest("hex");
+  return [{
+    id: `${source.id}:${contentHash}:${metricName}`,
+    sourceId: source.id,
+    retrievedAt,
+    url,
+    contentType,
+    contentHash,
+    evidenceLocator: `csv:${metricName}+CPU Name+Hardware Model+OS`,
+    payload: {
+      kind: "public_benchmark",
+      benchmarkName: "SPEC CPU 2017",
+      benchmarkVersion: "CPU2017",
+      manufacturer,
+      sku: cpuName,
+      name: `${cpuName} CPU`,
+      device: cpuName,
+      stage: "job_scheduler",
+      profileId: metricName,
+      metricName,
+      score,
+      unit: "SPEC_rate",
+      sampleCount: 3,
+      higherIsBetter: true,
+      operatingSystem: lookup("OS"),
+      coolingProfile: lookup("  Other"),
+      configuration,
+      reproducible: Boolean(lookup("Hardware Model:") && lookup("OS") && lookup("Compiler") && lookup("Memory")),
+      perceptrumComparable: true,
+    },
+  }];
+}
+
 function benchmarkStage(source: CatalogSource, record: Record<string, unknown>): CalibrationStage | null {
   const explicit = typeof record.stage === "string" ? record.stage.trim() as CalibrationStage : null;
   if (explicit && CALIBRATION_STAGES.has(explicit)) return explicit;
@@ -276,6 +429,8 @@ function benchmarkStage(source: CatalogSource, record: Record<string, unknown>):
 }
 
 function extractBenchmarkObservation(source: CatalogSource, url: string, contentType: string, text: string, retrievedAt: string): SourceObservation[] {
+  if (source.id === "benchmark-mlcommons") return mlCommonsObservations(source, url, contentType, text, retrievedAt);
+  if (source.id === "benchmark-spec") return specCpuObservations(source, url, contentType, text, retrievedAt);
   if (source.id === "benchmark-blender" && contentType.includes("html") && url.includes("/devices/")) {
   const device = /<title>([^<]+?)\s+-\s+Blender Open Data<\/title>/i.exec(text)?.[1]?.trim();
   const sampleCount = Number(/Number of Benchmarks<\/dt>\s*<dd>(\d+)<\/dd>/i.exec(text)?.[1] ?? "0");
@@ -371,7 +526,10 @@ export async function collectCatalogSource(source: CatalogSource, fetchImpl: typ
     if (response.status === 401 || response.status === 403) throw new Error("source_requires_interactive_access");
     if (response.status === 429) throw new Error("source_rate_limited");
     if (!response.ok) throw new Error(`source_http_${response.status}`);
-    const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    const reportedContentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    const contentType = source.id === "benchmark-mlcommons" && reportedContentType.includes("text/plain")
+      ? "application/json"
+      : reportedContentType;
     const allowedType = ["json", "html", "csv", "pdf", "xml"].some((type) => contentType.includes(type));
     if (!allowedType) throw new Error("source_content_type_rejected");
     const text = await readLimited(response);
@@ -392,7 +550,10 @@ export async function collectCatalogSource(source: CatalogSource, fetchImpl: typ
         if (source.minimumIntervalMs > 0) await new Promise((resolve) => setTimeout(resolve, source.minimumIntervalMs));
         const discoveryResponse = await fetchAllowed(discoveryUrl, source, fetchImpl);
         if (!discoveryResponse.ok) { run.rejectedCount += 1; continue; }
-        const discoveryType = (discoveryResponse.headers.get("content-type") ?? "").toLowerCase();
+        const reportedDiscoveryType = (discoveryResponse.headers.get("content-type") ?? "").toLowerCase();
+        const discoveryType = source.id === "benchmark-mlcommons" && reportedDiscoveryType.includes("text/plain")
+          ? "application/json"
+          : reportedDiscoveryType;
         const discoveryText = await readLimited(discoveryResponse);
         const discoveryAt = new Date().toISOString();
         observations.push(...extractStructuredObservations(source, discoveryResponse.url || discoveryUrl.toString(), discoveryType, discoveryText, discoveryAt));

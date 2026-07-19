@@ -1,6 +1,7 @@
-export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/3.0.0" as const;
+export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/3.1.0" as const;
 export type WorkloadContractVersion =
   | typeof WORKLOAD_CONTRACT_VERSION
+  | "perceptrum-workload/3.0.0"
   | "perceptrum-workload/2.0.0"
   | "perceptrum-workload/1.1.0"
   | "perceptrum-workload/1.0.0";
@@ -11,9 +12,12 @@ export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0"
 export const CALIBRATION_HANDOFF_VERSION = "qual-hardware-calibration-handoff/1.0.0" as const;
 export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
 export const BENCHMARK_SUITE_VERSION = "qual-hardware-benchmark-suite/1.0.0" as const;
-export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/3.0.0" as const;
-export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/2.0.0" as const;
-export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/3.0.0" as const;
+export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/1.0.0" as const;
+export const BENCHMARK_OBSERVATION_VERSION = "qual-hardware-benchmark-observation/2.0.0" as const;
+export const COMPONENT_BUILD_VERSION = "qual-hardware-component-build/1.0.0" as const;
+export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/4.0.0" as const;
+export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/3.0.0" as const;
+export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/4.0.0" as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
 export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
 
@@ -472,6 +476,11 @@ export interface RecommendationAlternative {
   procurementEligibility: ProcurementEligibility;
   warnings: string[];
   calibration?: CapacityPrediction;
+  /** Additive v4 audit fields. Older stored recommendations legitimately omit them. */
+  bom?: ComponentBuild;
+  stagePredictions?: StagePrediction[];
+  coverage?: EvidenceCoverageSummary;
+  procurementGate?: ProcurementGate;
 }
 
 export interface CapacityRecommendation {
@@ -677,7 +686,7 @@ export interface LocalCalibrationRun {
   createdAt: string;
   startedAt: string;
   completedAt: string;
-  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION | "perceptrum-workload/2.0.0";
+  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION | "perceptrum-workload/3.0.0" | "perceptrum-workload/2.0.0";
   mode: "quick" | "full";
   executionMode?: "readiness" | "production_pipeline";
   developmentOnly?: true;
@@ -716,6 +725,8 @@ export interface LocalCalibrationRun {
     databaseWritesPersisted?: boolean;
     intelligenceSchedulerExecuted?: boolean;
     dashboardQueriesExecuted?: boolean;
+    concurrentWithLoad?: boolean;
+    phaseCoverage?: Array<{ phase: "warmup" | "ramp" | "sustained" | "surge"; completedProbeCount: number; failedProbeCount?: number }>;
     [key: string]: unknown;
   };
   qualityGate?: {
@@ -798,7 +809,60 @@ export interface CalibrationPlan {
   instructions: string[];
 }
 
-export type HardwareComponentKind = "cpu" | "gpu" | "memory" | "storage" | "network" | "system";
+export type HardwareComponentKind =
+  | "cpu"
+  | "gpu"
+  | "motherboard"
+  | "memory_kit"
+  | "storage_os"
+  | "storage_retention"
+  | "nic"
+  | "psu"
+  | "cooling"
+  | "chassis"
+  | "oem_system"
+  | "rack_configuration"
+  /** Legacy v1–v3 kinds remain readable. */
+  | "memory"
+  | "storage"
+  | "network"
+  | "system";
+
+export type ComponentInventoryState = "discovered_inventory" | "qualified_recommendation_universe";
+export type ComponentMarketState = "active" | "discontinued" | "reference_only";
+export type ComponentGeneration = "current" | "previous" | "two_generations_back" | "historical";
+
+export interface ComponentSpecificationEvidence {
+  sourceId: string;
+  url: string;
+  retrievedAt: string;
+  evidenceLocator: string;
+  rawArtifactSha256: string;
+  licensePolicy: string;
+}
+
+export interface ComponentCompatibility {
+  socket?: string | null;
+  chipsets?: string[];
+  minimumBios?: string | null;
+  memoryType?: string | null;
+  memoryChannels?: number | null;
+  maximumMemoryGb?: number | null;
+  ecc?: boolean | null;
+  pcieGeneration?: number | null;
+  pcieLanesRequired?: number | null;
+  slotsWide?: number | null;
+  lengthMm?: number | null;
+  heightMm?: number | null;
+  continuousPowerWatts?: number | null;
+  transientPowerWatts?: number | null;
+  coolingCapacityWatts?: number | null;
+  supportedCodecs?: Codec[];
+  operatingSystems?: OperatingSystemFamily[];
+  accelerationBackends?: string[];
+  oemLocked?: boolean;
+  replaceableComponentKinds?: HardwareComponentKind[];
+}
 
 export interface HardwareComponent {
   id: string;
@@ -808,9 +872,89 @@ export interface HardwareComponent {
   architecture: string;
   specifications: Record<string, string | number | boolean | null>;
   sourceUrls: string[];
+  canonicalMpn?: string;
+  aliases?: string[];
+  generation?: ComponentGeneration;
+  marketState?: ComponentMarketState;
+  inventoryState?: ComponentInventoryState;
+  specificationVersion?: string;
+  compatibility?: ComponentCompatibility;
+  evidence?: ComponentSpecificationEvidence[];
+  discoveredAt?: string;
+  updatedAt?: string;
+}
+
+export interface ComponentCatalog {
+  schemaVersion: typeof COMPONENT_CATALOG_VERSION;
+  catalogVersion: string;
+  generatedAt: string;
+  components: HardwareComponent[];
+}
+
+export interface ComponentBuildItem {
+  componentId: string;
+  kind: HardwareComponentKind;
+  quantity: number;
+  role: "compute" | "acceleration" | "platform" | "memory" | "operating_storage" | "retention_storage" | "network" | "power" | "cooling" | "chassis" | "oem_system";
+  required: boolean;
+}
+
+export interface CompatibilityDecision {
+  compatible: boolean;
+  code: string;
+  message: string;
+  componentIds: string[];
+  sourceUrls: string[];
+}
+
+export interface ProcurementGate {
+  eligibility: ProcurementEligibility;
+  status: "apt_for_procurement" | "planning" | "blocked";
+  reasons: string[];
+  comparablePhysicalAnchors: number;
+  requiredPhysicalAnchors: 3;
+  completeStageCoverage: boolean;
+}
+
+export interface EvidenceCoverageStage {
+  stage: CalibrationStage;
+  required: boolean;
+  componentIds: string[];
+  eligibleObservationIds: string[];
+  referenceObservationIds: string[];
+  physicalAnchorRunIds: string[];
+  covered: boolean;
+  reasons: string[];
+}
+
+export interface EvidenceCoverageSummary {
+  requiredStageCount: number;
+  coveredStageCount: number;
+  percent: number;
+  complete: boolean;
+  eligibleObservationCount: number;
+  referenceObservationCount: number;
+  physicalAnchorCount: number;
+  stages: EvidenceCoverageStage[];
+}
+
+export interface ComponentBuild {
+  schemaVersion: typeof COMPONENT_BUILD_VERSION;
+  id: string;
+  kind: "oem_exact" | "custom_bom" | "historical_template";
+  name: string;
+  hardwareTemplateId: string | null;
+  operatingSystem: OperatingSystemFamily;
+  items: ComponentBuildItem[];
+  compatibility: CompatibilityDecision[];
+  coverage: EvidenceCoverageSummary;
+  procurementGate: ProcurementGate;
+  sourceUrls: string[];
+  createdAt: string;
 }
 
 export interface PublicBenchmarkObservation {
+  schemaVersion?: typeof BENCHMARK_OBSERVATION_VERSION | "qual-hardware-benchmark-observation/1.0.0";
   id: string;
   hardwareTemplateId: string;
   stage: CalibrationStage;
@@ -840,10 +984,16 @@ export interface PublicBenchmarkObservation {
   rawArtifactSha256?: string;
   licensePolicy?: string;
   reproducible?: boolean;
+  originalValue?: number;
+  originalUnit?: string;
+  componentIds?: string[];
+  direction?: "higher_is_better" | "lower_is_better";
+  eligibility?: "eligible" | "reference_only" | "rejected";
+  rejectionReasons?: string[];
 }
 
 export interface EvidenceCatalogSnapshot {
-  schemaVersion: typeof EVIDENCE_CATALOG_VERSION;
+  schemaVersion: typeof EVIDENCE_CATALOG_VERSION | "qual-hardware-evidence-catalog/3.0.0" | "qual-hardware-evidence-catalog/2.0.0";
   catalogVersion: string;
   generatedAt: string;
   components?: HardwareComponent[];

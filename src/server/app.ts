@@ -5,6 +5,8 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { z } from "zod";
 import { buildRecommendations, CapacityError } from "../engine/capacity.js";
 import { buildCapacityPredictions, createCalibrationPlan } from "../engine/calibration.js";
+import { buildHistoricalComponentBuilds, deriveComponentCatalog, validateBuildCompatibility } from "../engine/componentCatalog.js";
+import { buildProcurementGate, componentStages, isPublicObservationEligible } from "../engine/evidence.js";
 import {
   benchmarkMetricsSchema,
   calibrationPlanRequestSchema,
@@ -13,7 +15,7 @@ import {
   scenarioCreateSchema,
   scenarioUpdateSchema,
 } from "../shared/schemas.js";
-import type { BenchmarkMetrics, CapacityRecommendation, CalibrationSessionRecord, LocalCalibrationRun } from "../shared/types.js";
+import type { BenchmarkMetrics, CapacityRecommendation, CalibrationSessionRecord, ComponentBuild, LocalCalibrationRun, RecommendationAlternative } from "../shared/types.js";
 import type { HardwareNodeTemplate } from "../shared/types.js";
 import { createBenchmarkManifest, evidenceValidatesRecommendation, nonceMatches, validateBenchmark } from "./benchmark.js";
 import { CatalogUpdateService } from "./catalogUpdates.js";
@@ -65,12 +67,21 @@ function fingerprintMatchesTemplate(run: LocalCalibrationRun, template: Hardware
 }
 
 async function refreshPredictions(store: PlannerStore) {
-  const predictions = buildCapacityPredictions(
-    await store.getCatalog(),
-    await store.listCalibrationRuns(),
-    await store.listBenchmarkObservations(),
-  );
+  const [hardware, runs, observations, storedComponents] = await Promise.all([
+    store.getCatalog(), store.listCalibrationRuns(), store.listBenchmarkObservations(), store.listCatalogComponents(),
+  ]);
+  const predictions = buildCapacityPredictions(hardware, runs, observations);
   await store.savePredictions(predictions);
+  const derived = deriveComponentCatalog(hardware);
+  const components = [...new Map([...derived.components, ...storedComponents].map((item) => [item.id, item])).values()];
+  const builds = buildHistoricalComponentBuilds(hardware, components, observations, runs).map((candidate) => {
+    const prediction = predictions.find((item) => item.hardwareTemplateId === candidate.hardwareTemplateId);
+    return validateBuildCompatibility({
+      ...candidate,
+      procurementGate: buildProcurementGate(candidate.coverage, prediction?.status ?? "reference_only"),
+    }, components);
+  });
+  await store.saveComponentBuilds(builds);
   return predictions;
 }
 
@@ -90,6 +101,28 @@ function currentEvidence(
       manifest.targetHardware.cpuModel === recommendation.primary.hardware.cpuModel &&
       manifest.targetHardware.gpuModel === recommendation.primary.hardware.gpuModel).map(({ manifest }) => `benchmark:${manifest.id}`)],
   } : recommendation);
+}
+
+function withComponentBuilds(recommendations: CapacityRecommendation[], builds: ComponentBuild[]): CapacityRecommendation[] {
+  const byHardware = new Map(builds.filter((build) => build.hardwareTemplateId).map((build) => [build.hardwareTemplateId!, build]));
+  const decorate = (alternative: RecommendationAlternative): RecommendationAlternative => {
+    const bom = byHardware.get(alternative.hardware.id);
+    if (!bom) return alternative;
+    return {
+      ...alternative,
+      bom,
+      stagePredictions: alternative.calibration?.stagePredictions ?? [],
+      coverage: bom.coverage,
+      procurementGate: bom.procurementGate,
+      procurementEligibility: bom.procurementGate.eligibility,
+      warnings: [...new Set([...alternative.warnings, ...bom.procurementGate.reasons])],
+    };
+  };
+  return recommendations.map((recommendation) => ({
+    ...recommendation,
+    primary: decorate(recommendation.primary),
+    alternatives: recommendation.alternatives.map(decorate),
+  }));
 }
 
 function reportRecommendationSet(
@@ -197,9 +230,9 @@ export function createApp(
       const scenario = await store.getScenario(id);
       if (!scenario) return context.json({ error: "scenario_not_found", id }, 404);
       const stored = (await store.listRecommendations(id)).filter((item) => item.scenarioRevision === scenario.revision);
-      const recommendations = stored.length ? stored : buildRecommendations(
+      const recommendations = stored.length ? stored : withComponentBuilds(buildRecommendations(
         id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
-        catalogUpdates.status.catalogVersion, await refreshPredictions(store));
+        catalogUpdates.status.catalogVersion, await refreshPredictions(store)), await store.listComponentBuilds());
       comparisons.push({ scenario, recommendations });
     }
     return context.json({ schemaVersion: "capacity-scenario-comparison/1.0.0", comparisons });
@@ -223,15 +256,21 @@ export function createApp(
   app.post("/api/scenarios/:id/recommendations", async (context) => {
     const scenario = await store.getScenario(context.req.param("id"));
     if (!scenario) return context.json({ error: "scenario_not_found" }, 404);
-    const recommendations = buildRecommendations(
+    const recommendations = withComponentBuilds(buildRecommendations(
       scenario.id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
-      catalogUpdates.status.catalogVersion, await refreshPredictions(store));
+      catalogUpdates.status.catalogVersion, await refreshPredictions(store)), await store.listComponentBuilds());
     const withEvidence = currentEvidence(recommendations, await store.listBenchmarkEvidence(scenario.id, scenario.revision));
     await store.saveRecommendations(withEvidence);
     return context.json(withEvidence, 201);
   });
   app.get("/api/scenarios/:id/recommendations", async (context) => context.json(await store.listRecommendations(context.req.param("id"))));
   app.get("/api/catalog/hardware", async (context) => context.json(await store.getCatalog()));
+  app.get("/api/catalog/components", async (context) => context.json(await store.listCatalogComponents()));
+  app.get("/api/catalog/builds", async (context) => context.json(await store.listComponentBuilds()));
+  app.get("/api/catalog/builds/:id", async (context) => {
+    const build = await store.getComponentBuild(context.req.param("id"));
+    return build ? context.json(build) : context.json({ error: "component_build_not_found" }, 404);
+  });
   app.get("/api/catalog/quotes", async (context) => context.json(await store.getQuotes()));
   app.get("/api/catalog/status", (context) => context.json(catalogUpdates.status));
   app.get("/api/catalog/sources", async (context) => context.json(await store.listCatalogSources()));
@@ -261,6 +300,32 @@ export function createApp(
   app.get("/api/predictions", async (context) => context.json(await store.listPredictions()));
   app.get("/api/evidence", async (context) => context.json(await store.listBenchmarkObservations()));
   app.get("/api/evidence/components", async (context) => context.json(await store.listHardwareComponents()));
+  app.get("/api/evidence/coverage", async (context) => {
+    await refreshPredictions(store);
+    const builds = await store.listComponentBuilds();
+    return context.json({
+      schemaVersion: "qual-hardware-evidence-coverage/1.0.0",
+      generatedAt: new Date().toISOString(),
+      buildCount: builds.length,
+      procurementEligibleBuildCount: builds.filter((build) => build.procurementGate.eligibility === "eligible").length,
+      builds: builds.map((build) => ({ id: build.id, name: build.name, hardwareTemplateId: build.hardwareTemplateId, coverage: build.coverage, procurementGate: build.procurementGate })),
+    });
+  });
+  app.get("/api/evidence/components/:id", async (context) => {
+    const component = (await store.listCatalogComponents()).find((item) => item.id === context.req.param("id"));
+    if (!component) return context.json({ error: "component_not_found" }, 404);
+    const observations = (await store.listBenchmarkObservations()).filter((item) =>
+      item.componentId === component.id || item.componentIds?.includes(component.id),
+    );
+    const builds = (await store.listComponentBuilds()).filter((build) => build.items.some((item) => item.componentId === component.id));
+    return context.json({
+      component,
+      stages: componentStages(component),
+      eligibleObservations: observations.filter(isPublicObservationEligible),
+      referenceObservations: observations.filter((item) => !isPublicObservationEligible(item)),
+      builds: builds.map((build) => ({ id: build.id, name: build.name, procurementGate: build.procurementGate })),
+    });
+  });
   app.get("/api/calibrations/status", async (context) => context.json({
     schemaVersion: "qual-hardware-calibration-status/1.0.0",
     calibrationRuns: (await store.listCalibrationRuns()).length,

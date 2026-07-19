@@ -9,6 +9,9 @@ import type { CalibrationStage, CatalogBundle, CatalogSource, HardwareComponent,
 import { collectCatalogSource, type SourceCollectionResult } from "../src/server/catalogSourceFetcher.js";
 import { buildCatalogBundle, isPublicationDue, rejectUnconfirmedPriceOutliers, sha256, signCatalogBundle, verifyCatalogBundle } from "../src/server/catalogPublication.js";
 import { classifyCatalogCandidate, createLlamaCppRunner, QWEN_CATALOG_METADATA } from "../src/server/qwenCatalog.js";
+import { canonicalComponentId, deriveComponentCatalog } from "../src/engine/componentCatalog.js";
+import { componentStages, isPublicObservationEligible } from "../src/engine/evidence.js";
+import { BENCHMARK_OBSERVATION_VERSION } from "../src/shared/types.js";
 
 interface CollectionArtifact {
   schemaVersion: "qual-hardware-catalog-collection/1.0.0";
@@ -59,7 +62,15 @@ function updatedSource(result: SourceCollectionResult): CatalogSource {
 
 async function collect(outputDirectory: string): Promise<void> {
   const results: SourceCollectionResult[] = [];
-  for (const source of BUNDLED_SOURCE_REGISTRY.sources) results.push(await collectCatalogSource(source));
+  const requestedSources = optionalArgument("sources")?.split(",").map((value) => value.trim()).filter(Boolean) ?? [];
+  const selectedSources = requestedSources.length
+    ? BUNDLED_SOURCE_REGISTRY.sources.filter((source) => requestedSources.includes(source.id))
+    : BUNDLED_SOURCE_REGISTRY.sources;
+  if (requestedSources.length && selectedSources.length !== requestedSources.length) {
+    const found = new Set(selectedSources.map((source) => source.id));
+    throw new Error(`unknown_catalog_sources:${requestedSources.filter((id) => !found.has(id)).join(",")}`);
+  }
+  for (const source of selectedSources) results.push(await collectCatalogSource(source));
   const sources = results.map(updatedSource);
   const observations = results.flatMap((result) => result.observations);
   const artifact: CollectionArtifact = {
@@ -112,30 +123,30 @@ function observedComponentIdentity(observation: SourceObservation): { id: string
   const manufacturer = brandName(observation.payload.brand) ?? brandName(observation.payload.manufacturer) ?? BUNDLED_SOURCE_REGISTRY.sources.find((source) => source.id === observation.sourceId)?.organization ?? null;
   if (!sku || !manufacturer) return null;
   const name = normalized(observation.payload.name)?.toLowerCase() ?? "";
-  const kind: HardwareComponent["kind"] = /placa de v[ií]deo|graphics|gpu/.test(name) ? "gpu"
-    : /mem[oó]ria|memory|ddr[45]/.test(name) ? "memory"
-      : /ssd|nvme|storage|disco/.test(name) ? "storage" : "system";
+  const kind: HardwareComponent["kind"] = /placa de v[ií]deo|graphics|gpu|accelerator/.test(name) ? "gpu"
+    : /\bcpu\b|processor|xeon|epyc|ryzen|core ultra/.test(name) ? "cpu"
+      : /mem[oó]ria|memory|ddr[45]/.test(name) ? "memory_kit"
+        : /ssd|nvme|storage|disco/.test(name) ? "storage_retention"
+          : /network|ethernet|\bnic\b/.test(name) ? "nic"
+            : /power supply|fonte|\bpsu\b/.test(name) ? "psu"
+              : /cooler|cooling|refrigera/.test(name) ? "cooling"
+                : /chassis|case|gabinete/.test(name) ? "chassis" : "oem_system";
   const id = `observed:${observation.sourceId}:${sku}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-");
   return { id, manufacturer, sku, kind };
 }
 
 function componentsFromHardware(observations: SourceObservation[]): HardwareComponent[] {
-  const components = new Map<string, HardwareComponent>();
-  for (const hardware of HARDWARE_CATALOG) {
-    const cpuId = `cpu:${hardware.cpuVendor}:${hardware.cpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-");
-    components.set(cpuId, { id: cpuId, kind: "cpu", manufacturer: hardware.cpuVendor, sku: hardware.cpuModel, architecture: hardware.cpuArchitecture ?? "undisclosed", specifications: { physicalCores: hardware.physicalCores }, sourceUrls: hardware.sources.map((source) => source.url) });
-    const gpuId = `gpu:${hardware.gpuVendor}:${hardware.gpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-");
-    components.set(gpuId, { id: gpuId, kind: "gpu", manufacturer: hardware.gpuVendor, sku: hardware.gpuModel, architecture: hardware.gpuArchitecture ?? "undisclosed", specifications: { count: hardware.gpuCount, vramGb: hardware.gpuVramGbTotal, decodeStreams: hardware.gpuDecode1080p30Streams }, sourceUrls: hardware.sources.map((source) => source.url) });
-    const manufacturer = hardware.name.split(" ")[0] ?? "OEM";
-    components.set(`memory:${hardware.id}`, { id: `memory:${hardware.id}`, kind: "memory", manufacturer, sku: `${hardware.id}-memory`, architecture: hardware.memoryArchitecture, specifications: { ramGb: hardware.ramGb, ecc: hardware.ecc }, sourceUrls: hardware.sources.map((source) => source.url) });
-    components.set(`storage:${hardware.id}`, { id: `storage:${hardware.id}`, kind: "storage", manufacturer, sku: hardware.storageModel, architecture: "nvme", specifications: { usableStorageTb: hardware.usableStorageTb, sustainedWriteMbps: hardware.diskWriteMbps }, sourceUrls: hardware.sources.map((source) => source.url) });
-    components.set(`network:${hardware.id}`, { id: `network:${hardware.id}`, kind: "network", manufacturer, sku: `${hardware.id}-nic`, architecture: "ethernet", specifications: { nicGbps: hardware.nicGbps }, sourceUrls: hardware.sources.map((source) => source.url) });
-    components.set(`system:${hardware.id}`, { id: `system:${hardware.id}`, kind: "system", manufacturer, sku: hardware.id, architecture: hardware.chassis, specifications: { cooling: hardware.cooling, thermalClass: hardware.thermalClass ?? null, operatingSystem: hardware.operatingSystemFamily }, sourceUrls: hardware.sources.map((source) => source.url) });
-  }
+  const components = new Map<string, HardwareComponent>(deriveComponentCatalog(HARDWARE_CATALOG).components.map((item) => [item.id, item]));
   for (const observation of observations) {
     const identity = observedComponentIdentity(observation);
     if (!identity) continue;
-    components.set(identity.id, { id: identity.id, kind: identity.kind, manufacturer: identity.manufacturer, sku: identity.sku, architecture: "reference_only", specifications: { name: normalized(observation.payload.name), evidenceLocator: observation.evidenceLocator }, sourceUrls: [observation.url] });
+    components.set(identity.id, {
+      id: identity.id, kind: identity.kind, manufacturer: identity.manufacturer, sku: identity.sku,
+      canonicalMpn: identity.sku, aliases: [identity.sku], architecture: "reference_only",
+      marketState: "reference_only", inventoryState: "discovered_inventory", specificationVersion: "observed-v1",
+      specifications: { name: normalized(observation.payload.name), evidenceLocator: observation.evidenceLocator }, sourceUrls: [observation.url],
+      discoveredAt: observation.retrievedAt, updatedAt: observation.retrievedAt,
+    });
   }
   return [...components.values()];
 }
@@ -238,14 +249,10 @@ function matchingHardware(observation: SourceObservation): HardwareNodeTemplate[
 }
 
 function componentForStage(hardware: HardwareNodeTemplate, stage: CalibrationStage): { id: string; kind: HardwareComponent["kind"] } {
-  if (["video_decode", "video_encode", "local_inference"].includes(stage)) {
-    return { id: `gpu:${hardware.gpuVendor}:${hardware.gpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-"), kind: "gpu" };
-  }
-  if (stage === "memory_bandwidth") return { id: `memory:${hardware.id}`, kind: "memory" };
-  if (stage === "disk_read" || stage === "disk_write") return { id: `storage:${hardware.id}`, kind: "storage" };
-  if (stage === "network_ingest" || stage === "rtsp_ingest") return { id: `network:${hardware.id}`, kind: "network" };
-  if (["thermal_sustain", "database_persistence", "dashboard_queries", "intelligence_scheduler"].includes(stage)) return { id: `system:${hardware.id}`, kind: "system" };
-  return { id: `cpu:${hardware.cpuVendor}:${hardware.cpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-"), kind: "cpu" };
+  const derived = deriveComponentCatalog([hardware]);
+  const candidate = derived.components.find((component) => componentStages(component).includes(stage));
+  if (candidate) return { id: candidate.id, kind: candidate.kind };
+  return { id: canonicalComponentId("cpu", hardware.cpuVendor, hardware.cpuModel), kind: "cpu" };
 }
 
 function benchmarksFromObservations(observations: SourceObservation[]): PublicBenchmarkObservation[] {
@@ -261,18 +268,34 @@ function benchmarksFromObservations(observations: SourceObservation[]): PublicBe
     const configuration = normalized(payload.configuration);
     const benchmarkVersion = normalized(payload.benchmarkVersion) ?? "source-current";
     const reproducible = payload.reproducible === true && Boolean(configuration && configuration.length >= 20) && benchmarkVersion !== "source-current";
-    for (const hardware of matchingHardware(observation)) {
-      const component = componentForStage(hardware, stage);
+    const matchedHardware = matchingHardware(observation);
+    const observedIdentity = observedComponentIdentity(observation);
+    const targets: Array<{ hardwareTemplateId: string; component: { id: string; kind: HardwareComponent["kind"] }; exactHardwareMatch: boolean }> = matchedHardware.map((hardware) => ({
+      hardwareTemplateId: hardware.id,
+      component: componentForStage(hardware, stage),
+      exactHardwareMatch: true,
+    }));
+    if (targets.length === 0 && observedIdentity) {
+      targets.push({
+        hardwareTemplateId: `external:${observedIdentity.id}`,
+        component: { id: observedIdentity.id, kind: observedIdentity.kind },
+        exactHardwareMatch: false,
+      });
+    }
+    for (const target of targets) {
+      const component = target.component;
       const profileId = normalized(payload.profileId) ?? `${observation.sourceId}-${stage}`;
       const metricName = normalized(payload.metricName) ?? "score";
       const qualityFlags = [
-        ...(reproducible ? ["deterministic_parser", "exact_hardware_match"] : ["incomplete_reproducibility_metadata"]),
+        ...(reproducible ? ["deterministic_parser", target.exactHardwareMatch ? "exact_hardware_match" : "exact_component_match"] : ["incomplete_reproducibility_metadata"]),
         ...(observation.sourceId === "benchmark-blender" ? ["profile_not_aiq", "secondary_gpu_indicator_only"] : []),
         ...(observation.sourceId === "benchmark-mlcommons" && !/qwen|aiq/i.test(`${payload.profileId ?? ""} ${payload.benchmarkName ?? ""}`) ? ["model_not_aiq"] : []),
+        ...(payload.perceptrumComparable === false ? ["model_not_perceptrum_aiq"] : []),
       ];
       benchmarks.push({
-        id: `${observation.sourceId}:${hardware.id}:${profileId}:${observation.contentHash.slice(0, 16)}`,
-        hardwareTemplateId: hardware.id, stage, profileId,
+        schemaVersion: BENCHMARK_OBSERVATION_VERSION,
+        id: `${observation.sourceId}:${target.hardwareTemplateId}:${profileId}:${observation.contentHash.slice(0, 16)}`,
+        hardwareTemplateId: target.hardwareTemplateId, stage, profileId,
         benchmarkName: normalized(payload.benchmarkName) ?? source.organization, benchmarkVersion, score: payload.score,
         unit: normalized(payload.unit) ?? "score", higherIsBetter: payload.higherIsBetter !== false,
         componentId: component.id, componentKind: component.kind, sourceTier: source.trustTier,
@@ -283,9 +306,13 @@ function benchmarksFromObservations(observations: SourceObservation[]): PublicBe
         sampleCount: payload.sampleCount, qualityFlags,
         benchmarkSuiteId: `${observation.sourceId}:${normalized(payload.benchmarkName) ?? source.organization}:${benchmarkVersion}`,
         metricName, aggregation: observation.sourceId === "benchmark-blender" ? "median" : "single",
-        systemFingerprint: { hardwareTemplateId: hardware.id, device: payload.device, operatingSystem: normalized(payload.operatingSystem) ?? "any" },
+        systemFingerprint: { hardwareTemplateId: target.hardwareTemplateId, device: payload.device, operatingSystem: normalized(payload.operatingSystem) ?? "any" },
         evidenceLocator: observation.evidenceLocator, rawArtifactSha256: observation.contentHash,
         licensePolicy: observation.sourceId === "benchmark-spec" ? "Normalized result metadata only; SPEC tools are not redistributed." : "Normalized public observation with source attribution.",
+        originalValue: payload.score, originalUnit: normalized(payload.unit) ?? "score",
+        componentIds: [component.id], direction: payload.higherIsBetter !== false ? "higher_is_better" : "lower_is_better",
+        eligibility: reproducible && observation.sourceId !== "benchmark-blender" && !qualityFlags.some((flag) => ["model_not_aiq", "model_not_perceptrum_aiq"].includes(flag)) ? "eligible" : "reference_only",
+        rejectionReasons: reproducible ? qualityFlags.filter((flag) => ["profile_not_aiq", "secondary_gpu_indicator_only", "model_not_aiq", "model_not_perceptrum_aiq"].includes(flag)) : ["incomplete_reproducibility_metadata"],
         reproducible,
       });
     }
@@ -310,6 +337,25 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
   }
   const components = componentsFromHardware(collection.observations);
   const benchmarks = benchmarksFromObservations(collection.observations);
+  const componentIds = new Set(components.map((component) => component.id));
+  const orphanBenchmarks = benchmarks.filter((benchmark) =>
+    [benchmark.componentId, ...(benchmark.componentIds ?? [])].filter(Boolean).some((id) => !componentIds.has(id!)),
+  );
+  if (orphanBenchmarks.length) throw new Error(`publication_orphan_benchmark_gate:${orphanBenchmarks.map((item) => item.id).join(",")}`);
+  const newlyQualifiedWithoutEvidence = components.filter((component) => component.inventoryState === "qualified_recommendation_universe" &&
+    !benchmarks.some((benchmark) => (benchmark.componentId === component.id || benchmark.componentIds?.includes(component.id)) && isPublicObservationEligible(benchmark)));
+  if (newlyQualifiedWithoutEvidence.length) throw new Error(`publication_unproven_component_qualification_gate:${newlyQualifiedWithoutEvidence.map((item) => item.id).join(",")}`);
+  if (previousBundle) {
+    const previousEligible = previousBundle.benchmarks.filter(isPublicObservationEligible);
+    const currentEligible = benchmarks.filter(isPublicObservationEligible);
+    if (currentEligible.length < previousEligible.length) throw new Error("publication_eligible_benchmark_coverage_regression");
+    const previousMetricUnits = new Map(previousEligible.map((item) => [`${item.benchmarkSuiteId}|${item.benchmarkVersion}|${item.profileId}|${item.metricName}|${item.stage}`, item.unit]));
+    for (const observation of currentEligible) {
+      const key = `${observation.benchmarkSuiteId}|${observation.benchmarkVersion}|${observation.profileId}|${observation.metricName}|${observation.stage}`;
+      const previousUnit = previousMetricUnits.get(key);
+      if (previousUnit && previousUnit !== observation.unit) throw new Error(`publication_benchmark_unit_drift:${key}:${previousUnit}:${observation.unit}`);
+    }
+  }
   const priceGate = rejectUnconfirmedPriceOutliers(priceQuotesFromObservations(collection.observations, collection.collectedAt));
   const prices = priceGate.accepted;
   const indexed = (bundle: Pick<CatalogBundle, "hardware" | "components" | "benchmarks" | "prices">): Map<string, string> => new Map([
@@ -338,7 +384,10 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
     successfulSources: collection.results.filter((result) => result.run.status === "collected").length,
     skippedSources: collection.results.filter((result) => result.run.status === "skipped").length,
     failedSources: failed.map((result) => ({ sourceId: result.source.id, error: result.run.error })),
-    observations: collection.observations.length, qwenUsed: qwen.used, qwen: {
+    observations: collection.observations.length,
+    componentInventory: { discovered: components.length, qualified: components.filter((item) => item.inventoryState === "qualified_recommendation_universe").length },
+    benchmarkCoverage: { total: benchmarks.length, eligible: benchmarks.filter(isPublicObservationEligible).length, referenceOnly: benchmarks.filter((item) => !isPublicObservationEligible(item)).length, orphans: orphanBenchmarks.length },
+    qwenUsed: qwen.used, qwen: {
       metadata: qwen.metadata ?? QWEN_CATALOG_METADATA,
       classifications: qwen.classifications ?? [],
     }, summary: payload.summary,

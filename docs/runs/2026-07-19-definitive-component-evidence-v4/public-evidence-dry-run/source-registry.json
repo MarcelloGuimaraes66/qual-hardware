@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "qual-hardware-source-registry/1.0.0",
+  "generatedAt": "2026-07-19T22:45:11.189Z",
+  "sources": [
+    {
+      "id": "benchmark-mlcommons",
+      "organization": "MLCommons",
+      "primaryUrl": "https://raw.githubusercontent.com/mlcommons/inference_results_v6.0/main/summary_results.json",
+      "discoveryUrls": [],
+      "allowedHosts": [
+        "raw.githubusercontent.com"
+      ],
+      "allowedRedirectHosts": [
+        "raw.githubusercontent.com"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "api",
+      "products": [
+        "local_inference",
+        "Qwen3-VL",
+        "GPU"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": false,
+      "state": "active",
+      "lastRunAt": "2026-07-19T22:45:06.312Z",
+      "lastSuccessAt": "2026-07-19T22:45:06.312Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    },
+    {
+      "id": "benchmark-spec",
+      "organization": "SPEC",
+      "primaryUrl": "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250126-46110.csv",
+      "discoveryUrls": [
+        "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250126-46114.csv",
+        "https://www.spec.org/cpu2017/results/res2025q1/cpu2017-20250127-46190.csv"
+      ],
+      "allowedHosts": [
+        "www.spec.org"
+      ],
+      "allowedRedirectHosts": [
+        "www.spec.org"
+      ],
+      "category": "benchmark",
+      "markets": [],
+      "currencies": [],
+      "parser": "csv",
+      "products": [
+        "CPU sustained"
+      ],
+      "trustTier": 1,
+      "maxRequestsPerRun": 30,
+      "minimumIntervalMs": 750,
+      "robotsRequired": true,
+      "state": "active",
+      "lastRunAt": "2026-07-19T22:45:11.188Z",
+      "lastSuccessAt": "2026-07-19T22:45:11.188Z",
+      "consecutiveFailures": 0,
+      "notes": []
+    }
+  ]
+}

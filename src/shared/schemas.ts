@@ -61,7 +61,7 @@ export const cameraGroupSchema = z.object({
 
 export const capacityScenarioSchema = z.object({
   schemaVersion: z.literal("capacity-scenario/1.0.0"),
-  workloadContractVersion: z.enum([WORKLOAD_CONTRACT_VERSION, "perceptrum-workload/2.0.0", "perceptrum-workload/1.1.0", "perceptrum-workload/1.0.0"]),
+  workloadContractVersion: z.enum([WORKLOAD_CONTRACT_VERSION, "perceptrum-workload/3.0.0", "perceptrum-workload/2.0.0", "perceptrum-workload/1.1.0", "perceptrum-workload/1.0.0"]),
   projectName: z.string().min(1).max(160),
   customerName: z.string().max(160),
   market: z.enum(["BR", "US", "DE"]),
@@ -182,7 +182,7 @@ export const localCalibrationRunSchema = z.object({
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime(),
   completedAt: z.iso.datetime(),
-  workloadContractVersion: z.union([z.literal(WORKLOAD_CONTRACT_VERSION), z.literal("perceptrum-workload/2.0.0")]),
+  workloadContractVersion: z.union([z.literal(WORKLOAD_CONTRACT_VERSION), z.literal("perceptrum-workload/3.0.0"), z.literal("perceptrum-workload/2.0.0")]),
   mode: z.enum(["quick", "full"]),
   executionMode: z.enum(["readiness", "production_pipeline"]).optional(),
   developmentOnly: z.literal(true).optional(),
@@ -274,6 +274,12 @@ export const localCalibrationRunSchema = z.object({
     schedulerClaimedJob: z.boolean(),
     aiqLocalCompleted: z.boolean(),
     resultPersisted: z.boolean(),
+    concurrentWithLoad: z.boolean().optional(),
+    phaseCoverage: z.array(z.object({
+      phase: z.enum(["warmup", "ramp", "sustained", "surge"]),
+      completedProbeCount: z.number().int().nonnegative(),
+      failedProbeCount: z.number().int().nonnegative().optional(),
+    })).max(20).optional(),
   }).loose().optional(),
   qualityGate: z.object({
     eligibleForCapacityExtrapolation: z.boolean(),
@@ -354,9 +360,6 @@ export const localCalibrationRunSchema = z.object({
         context.addIssue({ code: "custom", path: ["stages"], message: `Calibration 2.0 is missing required stage ${stage}.` });
       }
     }
-    if (value.workloadContractVersion !== WORKLOAD_CONTRACT_VERSION) {
-      context.addIssue({ code: "custom", path: ["workloadContractVersion"], message: "Calibration 2.0 requires the Perceptrum workload 3.0 contract." });
-    }
     if (value.mode === "full" && value.phases.map((phase) => phase.name).join(",") !== "warmup,ramp,sustained,surge") {
       context.addIssue({ code: "custom", path: ["phases"], message: "Full calibration 2.0 requires warmup, ramp, sustained and surge phases." });
     }
@@ -372,6 +375,13 @@ export const localCalibrationRunSchema = z.object({
       ];
       if (requiredProof.some((item) => item !== true)) {
         context.addIssue({ code: "custom", path: ["pipelineEvidence"], message: "Purchase-eligible calibration requires Jobs, Steps, Agents, Intelligence, persistence and dashboard proof." });
+      }
+      if (proof?.concurrentWithLoad !== true) {
+        context.addIssue({ code: "custom", path: ["pipelineEvidence", "concurrentWithLoad"], message: "Purchase-eligible calibration requires the production pipeline to overlap the measured load." });
+      }
+      const coveredPhases = new Set(proof?.phaseCoverage?.filter((item) => item.completedProbeCount > 0).map((item) => item.phase) ?? []);
+      for (const phase of ["warmup", "ramp", "sustained", "surge"] as const) {
+        if (!coveredPhases.has(phase)) context.addIssue({ code: "custom", path: ["pipelineEvidence", "phaseCoverage"], message: `Purchase-eligible calibration lacks concurrent production evidence for ${phase}.` });
       }
     }
   }
@@ -400,15 +410,60 @@ export const calibrationSessionRequestSchema = z.object({
 
 export const hardwareComponentSchema = z.object({
   id: z.string().min(1).max(240),
-  kind: z.enum(["cpu", "gpu", "memory", "storage", "network", "system"]),
+  kind: z.enum([
+    "cpu", "gpu", "motherboard", "memory_kit", "storage_os", "storage_retention", "nic", "psu", "cooling",
+    "chassis", "oem_system", "rack_configuration", "memory", "storage", "network", "system",
+  ]),
   manufacturer: z.string().min(1).max(160),
   sku: z.string().min(1).max(240),
   architecture: z.string().min(1).max(160),
   specifications: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
   sourceUrls: z.array(z.string().url().refine((value) => new URL(value).protocol === "https:")).min(1).max(30),
+  canonicalMpn: z.string().min(1).max(240).optional(),
+  aliases: z.array(z.string().min(1).max(240)).max(100).optional(),
+  generation: z.enum(["current", "previous", "two_generations_back", "historical"]).optional(),
+  marketState: z.enum(["active", "discontinued", "reference_only"]).optional(),
+  inventoryState: z.enum(["discovered_inventory", "qualified_recommendation_universe"]).optional(),
+  specificationVersion: z.string().min(1).max(120).optional(),
+  compatibility: z.object({
+    socket: z.string().max(120).nullable().optional(),
+    chipsets: z.array(z.string().min(1).max(120)).max(100).optional(),
+    minimumBios: z.string().max(160).nullable().optional(),
+    memoryType: z.string().max(120).nullable().optional(),
+    memoryChannels: z.number().int().positive().max(32).nullable().optional(),
+    maximumMemoryGb: z.number().positive().max(131_072).nullable().optional(),
+    ecc: z.boolean().nullable().optional(),
+    pcieGeneration: z.number().int().min(1).max(10).nullable().optional(),
+    pcieLanesRequired: z.number().int().positive().max(512).nullable().optional(),
+    slotsWide: z.number().positive().max(10).nullable().optional(),
+    lengthMm: z.number().positive().max(2_000).nullable().optional(),
+    heightMm: z.number().positive().max(1_000).nullable().optional(),
+    continuousPowerWatts: z.number().positive().max(20_000).nullable().optional(),
+    transientPowerWatts: z.number().positive().max(50_000).nullable().optional(),
+    coolingCapacityWatts: z.number().positive().max(50_000).nullable().optional(),
+    supportedCodecs: z.array(z.enum(["h264", "h265"])).max(2).optional(),
+    operatingSystems: z.array(z.enum(["windows", "ubuntu", "macos"])).max(3).optional(),
+    accelerationBackends: z.array(z.string().min(1).max(120)).max(30).optional(),
+    oemLocked: z.boolean().optional(),
+    replaceableComponentKinds: z.array(z.enum([
+      "cpu", "gpu", "motherboard", "memory_kit", "storage_os", "storage_retention", "nic", "psu", "cooling",
+      "chassis", "oem_system", "rack_configuration", "memory", "storage", "network", "system",
+    ])).max(30).optional(),
+  }).optional(),
+  evidence: z.array(z.object({
+    sourceId: z.string().min(1).max(160),
+    url: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+    retrievedAt: z.iso.datetime(),
+    evidenceLocator: z.string().min(1).max(1_000),
+    rawArtifactSha256: z.string().regex(/^[0-9a-f]{64}$/i),
+    licensePolicy: z.string().min(1).max(500),
+  })).max(100).optional(),
+  discoveredAt: z.iso.datetime().optional(),
+  updatedAt: z.iso.datetime().optional(),
 });
 
 export const publicBenchmarkObservationSchema = z.object({
+  schemaVersion: z.enum(["qual-hardware-benchmark-observation/2.0.0", "qual-hardware-benchmark-observation/1.0.0"]).optional(),
   id: z.string().min(1).max(240),
   hardwareTemplateId: z.string().min(1).max(160),
   stage: calibrationStageSchema,
@@ -419,7 +474,7 @@ export const publicBenchmarkObservationSchema = z.object({
   unit: z.string().min(1).max(80),
   higherIsBetter: z.boolean(),
   componentId: z.string().min(1).max(240).optional(),
-  componentKind: z.enum(["cpu", "gpu", "memory", "storage", "network", "system"]).optional(),
+  componentKind: hardwareComponentSchema.shape.kind.optional(),
   sourceTier: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   sourceUrl: z.string().url().refine((value) => new URL(value).protocol === "https:", "Evidence source must use HTTPS"),
   observedAt: z.iso.datetime(),
@@ -438,10 +493,16 @@ export const publicBenchmarkObservationSchema = z.object({
   rawArtifactSha256: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
   licensePolicy: z.string().min(1).max(500).optional(),
   reproducible: z.boolean().optional(),
+  originalValue: z.number().positive().optional(),
+  originalUnit: z.string().min(1).max(80).optional(),
+  componentIds: z.array(z.string().min(1).max(240)).max(32).optional(),
+  direction: z.enum(["higher_is_better", "lower_is_better"]).optional(),
+  eligibility: z.enum(["eligible", "reference_only", "rejected"]).optional(),
+  rejectionReasons: z.array(z.string().min(1).max(240)).max(100).optional(),
 });
 
 export const evidenceCatalogSnapshotSchema = z.object({
-  schemaVersion: z.literal(EVIDENCE_CATALOG_VERSION),
+  schemaVersion: z.union([z.literal(EVIDENCE_CATALOG_VERSION), z.literal("qual-hardware-evidence-catalog/3.0.0"), z.literal("qual-hardware-evidence-catalog/2.0.0")]),
   catalogVersion: z.string().min(1).max(160),
   generatedAt: z.iso.datetime(),
   components: z.array(hardwareComponentSchema).max(100_000).optional(),

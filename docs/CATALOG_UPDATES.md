@@ -59,7 +59,7 @@ Cada recomendação registra a versão do catálogo. Projetos e relatórios anti
 
 ## O que acontece no desktop
 
-Ao abrir e a cada 24 horas, Windows, macOS e Ubuntu consultam o mesmo repositório público, usam ETag e localizam a maior sequência. Antes da ativação, o aplicativo valida HTTPS/host, tamanho, SHA-256, schema, `keyId`, assinatura Ed25519, data, anti-rollback e toda a cadeia desde a primeira publicação. Hardware, componentes, benchmarks, preços, fontes, publicação e ponteiro ativo entram em uma transação única; SQLite v6 preserva integralmente as tabelas v1-v5 e normaliza as observações numéricas e previsões por estágio.
+Ao abrir e a cada 24 horas, Windows, macOS e Ubuntu consultam o mesmo repositório público, usam ETag e localizam a maior sequência. Antes da ativação, o aplicativo valida HTTPS/host, tamanho, SHA-256, schema, `keyId`, assinatura Ed25519, data, anti-rollback e toda a cadeia desde a primeira publicação. Hardware, componentes, benchmarks, preços, fontes, publicação e ponteiro ativo entram em uma transação única; SQLite v7 preserva integralmente as tabelas v1-v6 e acrescenta identidades canônicas, compatibilidade, BOMs e cobertura por estágio.
 
 Qualquer falha preserva o snapshot ativo. Um computador offline continua com o último bundle válido ou com o catálogo embarcado. O botão **Atualizar hardware** mostra versão, inventário, preços, mercados, última/ próxima coleta, fontes saudáveis/degradadas/indisponíveis, diferenças e eventual erro. **Verificar agora** apenas antecipa a consulta segura; não é necessário para manter o sistema atualizado. A importação manual de bundle oficial permanece escondida em **Recuperação avançada**.
 

@@ -95,6 +95,63 @@ describe("safe catalog sources", () => {
     expect(benchmark?.payload.sampleCount).toBe(3066);
   });
 
+  it("parses the official MLPerf Qwen summary without treating a different model as Perceptrum-equivalent", async () => {
+    const mlcommons = {
+      ...BUNDLED_SOURCE_REGISTRY.sources.find((item) => item.id === "benchmark-mlcommons")!,
+      minimumIntervalMs: 0,
+    };
+    const body = JSON.stringify([{
+      ID: "6.0-test", Submitter: "Vendor", Category: "closed", Suite: "datacenter",
+      System: "Reference System", Platform: "Reference_GB300x4_TRT", Model: "qwen3-vl-235b-a22b",
+      Scenario: "Server", Nodes: 1, Processor: "NVIDIA Grace CPU", Accelerator: "NVIDIA GB300",
+      "Total Accelerators": 4, Software: "TensorRT 10.14, CUDA 13.1", operating_system: "Ubuntu 22.04",
+      compliance: "closed", errors: 0, version: "v6.0", Details: "https://github.com/mlcommons/details",
+      Code: "https://github.com/mlcommons/code", Performance_Result: 41.6342, Performance_Units: "Queries/s",
+    }]);
+    const result = await collectCatalogSource(mlcommons, async () => new Response(body, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    expect(result.run.status).toBe("collected");
+    expect(result.observations).toHaveLength(1);
+    expect(result.observations[0]?.payload.stage).toBe("local_inference");
+    expect(result.observations[0]?.payload.score).toBe(41.6342);
+    expect(result.observations[0]?.payload.sku).toBe("NVIDIA GB300");
+    expect(result.observations[0]?.payload.perceptrumComparable).toBe(false);
+    expect(result.observations[0]?.evidenceLocator).toContain("Performance_Result");
+  });
+
+  it("parses a SPEC CPU disclosure only when the result and system configuration are explicit", async () => {
+    const spec = {
+      ...BUNDLED_SOURCE_REGISTRY.sources.find((item) => item.id === "benchmark-spec")!,
+      primaryUrl: "https://www.spec.org/cpu2017/results/fixture.csv",
+      discoveryUrls: [],
+      minimumIntervalMs: 0,
+      robotsRequired: false,
+    };
+    const csv = [
+      "valid,1",
+      "SPECrate2017_fp_base,607.406856,,607.406856",
+      '"Hardware Vendor:",Fujitsu',
+      '"Hardware Model:","PRIMERGY RX1440 M2"',
+      '"CPU Name","AMD EPYC 9355"',
+      'Enabled,"32 cores, 1 chip, 2 threads/core"',
+      'Memory,"384 GB DDR5"',
+      'Storage,"1 x SATA SSD"',
+      'OS,"SUSE Linux Enterprise Server 15 SP6"',
+      'Compiler,"AOCC 5.0.0"',
+    ].join("\n");
+    const result = await collectCatalogSource(spec, async () => new Response(csv, {
+      status: 200,
+      headers: { "content-type": "text/csv" },
+    }));
+    const benchmark = result.observations.find((observation) => observation.payload.kind === "public_benchmark");
+    expect(benchmark?.payload.device).toBe("AMD EPYC 9355");
+    expect(benchmark?.payload.score).toBe(607.406856);
+    expect(benchmark?.payload.stage).toBe("job_scheduler");
+    expect(benchmark?.payload.reproducible).toBe(true);
+  });
+
   it("extracts numerical STREAM, fio, FFmpeg and OpenCV records without letting AI decide values", async () => {
     const cases = [
       { id: "benchmark-openbenchmarking-stream", metric: "STREAM Triad", expectedStage: "memory_bandwidth" },
@@ -237,11 +294,11 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     await expect(channel.refresh(new MemoryPlannerStore())).rejects.toThrow("official_catalog_url_rejected");
   });
 
-  it("migrates a v3 database additively and preserves existing rows", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-v3-current-"));
+  it("migrates a v6 database additively to v7 and preserves existing rows", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-v6-current-"));
     const path = join(directory, "qual-hardware.sqlite");
     const legacy = new DatabaseSync(path);
-    legacy.exec("CREATE TABLE legacy_evidence(id TEXT PRIMARY KEY, value TEXT) STRICT; INSERT INTO legacy_evidence VALUES('kept','yes'); PRAGMA user_version=3;");
+    legacy.exec("CREATE TABLE legacy_evidence(id TEXT PRIMARY KEY, value TEXT) STRICT; INSERT INTO legacy_evidence VALUES('kept','yes'); PRAGMA user_version=6;");
     legacy.close();
     const store = new SqlitePlannerStore(path);
     const publications = await store.listCatalogPublications();
@@ -252,6 +309,7 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     expect((check.prepare("SELECT value FROM legacy_evidence WHERE id='kept'").get() as { value: string }).value).toBe("yes");
     expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(QUAL_HARDWARE_SQLITE_SCHEMA_VERSION);
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('benchmark_suites','benchmark_profiles','benchmark_systems','benchmark_runs','benchmark_metrics','capacity_prediction_stage_results')").get() as { total: number }).total).toBe(6);
+    expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('component_identities','component_aliases','component_specification_versions','component_compatibility_rules','benchmark_artifacts','benchmark_observation_component_coverage','component_builds','component_build_items','component_build_decisions','evidence_coverage_reports','capacity_cross_validations')").get() as { total: number }).total).toBe(11);
     check.close();
   });
 

@@ -355,7 +355,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
-    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/3.0.0");
+    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/4.0.0");
   }
 
   const macScenario = createDefaultScenario(4);
