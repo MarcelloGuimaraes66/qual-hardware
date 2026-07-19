@@ -27,6 +27,7 @@ jobs:
       due: ${{ steps.gate.outputs.due }}
       previous_sha: ${{ steps.gate.outputs.previous_sha }}
       previous_sequence: ${{ steps.gate.outputs.previous_sequence }}
+      next_sequence: ${{ steps.gate.outputs.next_sequence }}
       previous_tag: ${{ steps.gate.outputs.previous_tag }}
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +48,7 @@ jobs:
             echo "due=true" >> "$GITHUB_OUTPUT"
             echo "previous_sha=" >> "$GITHUB_OUTPUT"
             echo "previous_sequence=0" >> "$GITHUB_OUTPUT"
+            echo "next_sequence=1" >> "$GITHUB_OUTPUT"
             echo "previous_tag=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -60,6 +62,7 @@ jobs:
           echo "due=$due" >> "$GITHUB_OUTPUT"
           echo "previous_sha=$previous_sha" >> "$GITHUB_OUTPUT"
           echo "previous_sequence=$previous_sequence" >> "$GITHUB_OUTPUT"
+          echo "next_sequence=$((previous_sequence + 1))" >> "$GITHUB_OUTPUT"
           echo "previous_tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
@@ -178,7 +181,7 @@ jobs:
             --collection artifacts/collection/collection.json \
             --qwen artifacts/qwen/qwen.json \
             --output artifacts/final \
-            --sequence ${{ fromJSON(needs.due.outputs.previous_sequence) + 1 }} \
+            --sequence "${{ needs.due.outputs.next_sequence }}" \
             --previous-sha "${{ needs.due.outputs.previous_sha }}" \
             "${previous_args[@]}"
       - run: npm run catalog:publisher -- validate --file artifacts/final/catalog-payload.json
