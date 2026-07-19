@@ -3,7 +3,7 @@ import { buildCapacityPredictions, createCalibrationPlan, REQUIRED_CALIBRATION_S
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import { createDefaultScenario, localCalibrationRunSchema } from "../src/shared/schemas.js";
 import type { HardwareNodeTemplate, LocalCalibrationRun, PublicBenchmarkObservation } from "../src/shared/types.js";
-import { LOCAL_CALIBRATION_VERSION, WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
+import { LEGACY_LOCAL_CALIBRATION_VERSION, LOCAL_CALIBRATION_VERSION, WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 
 const base = HARDWARE_CATALOG.find((item) => item.id === "hp-z2-g1i-ultra9-rtx4500ada")!;
 const catalog: HardwareNodeTemplate[] = ["anchor-a", "anchor-b", "anchor-d", "target-c"].map((id) => ({
@@ -40,6 +40,7 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
     stages: REQUIRED_CALIBRATION_STAGES.map((stage) => ({
       stage, safeCameraCapacity: capacity, throughput: capacity, throughputUnit: "camera-equivalent",
       p95LatencyMs: 100, peakUtilizationPercent: 80, queueGrowthPerMinute: 0, thermalThrottlePercent: 0,
+      evidenceStatus: "measured", measurementSource: "perceptrum-production-pipeline",
     })),
     phases: [
       { name: "warmup", durationSeconds: 600, loadPercent: 100, cameraCount: capacity, inferenceSuccessRate: 1, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
@@ -51,7 +52,10 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
       complete: true, isolatedDatabase: true, sourceRegistered: true, rtspClipProvided: true,
       intelligenceJobQueued: true, schedulerClaimedJob: true, aiqLocalCompleted: true, resultPersisted: true,
     },
-    qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", failures: [], warnings: [] },
+    qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", validationStatus: "anchor_approved", failures: [], warnings: [] },
+    telemetryCapabilities: [{ id: "cpu.utilization", status: "measured", provider: "test" }],
+    resourceSummaries: [], processGroups: [], telemetrySampleCount: 3600, telemetrySampleIntervalMs: 1000,
+    artifact: { fileName: `${id}.qhcal.json`, payloadSha256: "a".repeat(64), persistedAt: "2026-07-18T13:00:00.000Z", storage: "documents_append_only" },
     notes: [],
   };
 }
@@ -98,9 +102,16 @@ describe("local calibration and conservative extrapolation", () => {
 
   it("keeps legacy or representative-only runs out of purchasing extrapolation", () => {
     const legacy = run("00000000-0000-4000-8000-000000000006", "anchor-a", 10);
+    legacy.schemaVersion = LEGACY_LOCAL_CALIBRATION_VERSION;
     delete legacy.executionMode;
     delete legacy.pipelineEvidence;
     delete legacy.qualityGate;
+    delete legacy.telemetryCapabilities;
+    delete legacy.resourceSummaries;
+    delete legacy.processGroups;
+    delete legacy.telemetrySampleCount;
+    delete legacy.telemetrySampleIntervalMs;
+    delete legacy.artifact;
     const target = buildCapacityPredictions(catalog, [legacy], observations())
       .find((item) => item.hardwareTemplateId === "target-c")!;
     expect(target.status).toBe("reference_only");
@@ -113,5 +124,21 @@ describe("local calibration and conservative extrapolation", () => {
     expect(exact.status).toBe("validated_local");
     const invalid = { ...run("00000000-0000-4000-8000-000000000004", "target-c", 12), aiqOrigin: "https://api.openai.com/v1", openAiRequestCount: 1 };
     expect(localCalibrationRunSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("requires an explicit reason and null metrics for unavailable stage evidence", () => {
+    const unavailable = run("00000000-0000-4000-8000-000000000007", "target-c", 12);
+    const thermal = unavailable.stages.find((stage) => stage.stage === "thermal_sustain")!;
+    thermal.evidenceStatus = "unavailable";
+    thermal.safeCameraCapacity = null;
+    thermal.throughput = null;
+    thermal.p95LatencyMs = null;
+    thermal.peakUtilizationPercent = null;
+    thermal.thermalThrottlePercent = null;
+    unavailable.overallSafeCameraCapacity = null;
+    unavailable.qualityGate = { ...unavailable.qualityGate!, eligibleForCapacityExtrapolation: false, validationStatus: "invalid" };
+    expect(localCalibrationRunSchema.safeParse(unavailable).success).toBe(false);
+    thermal.reason = "Thermal counter is not exposed by this operating system.";
+    expect(localCalibrationRunSchema.safeParse(unavailable).success).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, 64+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 21-item catalog, the 39-source automatic channel, Windows/Ubuntu/macOS recommendation targets, SQLite v4, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 2.3 exports, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, 70+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 21-item catalog, the 39-source automatic channel, Windows/Ubuntu/macOS recommendation targets, SQLite v5, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 2.3 exports, single-instance behavior and persistence after restart.
 
 ```sh
 npm ci
@@ -30,6 +30,8 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 4. All ten stages, phase metrics, exact fingerprint/build/model hashes, temperatures and frame counters are present.
 5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases but never creates importable evidence.
 6. Import rejects a selected catalog profile when CPU, GPU or form factor does not match the measured fingerprint.
+7. Results 1.0 remain readable; 1.1 additionally requires telemetry capability states, evidence per stage, resource/process summaries and artifact SHA-256.
+8. Session tests cover token hashing, expiry, replay, callback authentication, protocol allowlisting, native Documents paths, live progress and automatic result persistence/recalculation.
 
 ## Audited source baseline
 
@@ -48,5 +50,5 @@ Run `PERCEPTRUM_SOURCE_ROOT=/path/to/perceptrum npm run audit:source` whenever P
 - Apple templates are considered only after explicit macOS selection; shared/unified memory is not dedicated VRAM and current local AiQ/NVIDIA decode demand rejects them.
 - Every PDF, XLSX and JSON proposal export contains the complete current set of minimum, recommended and N+1 designs; a partial recommendation set is rejected.
 - Hardware catalog imports require a configured Ed25519 public key and never replace the active catalog when signature verification fails.
-- Automatic catalog tests cover day 0/14/15/retry scheduling, concurrent-publication protection, HTTPS/host/redirect/robots/CAPTCHA limits, deterministic Qwen evidence, price freshness/outliers, SHA-256, Ed25519, full-chain anti-rollback and atomic v3→v4 activation without row loss.
+- Automatic catalog tests cover day 0/14/15/retry scheduling, concurrent-publication protection, HTTPS/host/redirect/robots/CAPTCHA limits, deterministic Qwen evidence, price freshness/outliers, SHA-256, Ed25519, full-chain anti-rollback and additive migration without row loss.
 - The smoke accepts the bundled fallback when no public Release exists and requires a persisted publication as soon as the official channel has activated one.

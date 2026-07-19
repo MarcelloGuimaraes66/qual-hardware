@@ -23,8 +23,8 @@
 ## Blast radius and change budget
 
 - Allowed: this `qual-hardware` project and the isolated local-calibration adapter in the Perceptrum desktop runtime.
-- Excluded: Perceptrum packaging/distribution, production deployment scripts, normal camera bootstrap, command routing, billing and account authentication.
-- Change budget: targeted redesign in the new project; minimal additive integration in Perceptrum.
+- Excluded: production deployment scripts, normal camera bootstrap, command routing, billing and account authentication.
+- Change budget: targeted Qual Hardware session/UI work plus the isolated additive Perceptrum calibration, protocol-registration and packaging adapter.
 
 ## Platform matrix
 
@@ -43,10 +43,10 @@
 3. Demand is calculated for RTSP receive/decode, BGR processing, encode, CPU, RAM, GPU inference, VRAM/unified memory, disk read/write/capacity, LAN, queues and sustained thermals. RTSP FPS and AiQ inference FPS remain independent.
 4. Candidate hardware nodes are filtered by platform and runtime compatibility and evaluated with multidimensional compute/network allocation. Laptops and mini PCs compete for small CPU-decode/remote-model loads. Apple is opt-in; integrated/shared memory is never counted as dedicated NVIDIA VRAM. Every BOM still includes a modest NVMe workspace for the operating system and temporary inference files.
 5. The service emits minimum, recommended and N+1 designs, each with up to six compatible cost-ordered machines and Intel/AMD/OEM diversity after safety filtering.
-6. A versioned local plan is exported. Perceptrum uses synthetic loopback RTSP and the real local AiQ/Qwen pipeline and returns aggregate `.qhcal.json` evidence.
+6. Qual Hardware creates an expiring authenticated session and opens `perceptrum://calibration/run`. Perceptrum downloads one exact plan over loopback, uses synthetic RTSP plus the real local AiQ/Qwen/Intelligence pipeline, saves `.qhcal.json` append-only in Documents and returns aggregate evidence and progress. Manual plan/result files remain recovery paths.
 7. Signed public stage observations scale physical anchors by a per-stage rule of three; the most conservative anchor and bottleneck win, followed by 20/30/40% margins and leave-one-out error checks.
 8. GitHub Actions checks the approved source registry every 15 days, validates structured observations, signs one immutable catalog bundle and publishes it as a `catalog-*` Release plus an append-only `catalog-data` history.
-9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically in SQLite v4.
+9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically. SQLite v5 preserves all v1-v4 data and adds only authenticated calibration-session state.
 
 ## Security model
 
@@ -55,3 +55,5 @@ There is no application login because there is no hosted surface. Public or LAN 
 The desktop binds its internal API to a random `127.0.0.1` port. Its renderer is sandboxed, isolated, has no Node.js integration, rejects unused permissions and cannot navigate away from its loopback origin. The official GitHub owner, Release prefix and an Ed25519 public-key ring are compiled into the application; the private key exists only as the protected publisher secret. Catalog snapshots are verified before transactionally adding the new publication and switching the active pointer. The desktop database lives in Electron's native per-user `userData` directory and survives application restarts on all three supported systems.
 
 Only one desktop instance may own the database. Windows and Ubuntu quit after the last window closes. On macOS, closing the last window keeps the application active, Dock activation recreates the window, and `Cmd+Q` closes the API and SQLite before exit.
+
+Calibration tokens are random 256-bit values, stored only as SHA-256 hashes, compared in constant time and expired after two hours. Plans, progress and results stay on loopback. A completed session cannot be replayed or overwritten. If the callback is interrupted, the next Qual Hardware launch reconciles only a saved result whose plan UUID matches a known pending session and whose schema/checksum is valid.

@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { CapacityScenario } from "./types.js";
 import {
+  CALIBRATION_HANDOFF_VERSION,
   CALIBRATION_PLAN_VERSION,
   EVIDENCE_CATALOG_VERSION,
+  LEGACY_LOCAL_CALIBRATION_VERSION,
   LOCAL_CALIBRATION_VERSION,
   WORKLOAD_CONTRACT_VERSION,
 } from "./types.js";
@@ -154,9 +156,17 @@ export const calibrationStageSchema = z.enum([
 ]);
 
 const operatingSystemSchema = z.enum(["windows", "ubuntu", "macos"]);
+const telemetryEvidenceStatusSchema = z.enum(["measured", "unavailable", "failed", "not_applicable"]);
+const telemetryMetricSummarySchema = z.object({
+  samples: z.number().int().nonnegative(),
+  average: z.number().finite(),
+  p95: z.number().finite(),
+  p99: z.number().finite(),
+  peak: z.number().finite(),
+});
 
 export const localCalibrationRunSchema = z.object({
-  schemaVersion: z.literal(LOCAL_CALIBRATION_VERSION),
+  schemaVersion: z.union([z.literal(LEGACY_LOCAL_CALIBRATION_VERSION), z.literal(LOCAL_CALIBRATION_VERSION)]),
   id: z.string().uuid(),
   planId: z.string().uuid(),
   createdAt: z.iso.datetime(),
@@ -177,7 +187,8 @@ export const localCalibrationRunSchema = z.object({
     gpuModel: z.string().min(1).max(240),
     gpuArchitecture: z.string().min(1).max(120),
     gpuCount: z.number().int().nonnegative().max(32),
-    gpuVramBytes: z.number().int().nonnegative(),
+    gpuVramBytes: z.number().int().nonnegative().nullable(),
+    unifiedMemoryBytes: z.number().int().positive().nullable().optional(),
     gpuDriver: z.string().min(1).max(160),
     ramBytes: z.number().int().positive(),
     memoryChannels: z.number().int().positive().max(32).nullable(),
@@ -212,13 +223,17 @@ export const localCalibrationRunSchema = z.object({
   credentialFieldCount: z.literal(0),
   stages: z.array(z.object({
     stage: calibrationStageSchema,
-    safeCameraCapacity: z.number().nonnegative(),
-    throughput: z.number().nonnegative(),
+    safeCameraCapacity: z.number().nonnegative().nullable(),
+    throughput: z.number().nonnegative().nullable(),
     throughputUnit: z.string().min(1).max(80),
-    p95LatencyMs: z.number().nonnegative(),
-    peakUtilizationPercent: z.number().min(0).max(100),
+    p95LatencyMs: z.number().nonnegative().nullable(),
+    peakUtilizationPercent: z.number().min(0).max(100).nullable(),
     queueGrowthPerMinute: z.number(),
-    thermalThrottlePercent: z.number().min(0).max(100),
+    thermalThrottlePercent: z.number().min(0).max(100).nullable(),
+    evidenceStatus: telemetryEvidenceStatusSchema.optional(),
+    reason: z.string().min(1).max(500).optional(),
+    measurementSource: z.string().min(1).max(240).optional(),
+    utilizationEvidence: z.array(z.string().min(1).max(500)).max(50).optional(),
   })).min(6),
   phases: z.array(z.object({
     name: z.enum(["warmup", "sustained", "surge"]),
@@ -229,8 +244,12 @@ export const localCalibrationRunSchema = z.object({
     maxQueueDepth: z.number().int().nonnegative(),
     queueGrowthPerMinute: z.number(),
     outOfMemoryCount: z.number().int().nonnegative(),
+    plannedDecodedFrames: z.number().int().nonnegative().optional(),
+    decodedFrames: z.number().int().nonnegative().optional(),
+    frameDeliveryRate: z.number().min(0).max(1).optional(),
+    thermalThrottlePercent: z.number().min(0).max(100).nullable().optional(),
   })).length(3),
-  overallSafeCameraCapacity: z.number().nonnegative(),
+  overallSafeCameraCapacity: z.number().nonnegative().nullable(),
   bottleneck: calibrationStageSchema,
   pipelineEvidence: z.object({
     complete: z.boolean(),
@@ -245,8 +264,34 @@ export const localCalibrationRunSchema = z.object({
   qualityGate: z.object({
     eligibleForCapacityExtrapolation: z.boolean(),
     evidenceLevel: z.enum(["validated_local", "representative_only"]),
+    validationStatus: z.enum(["diagnostic", "anchor_approved", "invalid"]).optional(),
     failures: z.array(z.string().max(240)).max(100),
     warnings: z.array(z.string().max(240)).max(100),
+  }).optional(),
+  advancedTelemetryRequested: z.boolean().optional(),
+  telemetrySampleIntervalMs: z.number().int().positive().max(60_000).optional(),
+  telemetrySampleCount: z.number().int().nonnegative().optional(),
+  telemetryCapabilities: z.array(z.object({
+    id: z.string().min(1).max(160),
+    status: telemetryEvidenceStatusSchema,
+    provider: z.string().min(1).max(240),
+    reason: z.string().min(1).max(1_000).optional(),
+  })).max(200).optional(),
+  resourceSummaries: z.array(z.object({
+    phase: z.string().min(1).max(120),
+  }).catchall(z.union([telemetryMetricSummarySchema, z.null()]))).max(200).optional(),
+  processGroups: z.array(z.object({
+    group: z.string().min(1).max(120),
+    sampleCount: z.number().int().nonnegative(),
+    cpuUtilizationPercent: telemetryMetricSummarySchema.nullable().optional(),
+    residentMemoryBytes: telemetryMetricSummarySchema.nullable().optional(),
+    cumulativeCpuSeconds: telemetryMetricSummarySchema.nullable().optional(),
+  }).loose()).max(100).optional(),
+  artifact: z.object({
+    fileName: z.string().min(1).max(500),
+    payloadSha256: z.string().regex(/^[0-9a-f]{64}$/i),
+    persistedAt: z.iso.datetime(),
+    storage: z.enum(["documents_append_only", "explicit_output"]),
   }).optional(),
   notes: z.array(z.string().max(500)).max(100),
 }).superRefine((value, context) => {
@@ -259,6 +304,51 @@ export const localCalibrationRunSchema = z.object({
   if (value.qualityGate?.eligibleForCapacityExtrapolation && value.pipelineEvidence?.complete !== true) {
     context.addIssue({ code: "custom", path: ["pipelineEvidence"], message: "Eligible calibration requires complete production-pipeline evidence." });
   }
+  if (value.schemaVersion === LOCAL_CALIBRATION_VERSION) {
+    if (!value.telemetryCapabilities?.length) {
+      context.addIssue({ code: "custom", path: ["telemetryCapabilities"], message: "Calibration 1.1 requires telemetry capabilities." });
+    }
+    value.telemetryCapabilities?.forEach((capability, index) => {
+      if (capability.status !== "measured" && !capability.reason?.trim()) {
+        context.addIssue({ code: "custom", path: ["telemetryCapabilities", index, "reason"], message: "Unavailable telemetry requires a reason." });
+      }
+    });
+    if (!value.resourceSummaries || !value.processGroups) {
+      context.addIssue({ code: "custom", path: ["resourceSummaries"], message: "Calibration 1.1 requires resource and process summaries." });
+    }
+    value.stages.forEach((stage, index) => {
+      if (!stage.evidenceStatus) {
+        context.addIssue({ code: "custom", path: ["stages", index, "evidenceStatus"], message: "Calibration 1.1 requires evidence status for every stage." });
+      }
+      if (stage.evidenceStatus && stage.evidenceStatus !== "measured" && !stage.reason?.trim()) {
+        context.addIssue({ code: "custom", path: ["stages", index, "reason"], message: "Unavailable stage evidence requires a reason." });
+      }
+    });
+    if (!value.artifact) {
+      context.addIssue({ code: "custom", path: ["artifact"], message: "Calibration 1.1 requires persisted artifact metadata." });
+    }
+  }
+});
+
+export const calibrationHandoffSchema = z.object({
+  schemaVersion: z.literal(CALIBRATION_HANDOFF_VERSION),
+  sessionId: z.string().uuid(),
+  callbackOrigin: z.string().url().superRefine((value, context) => {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" || !parsed.hostname.startsWith("127.") || parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.username || parsed.password) {
+      context.addIssue({ code: "custom", message: "Calibration callback must be a plain loopback HTTP origin." });
+    }
+  }),
+  token: z.string().regex(/^[A-Za-z0-9_-]{43,128}$/),
+  expiresAt: z.iso.datetime(),
+  planId: z.string().uuid(),
+});
+
+export const calibrationSessionRequestSchema = z.object({
+  recommendationId: z.string().uuid(),
+  mode: z.enum(["quick", "full"]),
+  targetHardwareTemplateId: z.string().min(1).max(160).nullable(),
+  advancedTelemetry: z.boolean().default(false),
 });
 
 export const hardwareComponentSchema = z.object({

@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS calibration_runs (
 CREATE INDEX IF NOT EXISTS calibration_runs_hardware_idx
   ON calibration_runs (hardware_template_id, completed_at DESC);
 
+CREATE TABLE IF NOT EXISTS calibration_sessions (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK (state IN ('pending','launching','running','completed','failed','expired')),
+  session_json TEXT NOT NULL CHECK (json_valid(session_json)),
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_sessions_state_idx
+  ON calibration_sessions (state, expires_at, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS public_benchmark_observations (
   id TEXT PRIMARY KEY,
   hardware_template_id TEXT NOT NULL,
@@ -225,4 +237,4 @@ CREATE TABLE IF NOT EXISTS catalog_publication_benchmark_membership (
   PRIMARY KEY (publication_sequence, observation_id)
 ) STRICT;
 
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;

@@ -9,6 +9,7 @@ import { BUNDLED_SOURCE_REGISTRY } from "../src/engine/sourceRegistry.js";
 import { collectCatalogSource, robotsAllows } from "../src/server/catalogSourceFetcher.js";
 import { buildCatalogBundle, isPublicationDue, priceAgeState, rejectUnconfirmedPriceOutliers, sha256, signCatalogBundle, verifyCatalogBundle } from "../src/server/catalogPublication.js";
 import { OfficialCatalogChannel } from "../src/server/officialCatalogChannel.js";
+import { QUAL_HARDWARE_SQLITE_SCHEMA_VERSION } from "../src/server/database.js";
 import { SqlitePlannerStore, MemoryPlannerStore } from "../src/server/store.js";
 import { classifyCatalogCandidate, validateQwenClassification } from "../src/server/qwenCatalog.js";
 import type { CatalogBundle, CatalogSource, PriceQuote, SignedCatalogBundle } from "../src/shared/types.js";
@@ -163,7 +164,7 @@ describe("price evidence gates", () => {
   });
 });
 
-describe("signed bundle, chain and SQLite v4", () => {
+describe("signed bundle, chain and additive SQLite migration", () => {
   it("verifies Ed25519 and rejects any payload modification", () => {
     const keys = generateKeyPairSync("ed25519");
     const signed = signCatalogBundle(bundle(1, null, new Date("2026-07-18T12:00:00.000Z")), keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(), "test-key");
@@ -217,7 +218,7 @@ describe("signed bundle, chain and SQLite v4", () => {
   });
 
   it("migrates a v3 database additively and preserves existing rows", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-v3-v4-"));
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-v3-current-"));
     const path = join(directory, "qual-hardware.sqlite");
     const legacy = new DatabaseSync(path);
     legacy.exec("CREATE TABLE legacy_evidence(id TEXT PRIMARY KEY, value TEXT) STRICT; INSERT INTO legacy_evidence VALUES('kept','yes'); PRAGMA user_version=3;");
@@ -229,7 +230,7 @@ describe("signed bundle, chain and SQLite v4", () => {
     await store.close();
     const check = new DatabaseSync(path);
     expect((check.prepare("SELECT value FROM legacy_evidence WHERE id='kept'").get() as { value: string }).value).toBe("yes");
-    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(4);
+    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(QUAL_HARDWARE_SQLITE_SCHEMA_VERSION);
     check.close();
   });
 

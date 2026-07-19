@@ -4,7 +4,9 @@ export type WorkloadContractVersion =
   | "perceptrum-workload/1.1.0"
   | "perceptrum-workload/1.0.0";
 
-export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0" as const;
+export const LEGACY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0" as const;
+export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.1.0" as const;
+export const CALIBRATION_HANDOFF_VERSION = "qual-hardware-calibration-handoff/1.0.0" as const;
 export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
 export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/2.0.0" as const;
 export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/1.0.0" as const;
@@ -58,6 +60,9 @@ export type CalibrationStage =
   | "memory_bandwidth"
   | "network_ingest"
   | "thermal_sustain";
+export type TelemetryEvidenceStatus = "measured" | "unavailable" | "failed" | "not_applicable";
+export type CalibrationValidationStatus = "diagnostic" | "anchor_approved" | "invalid";
+export type CalibrationSessionState = "pending" | "launching" | "running" | "cancelling" | "cancelled" | "completed" | "failed" | "expired";
 
 export interface AgentFeatures {
   onlyCaptureOnMotion: boolean;
@@ -558,7 +563,8 @@ export interface HardwareFingerprint {
   gpuModel: string;
   gpuArchitecture: string;
   gpuCount: number;
-  gpuVramBytes: number;
+  gpuVramBytes: number | null;
+  unifiedMemoryBytes?: number | null;
   gpuDriver: string;
   ramBytes: number;
   memoryChannels: number | null;
@@ -579,13 +585,17 @@ export interface HardwareFingerprint {
 
 export interface CalibrationStageMetric {
   stage: CalibrationStage;
-  safeCameraCapacity: number;
-  throughput: number;
+  safeCameraCapacity: number | null;
+  throughput: number | null;
   throughputUnit: string;
-  p95LatencyMs: number;
-  peakUtilizationPercent: number;
+  p95LatencyMs: number | null;
+  peakUtilizationPercent: number | null;
   queueGrowthPerMinute: number;
-  thermalThrottlePercent: number;
+  thermalThrottlePercent: number | null;
+  evidenceStatus?: TelemetryEvidenceStatus;
+  reason?: string;
+  measurementSource?: string;
+  utilizationEvidence?: string[];
 }
 
 export interface CalibrationPhaseMetric {
@@ -597,10 +607,53 @@ export interface CalibrationPhaseMetric {
   maxQueueDepth: number;
   queueGrowthPerMinute: number;
   outOfMemoryCount: number;
+  plannedDecodedFrames?: number;
+  decodedFrames?: number;
+  frameDeliveryRate?: number;
+  thermalThrottlePercent?: number | null;
+}
+
+export interface TelemetryCapability {
+  id: string;
+  status: TelemetryEvidenceStatus;
+  provider: string;
+  reason?: string;
+}
+
+export interface TelemetryMetricSummary {
+  samples: number;
+  average: number;
+  p95: number;
+  p99: number;
+  peak: number;
+}
+
+export interface CalibrationResourceSummary {
+  phase: string;
+  cpuUtilizationPercent?: TelemetryMetricSummary | null;
+  memoryUsedBytes?: TelemetryMetricSummary | null;
+  loadAverage?: TelemetryMetricSummary | null;
+  gpuUtilizationPercent?: TelemetryMetricSummary | null;
+  gpuMemoryUsedBytes?: TelemetryMetricSummary | null;
+  gpuDecoderUtilizationPercent?: TelemetryMetricSummary | null;
+  gpuEncoderUtilizationPercent?: TelemetryMetricSummary | null;
+  gpuTemperatureCelsius?: TelemetryMetricSummary | null;
+  gpuPowerWatts?: TelemetryMetricSummary | null;
+  cpuPowerWatts?: TelemetryMetricSummary | null;
+  [key: string]: string | TelemetryMetricSummary | null | undefined;
+}
+
+export interface CalibrationProcessGroupSummary {
+  group: "perceptrum" | "ffmpeg" | "mediamtx" | "aiq" | string;
+  sampleCount: number;
+  cpuUtilizationPercent?: TelemetryMetricSummary | null;
+  residentMemoryBytes?: TelemetryMetricSummary | null;
+  cumulativeCpuSeconds?: TelemetryMetricSummary | null;
+  [key: string]: string | number | TelemetryMetricSummary | null | undefined;
 }
 
 export interface LocalCalibrationRun {
-  schemaVersion: typeof LOCAL_CALIBRATION_VERSION;
+  schemaVersion: typeof LOCAL_CALIBRATION_VERSION | typeof LEGACY_LOCAL_CALIBRATION_VERSION;
   id: string;
   planId: string;
   createdAt: string;
@@ -628,7 +681,7 @@ export interface LocalCalibrationRun {
   credentialFieldCount: 0;
   stages: CalibrationStageMetric[];
   phases: CalibrationPhaseMetric[];
-  overallSafeCameraCapacity: number;
+  overallSafeCameraCapacity: number | null;
   bottleneck: CalibrationStage;
   pipelineEvidence?: {
     complete: boolean;
@@ -644,10 +697,62 @@ export interface LocalCalibrationRun {
   qualityGate?: {
     eligibleForCapacityExtrapolation: boolean;
     evidenceLevel: "validated_local" | "representative_only";
+    validationStatus?: CalibrationValidationStatus;
     failures: string[];
     warnings: string[];
   };
+  advancedTelemetryRequested?: boolean;
+  telemetrySampleIntervalMs?: number;
+  telemetrySampleCount?: number;
+  telemetryCapabilities?: TelemetryCapability[];
+  resourceSummaries?: CalibrationResourceSummary[];
+  processGroups?: CalibrationProcessGroupSummary[];
+  artifact?: {
+    fileName: string;
+    payloadSha256: string;
+    persistedAt: string;
+    storage: "documents_append_only";
+  };
   notes: string[];
+}
+
+export interface CalibrationHandoff {
+  schemaVersion: typeof CALIBRATION_HANDOFF_VERSION;
+  sessionId: string;
+  callbackOrigin: string;
+  token: string;
+  expiresAt: string;
+  planId: string;
+}
+
+export interface CalibrationSessionProgress {
+  phase?: string;
+  stage?: string;
+  percent?: number;
+  message?: string;
+  updatedAt: string;
+}
+
+export interface CalibrationSession {
+  id: string;
+  planId: string;
+  recommendationId: string;
+  scenarioId: string;
+  mode: "quick" | "full";
+  advancedTelemetry: boolean;
+  state: CalibrationSessionState;
+  createdAt: string;
+  expiresAt: string;
+  launchedAt: string | null;
+  completedAt: string | null;
+  progress: CalibrationSessionProgress | null;
+  result: LocalCalibrationRun | null;
+  error: string | null;
+}
+
+export interface CalibrationSessionRecord extends CalibrationSession {
+  tokenHash: string;
+  plan: CalibrationPlan;
 }
 
 export interface CalibrationPlan {

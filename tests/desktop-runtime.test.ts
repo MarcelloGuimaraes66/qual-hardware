@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import {
   createIdempotentShutdown,
@@ -38,5 +39,11 @@ describe("cross-platform desktop runtime", () => {
     const shutdown = createIdempotentShutdown(action);
     await Promise.all([shutdown(), shutdown(), shutdown()]);
     expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not request remote fonts or styles from the packaged renderer", async () => {
+    const styles = await readFile(new URL("../src/web/styles.css", import.meta.url), "utf8");
+    expect(styles).not.toContain("fonts.googleapis.com");
+    expect(styles).not.toMatch(/@import\s+url\(['\"]https?:/i);
   });
 });

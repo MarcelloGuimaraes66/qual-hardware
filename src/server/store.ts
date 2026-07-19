@@ -11,6 +11,7 @@ import type {
   CapacityPrediction,
   CapacityRecommendation,
   CapacityScenario,
+  CalibrationSessionRecord,
   CatalogBundle,
   CatalogPublication,
   CatalogSource,
@@ -62,6 +63,9 @@ export interface PlannerStore {
   listBenchmarkEvidence(scenarioId: string, revision: number): Promise<BenchmarkEvidence[]>;
   saveCalibrationRun(run: LocalCalibrationRun): Promise<void>;
   listCalibrationRuns(): Promise<LocalCalibrationRun[]>;
+  saveCalibrationSession(session: CalibrationSessionRecord): Promise<void>;
+  getCalibrationSession(id: string): Promise<CalibrationSessionRecord | null>;
+  listCalibrationSessions(): Promise<CalibrationSessionRecord[]>;
   upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void>;
   listBenchmarkObservations(): Promise<PublicBenchmarkObservation[]>;
   saveEvidenceSnapshot(snapshot: EvidenceCatalogSnapshot): Promise<void>;
@@ -99,6 +103,7 @@ export class MemoryPlannerStore implements PlannerStore {
   private manifests = new Map<string, BenchmarkManifest>();
   private results = new Map<string, BenchmarkResultRecord>();
   private calibrationRuns = new Map<string, LocalCalibrationRun>();
+  private calibrationSessions = new Map<string, CalibrationSessionRecord>();
   private observations = new Map<string, PublicBenchmarkObservation>();
   private components = new Map<string, HardwareComponent>();
   private activeObservationIds = new Set<string>();
@@ -161,6 +166,17 @@ export class MemoryPlannerStore implements PlannerStore {
   async saveCalibrationRun(run: LocalCalibrationRun): Promise<void> { this.calibrationRuns.set(run.id, run); }
   async listCalibrationRuns(): Promise<LocalCalibrationRun[]> {
     return [...this.calibrationRuns.values()].sort((left, right) => right.completedAt.localeCompare(left.completedAt));
+  }
+  async saveCalibrationSession(session: CalibrationSessionRecord): Promise<void> {
+    this.calibrationSessions.set(session.id, structuredClone(session));
+  }
+  async getCalibrationSession(id: string): Promise<CalibrationSessionRecord | null> {
+    const session = this.calibrationSessions.get(id);
+    return session ? structuredClone(session) : null;
+  }
+  async listCalibrationSessions(): Promise<CalibrationSessionRecord[]> {
+    return [...this.calibrationSessions.values()].map((session) => structuredClone(session))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
   async upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void> {
     for (const observation of observations) {
@@ -438,6 +454,20 @@ export class SqlitePlannerStore implements PlannerStore {
   async listCalibrationRuns(): Promise<LocalCalibrationRun[]> {
     return rows(this.database.prepare("SELECT run_json FROM calibration_runs ORDER BY completed_at DESC").all())
       .map((row) => parseJson<LocalCalibrationRun>(row.run_json));
+  }
+  async saveCalibrationSession(session: CalibrationSessionRecord): Promise<void> {
+    const updatedAt = now();
+    this.database.prepare(
+      "INSERT INTO calibration_sessions(id,plan_id,state,session_json,created_at,expires_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,session_json=excluded.session_json,expires_at=excluded.expires_at,updated_at=excluded.updated_at",
+    ).run(session.id, session.planId, session.state, JSON.stringify(session), session.createdAt, session.expiresAt, updatedAt);
+  }
+  async getCalibrationSession(id: string): Promise<CalibrationSessionRecord | null> {
+    const row = this.database.prepare("SELECT session_json FROM calibration_sessions WHERE id=?").get(id) as Record<string, unknown> | undefined;
+    return row ? parseJson<CalibrationSessionRecord>(row.session_json) : null;
+  }
+  async listCalibrationSessions(): Promise<CalibrationSessionRecord[]> {
+    return rows(this.database.prepare("SELECT session_json FROM calibration_sessions ORDER BY created_at DESC").all())
+      .map((row) => parseJson<CalibrationSessionRecord>(row.session_json));
   }
   async upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void> {
     const statement = this.database.prepare(

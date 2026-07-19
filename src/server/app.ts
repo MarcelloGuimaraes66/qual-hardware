@@ -8,17 +8,31 @@ import { buildCapacityPredictions, createCalibrationPlan } from "../engine/calib
 import {
   benchmarkMetricsSchema,
   calibrationPlanRequestSchema,
+  calibrationSessionRequestSchema,
   localCalibrationRunSchema,
   scenarioCreateSchema,
   scenarioUpdateSchema,
 } from "../shared/schemas.js";
-import type { BenchmarkMetrics, CapacityRecommendation, LocalCalibrationRun } from "../shared/types.js";
+import type { BenchmarkMetrics, CapacityRecommendation, CalibrationSessionRecord, LocalCalibrationRun } from "../shared/types.js";
 import type { HardwareNodeTemplate } from "../shared/types.js";
 import { createBenchmarkManifest, evidenceValidatesRecommendation, nonceMatches, validateBenchmark } from "./benchmark.js";
 import { CatalogUpdateService } from "./catalogUpdates.js";
 import { jsonReport, pdfReport, xlsxReport } from "./reports.js";
 import { findForbiddenBenchmarkData, findForbiddenCalibrationData, safeError } from "./security.js";
 import { RevisionConflictError, type PlannerStore } from "./store.js";
+import {
+  authorizeCalibrationSession,
+  calibrationPayloadSha256,
+  cancelDeliveredCalibrationSession,
+  createCalibrationSession,
+  deliverCalibrationSession,
+  findPersistedCalibration,
+  normalizeCalibrationProgress,
+  publicCalibrationSession,
+  legacyCalibrationPayloadSha256,
+  resolveCalibrationDirectory,
+  type DesktopCalibrationBridge,
+} from "./calibrationSessions.js";
 
 const manifestRequestSchema = z.object({
   recommendationId: z.string().uuid(),
@@ -91,8 +105,74 @@ function reportRecommendationSet(
   }).filter((item): item is CapacityRecommendation => Boolean(item));
 }
 
-export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdateService(store)): Hono {
+export interface ApplicationOptions {
+  desktopBridge?: DesktopCalibrationBridge;
+  documentsDirectory?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export function createApp(
+  store: PlannerStore,
+  catalogUpdates = new CatalogUpdateService(store),
+  options: ApplicationOptions = {},
+): Hono {
   const app = new Hono();
+  const calibrationDirectoryOptions = options.documentsDirectory ? { documentsDirectory: options.documentsDirectory } : {};
+  const volatileCalibrationTokens = new Map<string, string>();
+  app.use("*", async (context, next) => {
+    await next();
+    context.header("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'");
+    context.header("Referrer-Policy", "no-referrer");
+    context.header("X-Frame-Options", "DENY");
+  });
+
+  async function acceptCalibrationResult(session: CalibrationSessionRecord, raw: unknown): Promise<CalibrationSessionRecord> {
+    const findings = findForbiddenCalibrationData(raw);
+    if (findings.length) throw new Error(`privacy_contract_violation:${findings.join(",")}`);
+    const rawRun = raw as LocalCalibrationRun;
+    if (rawRun?.artifact && calibrationPayloadSha256(rawRun) !== rawRun.artifact.payloadSha256 && legacyCalibrationPayloadSha256(rawRun) !== rawRun.artifact.payloadSha256) {
+      throw new Error("calibration_artifact_checksum_mismatch");
+    }
+    const run = localCalibrationRunSchema.parse(raw) as LocalCalibrationRun;
+    if (run.planId !== session.planId) throw new Error("calibration_plan_mismatch");
+    if (run.fingerprint.hardwareTemplateId) {
+      const target = (await store.getCatalog()).find((item) => item.id === run.fingerprint.hardwareTemplateId);
+      if (!target) throw new Error("calibration_hardware_not_in_catalog");
+      if (!fingerprintMatchesTemplate(run, target)) throw new Error("calibration_hardware_fingerprint_mismatch");
+    }
+    await store.saveCalibrationRun(run);
+    await refreshPredictions(store);
+    const completed: CalibrationSessionRecord = {
+      ...session,
+      state: "completed",
+      completedAt: run.completedAt,
+      progress: { stage: "completed", percent: 100, message: "Resultado salvo e recomendações recalculadas.", updatedAt: new Date().toISOString() },
+      result: run,
+      error: null,
+    };
+    await store.saveCalibrationSession(completed);
+    return completed;
+  }
+
+  async function reconcileCalibrationSession(session: CalibrationSessionRecord): Promise<CalibrationSessionRecord> {
+    if (["completed", "cancelled", "failed", "expired"].includes(session.state)) return session;
+    const persisted = await findPersistedCalibration(session.planId, calibrationDirectoryOptions);
+    if (persisted) {
+      try {
+        return await acceptCalibrationResult(session, persisted.result);
+      } catch (error) {
+        const failed = { ...session, state: "failed" as const, error: safeError(error) };
+        await store.saveCalibrationSession(failed);
+        return failed;
+      }
+    }
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      const expired = { ...session, state: "expired" as const, error: "calibration_session_expired" };
+      await store.saveCalibrationSession(expired);
+      return expired;
+    }
+    return session;
+  }
   app.use("/api/*", async (context, next) => {
     const length = Number(context.req.header("content-length") ?? "0");
     const maximumLength = context.req.path === "/api/catalog/import" ||
@@ -202,10 +282,162 @@ export function createApp(store: PlannerStore, catalogUpdates = new CatalogUpdat
     }
     return context.json(createCalibrationPlan(scenario.scenario, request.mode, request.targetHardwareTemplateId), 201);
   });
+  app.get("/api/calibration-sessions", async (context) => {
+    const sessions = await Promise.all((await store.listCalibrationSessions()).map(reconcileCalibrationSession));
+    return context.json(sessions.map(publicCalibrationSession));
+  });
+  app.get("/api/calibration-sessions/directory", async (context) => context.json({
+    directory: await resolveCalibrationDirectory(calibrationDirectoryOptions),
+  }));
+  app.post("/api/calibration-sessions", async (context) => {
+    const request = calibrationSessionRequestSchema.parse(await context.req.json());
+    const recommendation = await store.getRecommendation(request.recommendationId);
+    if (!recommendation) return context.json({ error: "recommendation_not_found" }, 404);
+    const scenario = await store.getScenario(recommendation.scenarioId);
+    if (!scenario || scenario.revision !== recommendation.scenarioRevision) {
+      return context.json({ error: "recommendation_revision_is_not_current" }, 409);
+    }
+    if (request.targetHardwareTemplateId && !(await store.getCatalog()).some((item) => item.id === request.targetHardwareTemplateId)) {
+      return context.json({ error: "calibration_hardware_not_in_catalog" }, 422);
+    }
+    const plan = createCalibrationPlan(scenario.scenario, request.mode, request.targetHardwareTemplateId);
+    const created = createCalibrationSession({
+      plan,
+      recommendationId: recommendation.id,
+      scenarioId: scenario.id,
+      advancedTelemetry: request.advancedTelemetry,
+      callbackOrigin: new URL(context.req.url).origin,
+    });
+    const launching: CalibrationSessionRecord = {
+      ...created.record,
+      state: "launching",
+      launchedAt: new Date().toISOString(),
+      progress: { stage: "launching", percent: 0, message: "Abrindo o Perceptrum na calibração local.", updatedAt: new Date().toISOString() },
+    };
+    volatileCalibrationTokens.set(launching.id, created.token);
+    await store.saveCalibrationSession(launching);
+    try {
+      const delivery = await deliverCalibrationSession(created.uri, request.advancedTelemetry, options.desktopBridge, options.fetchImpl);
+      return context.json({ session: publicCalibrationSession(launching), delivery }, 201);
+    } catch (error) {
+      const pending: CalibrationSessionRecord = { ...launching, state: "pending", error: safeError(error) };
+      await store.saveCalibrationSession(pending);
+      return context.json({ error: "perceptrum_launch_failed", detail: safeError(error), session: publicCalibrationSession(pending) }, 503);
+    }
+  });
+  app.get("/api/calibration-sessions/:id", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    return context.json(publicCalibrationSession(await reconcileCalibrationSession(session)));
+  });
+  app.post("/api/calibration-sessions/:id/cancel", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    if (!["launching", "running", "cancelling"].includes(session.state)) {
+      return context.json({ error: "calibration_session_not_running" }, 409);
+    }
+    const token = volatileCalibrationTokens.get(session.id);
+    if (!token) return context.json({ error: "calibration_cancel_requires_same_app_session" }, 409);
+    try {
+      await cancelDeliveredCalibrationSession(session.id, token, options.fetchImpl);
+      const cancelling: CalibrationSessionRecord = {
+        ...session,
+        state: "cancelling",
+        progress: { ...(session.progress ?? {}), stage: "cancelling", message: "Interrompendo com segurança e salvando o diagnóstico parcial.", updatedAt: new Date().toISOString() },
+        error: null,
+      };
+      await store.saveCalibrationSession(cancelling);
+      return context.json(publicCalibrationSession(cancelling), 202);
+    } catch (error) {
+      return context.json({ error: safeError(error) }, 502);
+    }
+  });
+  app.get("/api/calibration-sessions/:id/plan", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    try {
+      authorizeCalibrationSession(session, context.req.header("authorization"));
+      const running: CalibrationSessionRecord = {
+        ...session,
+        state: "running",
+        launchedAt: session.launchedAt ?? new Date().toISOString(),
+        progress: { stage: "preparing", percent: 1, message: "Plano recebido pelo Perceptrum.", updatedAt: new Date().toISOString() },
+        error: null,
+      };
+      await store.saveCalibrationSession(running);
+      return context.json({ plan: running.plan, advancedTelemetry: running.advancedTelemetry });
+    } catch (error) {
+      return context.json({ error: safeError(error) }, /token/.test(safeError(error)) ? 403 : 409);
+    }
+  });
+  app.post("/api/calibration-sessions/:id/progress", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    try {
+      authorizeCalibrationSession(session, context.req.header("authorization"));
+      const raw = await context.req.json();
+      const running: CalibrationSessionRecord = {
+        ...session,
+        state: "running",
+        progress: normalizeCalibrationProgress((raw as { progress?: unknown }).progress ?? raw),
+        error: null,
+      };
+      await store.saveCalibrationSession(running);
+      return context.json({ ok: true });
+    } catch (error) {
+      return context.json({ error: safeError(error) }, /token/.test(safeError(error)) ? 403 : 409);
+    }
+  });
+  app.post("/api/calibration-sessions/:id/result", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    try {
+      authorizeCalibrationSession(session, context.req.header("authorization"));
+      const raw = await context.req.json();
+      const completed = await acceptCalibrationResult(session, (raw as { result?: unknown }).result ?? raw);
+      volatileCalibrationTokens.delete(session.id);
+      return context.json({ session: publicCalibrationSession(completed), predictions: await store.listPredictions() }, 201);
+    } catch (error) {
+      return context.json({ error: safeError(error) }, /token/.test(safeError(error)) ? 403 : 422);
+    }
+  });
+  app.post("/api/calibration-sessions/:id/cancelled", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    try {
+      authorizeCalibrationSession(session, context.req.header("authorization"));
+      const raw = await context.req.json() as { progress?: unknown; artifact?: { fileName?: unknown; payloadSha256?: unknown } };
+      const progress = normalizeCalibrationProgress(raw.progress);
+      const fileName = typeof raw.artifact?.fileName === "string" ? raw.artifact.fileName.slice(0, 240) : "diagnóstico parcial";
+      const cancelled: CalibrationSessionRecord = {
+        ...session,
+        state: "cancelled",
+        completedAt: new Date().toISOString(),
+        progress: { ...progress, stage: "cancelled", message: `Teste interrompido; ${fileName} foi preservado somente para diagnóstico.` },
+        result: null,
+        error: null,
+      };
+      await store.saveCalibrationSession(cancelled);
+      volatileCalibrationTokens.delete(session.id);
+      return context.json({ session: publicCalibrationSession(cancelled) });
+    } catch (error) {
+      return context.json({ error: safeError(error) }, /token/.test(safeError(error)) ? 403 : 422);
+    }
+  });
+  app.post("/api/calibration-sessions/open-directory", async (context) => {
+    const directory = await resolveCalibrationDirectory(calibrationDirectoryOptions);
+    await mkdir(directory, { recursive: true });
+    if (options.desktopBridge?.openPath) await options.desktopBridge.openPath(directory);
+    return context.json({ directory });
+  });
   app.post("/api/calibrations/import", async (context) => {
     const raw = await context.req.json();
     const findings = findForbiddenCalibrationData(raw);
     if (findings.length) return context.json({ error: "privacy_contract_violation", findings }, 422);
+    const rawRun = raw as LocalCalibrationRun;
+    if (rawRun?.artifact && calibrationPayloadSha256(rawRun) !== rawRun.artifact.payloadSha256 && legacyCalibrationPayloadSha256(rawRun) !== rawRun.artifact.payloadSha256) {
+      return context.json({ error: "calibration_artifact_checksum_mismatch" }, 422);
+    }
     const run = localCalibrationRunSchema.parse(raw) as LocalCalibrationRun;
     if (run.fingerprint.hardwareTemplateId) {
       const target = (await store.getCatalog()).find((item) => item.id === run.fingerprint.hardwareTemplateId);

@@ -102,7 +102,7 @@ function contributionsFor(
   for (const run of runs) {
     if (run.id === excludedRunId || !run.fingerprint.hardwareTemplateId || !calibrationRunEligible(run)) continue;
     const measured = run.stages.find((item) => item.stage === stage);
-    if (!measured || measured.safeCameraCapacity <= 0) continue;
+    if (!measured || measured.safeCameraCapacity === null || measured.safeCameraCapacity <= 0) continue;
     const anchors = observations.filter((item) => item.hardwareTemplateId === run.fingerprint.hardwareTemplateId && item.stage === stage);
     for (const targetObservation of targets) {
       const anchor = anchors.find((item) => comparableBenchmark(targetObservation, item));
@@ -209,7 +209,7 @@ function leaveOneOutUnsafeCount(
       const confidence = confidenceFor(target, contributions);
       const profile = stageErrorProfile(runs, catalog, observations, metric.stage);
       const safe = Math.floor(Math.min(...contributions.map((item) => item.rawCapacity)) * (1 - effectiveReserve(confidence, profile) / 100));
-      if (safe > metric.safeCameraCapacity) unsafe += 1;
+      if (metric.safeCameraCapacity !== null && safe > metric.safeCameraCapacity) unsafe += 1;
     }
   }
   return unsafe;
@@ -269,7 +269,7 @@ export function buildCapacityPredictions(
   return catalog.map((target) => {
     const exactRuns = runs
       .filter((run) => run.fingerprint.hardwareTemplateId === target.id &&
-        run.overallSafeCameraCapacity > 0 &&
+        (run.overallSafeCameraCapacity ?? 0) > 0 &&
         calibrationRunEligible(run))
       .sort((left, right) => right.completedAt.localeCompare(left.completedAt));
     const exact = exactRuns[0];
@@ -281,8 +281,8 @@ export function buildCapacityPredictions(
         generatedAt: new Date().toISOString(),
         status: "validated_local",
         confidenceClass: "A",
-        safeCameraMinimum: Math.floor(exact.overallSafeCameraCapacity * 0.9),
-        safeCameraMaximum: Math.floor(exact.overallSafeCameraCapacity),
+        safeCameraMinimum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.9),
+        safeCameraMaximum: Math.floor(exact.overallSafeCameraCapacity ?? 0),
         bottleneck: exact.bottleneck,
         reservePercent: 10,
         exactCalibrationRunId: exact.id,

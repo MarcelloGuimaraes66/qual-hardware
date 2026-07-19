@@ -46,9 +46,9 @@ All packages use the same public `catalog-*` GitHub Releases. They check automat
 
 The database filename remains `qual-hardware.sqlite` under Electron's native `userData` directory:
 
-- Windows: `%APPDATA%\Qual Hardware\qual-hardware.sqlite` (expected; confirm against the current portable before merge).
-- macOS: `~/Library/Application Support/Qual Hardware/qual-hardware.sqlite`.
-- Ubuntu: `~/.config/Qual Hardware/qual-hardware.sqlite`.
+- Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite` (expected from the preserved package name; confirm against the current portable before merge).
+- macOS: `~/Library/Application Support/@aiquimist/qual-hardware/qual-hardware.sqlite` (confirmed by the final packaged app).
+- Ubuntu: `~/.config/@aiquimist/qual-hardware/qual-hardware.sqlite` (expected from the same package name; confirm on the native package).
 
 No build or launch flow migrates, copies or removes an existing database. Back up only while Qual Hardware is fully closed.
 
@@ -99,9 +99,23 @@ For all systems, verify that only loopback is listening, the package runs withou
 
 ## Local calibration
 
-The same `.qhplan.json`/`.qhcal.json` protocol works with the native Perceptrum
-desktop on macOS, Windows and Ubuntu. The runner packages MediaMTX, FFmpeg and
-ffprobe, uses the local AiQ/Qwen service and accepts loopback only. macOS is
-homologated in this run; Windows and Ubuntu remain subject to native CI plus
-future physical validation. The old PowerShell benchmark is retained only as a
-legacy laboratory path.
+The permanent **Capacity calibration** area uses the same authenticated handoff
+on macOS, Windows and Ubuntu. It opens `perceptrum://calibration/run`, transfers
+one exact plan over loopback, shows live progress and automatically imports the
+result after Perceptrum has saved it append-only under the operating system's
+real Documents folder at `Qual Hardware/Calibracoes`. `.qhplan.json` and manual
+`.qhcal.json` import remain recovery paths.
+
+The packaged runner uses MediaMTX, FFmpeg, the production Intelligence scheduler
+and local AiQ/Qwen. It exposes missing sensors as `unavailable` with a reason,
+never as zero. A 10-minute run is diagnostic; only the complete 60-minute run
+can become a physical anchor after every gate passes. macOS is homologated in
+this run; Windows and Ubuntu remain subject to their native CI plus future
+physical sensor/performance validation. The old PowerShell benchmark remains a
+legacy laboratory path only.
+
+While a run is active, **Stop and keep partial data** requests a protected
+loopback cancellation. Perceptrum stops its local workload processes and saves
+an append-only `-interrompido.partial.json` diagnostic before confirming the
+stop. Partial files are never imported as capacity anchors and never justify a
+purchase; only a new completed run can do that.

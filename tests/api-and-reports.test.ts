@@ -14,6 +14,8 @@ describe("Qual Hardware API and reports", () => {
     const app = createApp(store);
     const health = await app.request("/api/health");
     expect(await health.json()).toEqual({ status: "ok", storage: "memory" });
+    expect(health.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(health.headers.get("referrer-policy")).toBe("no-referrer");
     const catalogStatus = await app.request("/api/catalog/status");
     expect(catalogStatus.status).toBe(200);
     expect((await catalogStatus.json() as { catalogVersion: string }).catalogVersion).toMatch(/^hardware-reference\//);

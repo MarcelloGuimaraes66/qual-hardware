@@ -2,6 +2,7 @@ import { serve, type ServerType } from "@hono/node-server";
 import { app, BrowserWindow, dialog, Menu, session, shell } from "electron";
 import { createApp } from "../server/app.js";
 import { CatalogUpdateService } from "../server/catalogUpdates.js";
+import { validatePerceptrumProtocolUri } from "../server/calibrationSessions.js";
 import { createStore, type PlannerStore } from "../server/store.js";
 import {
   createIdempotentShutdown,
@@ -47,7 +48,20 @@ async function startLocalApplication(): Promise<string> {
 
   return new Promise((resolveOrigin, reject) => {
     localServer = serve({
-      fetch: createApp(store!, updates).fetch,
+      fetch: createApp(store!, updates, {
+        documentsDirectory: app.getPath("documents"),
+        desktopBridge: {
+          async openPerceptrumCalibration(uri: string): Promise<void> {
+            const target = validatePerceptrumProtocolUri(uri);
+            if (!target) throw new Error("invalid_perceptrum_calibration_uri");
+            await shell.openExternal(target);
+          },
+          async openPath(path: string): Promise<void> {
+            const failure = await shell.openPath(path);
+            if (failure) throw new Error(failure);
+          },
+        },
+      }).fetch,
       hostname: HOST,
       port: 0,
     }, (info) => resolveOrigin(`http://${HOST}:${info.port}`));

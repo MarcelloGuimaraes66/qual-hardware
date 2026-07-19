@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement, type
 import { createDefaultAgent, createDefaultScenario } from "../shared/schemas.js";
 import type {
   AgentLoad, CameraGroup, CapacityRecommendation, CapacityScenario, CatalogPublication, CatalogSource, CatalogStatus, Currency, InfrastructureKind,
-  CalibrationPlan, CapacityPrediction, HardwareNodeTemplate, LocalCalibrationRun, Market, OperatingSystemFamily,
+  CalibrationPlan, CalibrationSession, CapacityPrediction, HardwareNodeTemplate, LocalCalibrationRun, Market, OperatingSystemFamily,
   RecommendationAlternative, RecommendationPolicy, ScenarioRecord,
 } from "../shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
+import { CalibrationResultPanel } from "./CalibrationResultPanel.js";
 
 type Language = "pt" | "en";
 const steps = ["project", "cameras", "agents", "additional", "storage", "result"] as const;
@@ -406,7 +407,7 @@ function CalibrationCenter({
   onClose,
   onChanged,
 }: {
-  recommendation: CapacityRecommendation;
+  recommendation: CapacityRecommendation | null;
   catalogStatus: CatalogStatus | null;
   hardwareCatalog: HardwareNodeTemplate[];
   initialHardwareTemplateId: string | null;
@@ -418,12 +419,52 @@ function CalibrationCenter({
   const [working, setWorking] = useState(false);
   const [detail, setDetail] = useState("");
   const [targetHardwareTemplateId, setTargetHardwareTemplateId] = useState(initialHardwareTemplateId ?? "");
+  const [advancedTelemetry, setAdvancedTelemetry] = useState(false);
+  const [session, setSession] = useState<CalibrationSession | null>(null);
+  const [result, setResult] = useState<LocalCalibrationRun | null>(null);
+  const [history, setHistory] = useState<LocalCalibrationRun[]>([]);
+  const [directory, setDirectory] = useState("");
   const refreshStatus = (): void => {
     void api<CalibrationStatusSummary>("/api/calibrations/status").then(setStatus).catch(() => setStatus(null));
+    void api<LocalCalibrationRun[]>("/api/calibrations").then((runs) => { setHistory(runs); if (!result && runs[0]) setResult(runs[0]); }).catch(() => setHistory([]));
+    void api<{ directory: string }>("/api/calibration-sessions/directory").then((value) => setDirectory(value.directory)).catch(() => setDirectory(""));
   };
   useEffect(refreshStatus, []);
+  useEffect(() => {
+    if (!session || ["completed", "cancelled", "failed", "expired"].includes(session.state)) return;
+    const timer = window.setInterval(() => {
+      void api<CalibrationSession>(`/api/calibration-sessions/${session.id}`).then((next) => {
+        setSession(next);
+        if (next.result) { setResult(next.result); refreshStatus(); }
+        if (next.state === "cancelled") setDetail(lang === "pt" ? "Teste interrompido. O diagnóstico parcial foi preservado em Documentos e não será usado para recomendar uma compra." : "Test stopped. Partial diagnostics were preserved in Documents and will not be used for purchasing recommendations.");
+        if (next.state === "failed" || next.state === "expired") setDetail(next.error ?? next.state);
+      }).catch((error: unknown) => setDetail(error instanceof Error ? error.message : "calibration_status_failed"));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [session?.id, session?.state]);
+
+  const startCalibration = async (mode: "quick" | "full"): Promise<void> => {
+    if (!recommendation) {
+      setDetail(lang === "pt" ? "Dimensione primeiro um projeto para que a carga de câmeras seja enviada ao Perceptrum." : "Size a project first so its camera workload can be sent to Perceptrum.");
+      return;
+    }
+    setWorking(true); setDetail(lang === "pt" ? "Criando uma sessão protegida e abrindo o Perceptrum…" : "Creating a protected session and opening Perceptrum…");
+    try {
+      const started = await api<{ session: CalibrationSession; delivery: string }>("/api/calibration-sessions", {
+        method: "POST",
+        body: JSON.stringify({ recommendationId: recommendation.id, mode, targetHardwareTemplateId: targetHardwareTemplateId || null, advancedTelemetry }),
+      });
+      setSession(started.session);
+      setResult(null);
+      setDetail(lang === "pt"
+        ? `Perceptrum aberto. O ${mode === "quick" ? "teste rápido de 10 minutos" : "teste completo de 60 minutos"} usa RTSP, FFmpeg e AiQ/Qwen locais; o resultado será salvo e importado automaticamente.`
+        : "Perceptrum opened. The local result will be saved and imported automatically.");
+    } catch (error) { setDetail(error instanceof Error ? error.message : "calibration_launch_failed"); }
+    finally { setWorking(false); }
+  };
 
   const createPlan = async (mode: "quick" | "full"): Promise<void> => {
+    if (!recommendation) { setDetail(lang === "pt" ? "Dimensione primeiro um projeto." : "Size a project first."); return; }
     setWorking(true); setDetail("");
     try {
       const plan = await api<CalibrationPlan>("/api/calibrations/plans", {
@@ -438,6 +479,20 @@ function CalibrationCenter({
     finally { setWorking(false); }
   };
 
+  const cancelCalibration = async (): Promise<void> => {
+    if (!session || !window.confirm(lang === "pt" ? "Interromper agora? As medições parciais serão preservadas apenas para diagnóstico." : "Stop now? Partial measurements will be preserved for diagnostics only.")) return;
+    setWorking(true);
+    try {
+      const next = await api<CalibrationSession>(`/api/calibration-sessions/${session.id}/cancel`, { method: "POST" });
+      setSession(next);
+      setDetail(lang === "pt" ? "Interrompendo com segurança e salvando o diagnóstico parcial…" : "Stopping safely and saving partial diagnostics…");
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : "calibration_cancel_failed");
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const importCalibration = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
     setWorking(true); setDetail("");
@@ -447,11 +502,12 @@ function CalibrationCenter({
         method: "POST",
         body: JSON.stringify(run),
       });
-      refreshStatus();
+      setResult(imported.run); refreshStatus();
       const eligible = imported.run.qualityGate?.eligibleForCapacityExtrapolation === true;
-      onChanged(lang === "pt"
+      const message = lang === "pt"
         ? `${eligible ? "Calibração integral aprovada" : "Resultado importado somente como diagnóstico"}. ${eligible ? "Ela pode participar das extrapolações conservadoras." : "Ela não será usada para justificar uma compra."} Recalcule as máquinas sugeridas.`
-        : `${eligible ? "Full calibration approved" : "Result imported as diagnostic only"}. Recalculate suggested machines.`);
+        : `${eligible ? "Full calibration approved" : "Result imported as diagnostic only"}. Recalculate suggested machines.`;
+      setDetail(message); onChanged(message);
     } catch (error) { setDetail(error instanceof Error ? error.message : "calibration_import_failed"); }
     finally { setWorking(false); }
   };
@@ -478,9 +534,17 @@ function CalibrationCenter({
     try {
       const predictions = await api<CapacityPrediction[]>("/api/predictions/recalculate", { method: "POST" });
       refreshStatus();
-      onChanged(lang === "pt" ? `${predictions.length} máquinas recalculadas. Dimensione novamente o projeto.` : `${predictions.length} machines recalculated. Size the project again.`);
+      const message = lang === "pt" ? `${predictions.length} máquinas recalculadas com as calibrações válidas.` : `${predictions.length} machines recalculated with valid calibrations.`;
+      setDetail(message); onChanged(message);
     } catch (error) { setDetail(error instanceof Error ? error.message : "prediction_recalculation_failed"); }
     finally { setWorking(false); }
+  };
+
+  const openDirectory = async (): Promise<void> => {
+    try {
+      const opened = await api<{ directory: string }>("/api/calibration-sessions/open-directory", { method: "POST" });
+      setDirectory(opened.directory);
+    } catch (error) { setDetail(error instanceof Error ? error.message : "open_calibration_directory_failed"); }
   };
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -488,13 +552,19 @@ function CalibrationCenter({
       <div className="modal-heading"><div><span>PERCEPTRUM / LOCAL ONLY</span><h2 id="calibration-title">{lang === "pt" ? "Calibração de capacidade" : "Capacity calibration"}</h2></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
       <div className="offline-banner"><b>{lang === "pt" ? "Servidor RTSP local + AiQ/Qwen local" : "Local RTSP server + local AiQ/Qwen"}</b><span>{lang === "pt" ? "Nenhuma chamada OpenAI ou API externa é permitida durante o teste." : "No OpenAI or external API call is allowed during the test."}</span></div>
       <div className="catalog-summary"><div><span>{lang === "pt" ? "Máquinas testadas" : "Tested machines"}</span><b>{status?.calibrationRuns ?? 0}</b><small>.qhcal.json</small></div><div><span>{lang === "pt" ? "Métricas públicas" : "Public metrics"}</span><b>{status?.publicObservations ?? 0}</b><small>{catalogStatus?.verificationKeyConfigured ? "ED25519" : (lang === "pt" ? "chave pendente" : "key pending")}</small></div><div><span>{lang === "pt" ? "Previsões" : "Predictions"}</span><b>{status?.predictions ?? 0}</b><small>{lang === "pt" ? "por gargalo" : "per bottleneck"}</small></div></div>
-      <div className="calibration-flow"><article><b>1. {lang === "pt" ? "Gerar plano" : "Generate plan"}</b><span>{lang === "pt" ? "Escolha o perfil exato do computador físico. Sem vínculo, o resultado será guardado apenas como referência e não poderá sustentar extrapolações." : "Choose the exact physical-computer profile. Unlinked results are stored as reference only and cannot support extrapolation."}</span><Field label={lang === "pt" ? "Computador que será testado" : "Computer being tested"}><select value={targetHardwareTemplateId} onChange={(event) => setTargetHardwareTemplateId(event.target.value)}><option value="">{lang === "pt" ? "Sem perfil exato — somente referência" : "No exact profile — reference only"}</option>{[...hardwareCatalog].sort((left, right) => left.name.localeCompare(right.name)).map((hardware) => <option key={hardware.id} value={hardware.id}>{hardware.name} · {hardware.cpuModel} · {hardware.gpuModel}</option>)}</select></Field><span>{lang === "pt" ? "O plano contém apenas carga sintética e endereços 127.0.0.1." : "The plan contains synthetic load and 127.0.0.1 addresses only."}</span><div className="catalog-actions"><button className="primary" disabled={working} onClick={() => createPlan("quick")}>{lang === "pt" ? "Calibrar este computador · 10 min" : "Calibrate this computer · 10 min"}</button><button className="secondary" disabled={working} onClick={() => createPlan("full")}>{lang === "pt" ? "Calibração completa · 60 min" : "Full calibration · 60 min"}</button></div></article>
-        <article><b>2. {lang === "pt" ? "Executar no Perceptrum" : "Run in Perceptrum"}</b><span>{lang === "pt" ? "No Perceptrum, abra Calibração local, selecione o plano e inicie. O runner detecta CPU, GPU, RAM, SSD, SO, drivers e o AiQ local." : "In Perceptrum, open Local calibration, select the plan and start. The runner detects CPU, GPU, RAM, SSD, OS, drivers and local AiQ."}</span></article>
-        <article><b>3. {lang === "pt" ? "Importar evidências" : "Import evidence"}</b><div className="catalog-actions"><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar calibração de outro computador" : "Import calibration from another computer"}<input hidden type="file" accept=".json,.qhcal" disabled={working} onChange={importCalibration} /></label><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Atualizar base pública assinada" : "Update signed public evidence"}<input hidden type="file" accept=".json" disabled={working} onChange={importEvidence} /></label><button className="primary" disabled={working} onClick={recalculate}>{lang === "pt" ? "Recalcular máquinas sugeridas" : "Recalculate suggested machines"}</button></div></article></div>
+      <div className="calibration-flow"><article><b>1. {lang === "pt" ? "Calibrar este computador" : "Calibrate this computer"}</b><span>{lang === "pt" ? "Escolha o perfil exato somente se este computador realmente tiver essa configuração. Sem vínculo exato, o resultado é preservado como referência." : "Choose an exact profile only when this computer truly matches it. Otherwise the result remains reference evidence."}</span><Field label={lang === "pt" ? "Computador físico em teste" : "Physical computer under test"}><select value={targetHardwareTemplateId} onChange={(event) => setTargetHardwareTemplateId(event.target.value)}><option value="">{lang === "pt" ? "Detectar hardware — sem perfil exato" : "Detect hardware — no exact profile"}</option>{[...hardwareCatalog].sort((left, right) => left.name.localeCompare(right.name)).map((hardware) => <option key={hardware.id} value={hardware.id}>{hardware.name} · {hardware.cpuModel} · {hardware.gpuModel}</option>)}</select></Field><label className="advanced-telemetry"><input type="checkbox" checked={advancedTelemetry} onChange={(event) => setAdvancedTelemetry(event.target.checked)} /><span><b>{lang === "pt" ? "Medição avançada de CPU/GPU" : "Advanced CPU/GPU measurement"}</b><small>{lang === "pt" ? "No macOS, pode pedir autorização administrativa temporária para potência e GPU. Sem autorização, o teste continua e identifica os sensores indisponíveis." : "On macOS this may request temporary administrator authorization. The test continues transparently if declined."}</small></span></label><div className="catalog-actions"><button className="primary" disabled={working || !recommendation} onClick={() => void startCalibration("quick")}>{lang === "pt" ? "Teste rápido local — 10 minutos" : "Quick local test — 10 minutes"}</button><button className="primary" disabled={working || !recommendation} onClick={() => void startCalibration("full")}>{lang === "pt" ? "Calibração completa local — 60 minutos" : "Full local calibration — 60 minutes"}</button></div>{!recommendation && <small>{lang === "pt" ? "Dimensione um projeto para habilitar os testes com a carga real de câmeras selecionada." : "Size a project to enable tests with its selected camera workload."}</small>}</article>
+        {session && <article className="calibration-live"><b>2. {lang === "pt" ? "Progresso em tempo real" : "Live progress"}</b><div className="calibration-progress"><div><i style={{ width: `${session.progress?.percent ?? 0}%` }} /></div><b>{Math.round(session.progress?.percent ?? 0)}%</b></div><span>{session.progress?.message ?? detail}</span><small>{session.state} · {session.mode === "full" ? "60 min" : "10 min"} · {session.advancedTelemetry ? (lang === "pt" ? "telemetria avançada" : "advanced telemetry") : (lang === "pt" ? "telemetria padrão" : "standard telemetry")}</small>{["launching", "running", "cancelling"].includes(session.state) && <div className="catalog-actions"><button type="button" className="secondary" disabled={working || session.state === "cancelling"} onClick={() => void cancelCalibration()}>{session.state === "cancelling" ? (lang === "pt" ? "Salvando diagnóstico parcial…" : "Saving partial diagnostics…") : (lang === "pt" ? "Interromper e guardar parcial" : "Stop and keep partial data")}</button></div>}</article>}
+        <article><b>{session ? "3" : "2"}. {lang === "pt" ? "Recuperação e dados anteriores" : "Recovery and previous data"}</b><span>{lang === "pt" ? "O fluxo normal é automático. Use estes controles somente para um resultado vindo de outro computador ou se a abertura direta não estiver disponível." : "The normal flow is automatic. Use these controls only for another computer or when direct launch is unavailable."}</span><div className="catalog-actions"><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar calibração anterior" : "Import previous calibration"}<input hidden type="file" accept=".json,.qhcal" disabled={working} onChange={importCalibration} /></label><button className="secondary" disabled={working || !recommendation} onClick={() => void createPlan("quick")}>{lang === "pt" ? "Salvar plano manual" : "Save manual plan"}</button><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar base pública assinada" : "Import signed public evidence"}<input hidden type="file" accept=".json" disabled={working} onChange={importEvidence} /></label></div></article></div>
       {detail && <div className="catalog-message">{detail}</div>}
+      {result && <CalibrationResultPanel result={result} directory={directory} lang={lang} onOpenDirectory={() => void openDirectory()} onRecalculate={() => void recalculate()} />}
+      {history.length > 0 && <section className="calibration-history"><div><span>HISTORY</span><h3>{lang === "pt" ? "Calibrações anteriores" : "Previous calibrations"}</h3></div>{history.map((run) => <button type="button" key={run.id} className={result?.id === run.id ? "active" : ""} onClick={() => setResult(run)}><b>{new Date(run.completedAt).toLocaleString()}</b><span>{run.fingerprint.cpuModel} · {run.fingerprint.gpuModel}</span><small>{run.overallSafeCameraCapacity === null ? (lang === "pt" ? "capacidade não validada" : "capacity not validated") : `${Math.floor(run.overallSafeCameraCapacity)} ${lang === "pt" ? "câmeras" : "cameras"}`} · {run.qualityGate?.validationStatus ?? (run.qualityGate?.eligibleForCapacityExtrapolation ? "anchor_approved" : "diagnostic")}</small></button>)}</section>}
       <p className="catalog-privacy">{lang === "pt" ? "Os resultados contêm somente métricas agregadas e hashes. Mídia, RTSP, credenciais, nome do computador e dados pessoais são recusados." : "Results contain aggregate metrics and hashes only. Media, RTSP credentials, computer name and personal data are rejected."}</p>
     </section>
   </div>;
+}
+
+function CalibrationEntryCard({ lang, enabled, onOpen }: { lang: Language; enabled: boolean; onOpen: () => void }): ReactElement {
+  return <section className="calibration-entry-card"><div><span>PERCEPTRUM / CPU + GPU + PIPELINE</span><h2>{lang === "pt" ? "Calibração de capacidade" : "Capacity calibration"}</h2><p>{lang === "pt" ? "Teste este computador com RTSP, FFmpeg e AiQ/Qwen locais. A tela acompanha CPU, GPU, disco, rede, FPS e todas as etapas reais do Perceptrum." : "Test this computer with local RTSP, FFmpeg and AiQ/Qwen while tracking CPU, GPU, storage, network, FPS and every real Perceptrum stage."}</p></div><div><button type="button" className="primary" onClick={onOpen}>{enabled ? (lang === "pt" ? "Calibrar este computador" : "Calibrate this computer") : (lang === "pt" ? "Ver calibrações e instruções" : "View calibrations and instructions")}</button><small>{enabled ? (lang === "pt" ? "Teste rápido 10 min ou completo 60 min" : "Quick 10 min or full 60 min") : (lang === "pt" ? "Os botões de teste serão habilitados após dimensionar um projeto." : "Test buttons are enabled after sizing a project.")}</small></div></section>;
 }
 
 export function App(): ReactElement {
@@ -507,6 +577,7 @@ export function App(): ReactElement {
   const [hardwareCatalog, setHardwareCatalog] = useState<HardwareNodeTemplate[]>([]);
   const [catalogManagerOpen, setCatalogManagerOpen] = useState(false);
   const [calibrationRecommendation, setCalibrationRecommendation] = useState<CapacityRecommendation | null>(null);
+  const [calibrationOpen, setCalibrationOpen] = useState(false);
   const stepIndex = steps.indexOf(step); const groupTotal = useMemo(() => scenario.cameraGroups.reduce((sum, group) => sum + group.count, 0), [scenario.cameraGroups]);
   useEffect(() => {
     void api<CatalogStatus>("/api/catalog/status").then(setCatalogStatus).catch(() => setCatalogStatus(null));
@@ -530,12 +601,12 @@ export function App(): ReactElement {
       setMessage(lang === "pt" ? `Não foi possível gerar um ${format.toUpperCase()} válido (${detail}). Recalcule o projeto e tente novamente.` : `A valid ${format.toUpperCase()} could not be generated (${detail}). Recalculate the project and try again.`);
     } finally { setBusy(false); }
   };
-  const body = step === "project" ? <ProjectStep scenario={scenario} update={setScenario} lang={lang} cameraCountConfirmed={cameraCountConfirmed} onCameraCount={(value) => { setScenario(withCameraTotal(scenario, value)); setCameraCountConfirmed(true); }} hardwareCatalog={hardwareCatalog} /> : step === "cameras" ? <CameraStep scenario={scenario} update={setScenario} lang={lang} /> : step === "agents" ? <AgentsStep scenario={scenario} update={setScenario} lang={lang} /> : step === "additional" ? <AdditionalStep scenario={scenario} update={setScenario} lang={lang} /> : step === "storage" ? <NetworkStep scenario={scenario} lang={lang} /> : <ResultsStep scenario={scenario} recommendations={recommendations} lang={lang} onCalibration={setCalibrationRecommendation} onDownload={downloadReport} />;
+  const body = step === "project" ? <ProjectStep scenario={scenario} update={setScenario} lang={lang} cameraCountConfirmed={cameraCountConfirmed} onCameraCount={(value) => { setScenario(withCameraTotal(scenario, value)); setCameraCountConfirmed(true); }} hardwareCatalog={hardwareCatalog} /> : step === "cameras" ? <CameraStep scenario={scenario} update={setScenario} lang={lang} /> : step === "agents" ? <AgentsStep scenario={scenario} update={setScenario} lang={lang} /> : step === "additional" ? <AdditionalStep scenario={scenario} update={setScenario} lang={lang} /> : step === "storage" ? <NetworkStep scenario={scenario} lang={lang} /> : <ResultsStep scenario={scenario} recommendations={recommendations} lang={lang} onCalibration={(recommendation) => { setCalibrationRecommendation(recommendation); setCalibrationOpen(true); }} onDownload={downloadReport} />;
   return <div className="app-shell"><header><div className="brand"><div className="brand-mark">A<span>Q</span></div><div><b>AIQUIMIST</b><small>QUAL HARDWARE</small></div></div><div className="header-meta"><span className="private-badge">● DESKTOP LOCAL</span><button onClick={() => { const next = lang === "pt" ? "en" : "pt"; setLang(next); localStorage.setItem("qual-hardware-language", next); }}>{lang === "pt" ? "EN" : "PT"}</button></div></header>
     <main><div className="intro"><div><p>HARDWARE / {String(stepIndex + 1).padStart(2, "0")}</p><h1>{text[lang].title}</h1><span>{text[lang].subtitle}</span></div><div className="camera-counter"><strong>{cameraCountConfirmed ? scenario.totalCameras : "—"}</strong><span>CAMERAS</span></div></div>
       <div className="step-progress">{lang === "pt" ? "Etapa" : "Step"} {stepIndex + 1} {lang === "pt" ? "de" : "of"} {steps.length} · {text[lang][step]}</div>
       <nav className="stepper">{steps.map((item, index) => <button key={item} className={`${item === step ? "active" : ""} ${index < stepIndex ? "done" : ""}`} onClick={() => index <= stepIndex || recommendations.length ? setStep(item) : undefined}><i>{index < stepIndex ? "✓" : index + 1}</i><span>{text[lang][item]}</span></button>)}</nav>
-      {message && <div className="toast" onClick={() => setMessage("")}>{message}<span>×</span></div>}{body}
+      {message && <div className="toast" onClick={() => setMessage("")}>{message}<span>×</span></div>}<CalibrationEntryCard lang={lang} enabled={recommendations.length > 0} onOpen={() => { setCalibrationRecommendation(recommendations[0] ?? null); setCalibrationOpen(true); }} />{body}
       <div className="actions">{stepIndex > 0 && <button className="secondary" onClick={() => setStep(steps[stepIndex - 1]!)}>{text[lang].back}</button>}<div />{step !== "result" && step !== "storage" && <button className="primary" disabled={step === "project" && !cameraCountConfirmed} onClick={() => setStep(steps[stepIndex + 1]!)}>{text[lang].next} →</button>}{step === "storage" && <button className="primary" disabled={busy || groupTotal !== scenario.totalCameras} onClick={calculate}>{busy ? "…" : text[lang].calculate} →</button>}{step === "result" && <button className="primary" disabled={busy} onClick={calculate}>{lang === "pt" ? "Recalcular" : "Recalculate"}</button>}</div>
-    </main><footer><span>{WORKLOAD_CONTRACT_VERSION}</span><div className="catalog-state"><span>{catalogStatus ? `${lang === "pt" ? "Catálogo" : "Catalog"}: ${catalogStatus.catalogVersion} · ${catalogStatus.source}${catalogStatus.stalePriceCount ? ` · ${catalogStatus.stalePriceCount} ${lang === "pt" ? "preços defasados" : "stale prices"}` : ""}` : (lang === "pt" ? "Catálogo: verificando" : "Catalog: checking")}</span><button type="button" disabled={busy} onClick={() => setCatalogManagerOpen(true)}>{lang === "pt" ? "Atualizar hardware" : "Update hardware"}</button></div><span>{lang === "pt" ? "SQLite local · calibração offline · zero OpenAI" : "Local SQLite · offline calibration · zero OpenAI"}</span></footer>{catalogManagerOpen && <CatalogManager status={catalogStatus} lang={lang} onClose={() => setCatalogManagerOpen(false)} onStatus={setCatalogStatus} onCatalogApplied={(status, detail) => { setCatalogStatus(status); void api<HardwareNodeTemplate[]>("/api/catalog/hardware").then(setHardwareCatalog); setRecommendations([]); setRecord(null); setMessage(`${detail} ${lang === "pt" ? "Recalcule os projetos existentes." : "Recalculate existing projects."}`); setCatalogManagerOpen(false); }} />}{calibrationRecommendation && <CalibrationCenter recommendation={calibrationRecommendation} catalogStatus={catalogStatus} hardwareCatalog={hardwareCatalog} initialHardwareTemplateId={scenario.constraints.requiredHardwareTemplateId ?? null} lang={lang} onClose={() => setCalibrationRecommendation(null)} onChanged={(detail) => { setMessage(detail); setRecommendations([]); setCalibrationRecommendation(null); }} />}{busy && <div className="loading"><div /></div>}</div>;
+    </main><footer><span>{WORKLOAD_CONTRACT_VERSION}</span><div className="catalog-state"><span>{catalogStatus ? `${lang === "pt" ? "Catálogo" : "Catalog"}: ${catalogStatus.catalogVersion} · ${catalogStatus.source}${catalogStatus.stalePriceCount ? ` · ${catalogStatus.stalePriceCount} ${lang === "pt" ? "preços defasados" : "stale prices"}` : ""}` : (lang === "pt" ? "Catálogo: verificando" : "Catalog: checking")}</span><button type="button" disabled={busy} onClick={() => setCatalogManagerOpen(true)}>{lang === "pt" ? "Atualizar hardware" : "Update hardware"}</button></div><span>{lang === "pt" ? "SQLite local · calibração offline · zero OpenAI" : "Local SQLite · offline calibration · zero OpenAI"}</span></footer>{catalogManagerOpen && <CatalogManager status={catalogStatus} lang={lang} onClose={() => setCatalogManagerOpen(false)} onStatus={setCatalogStatus} onCatalogApplied={(status, detail) => { setCatalogStatus(status); void api<HardwareNodeTemplate[]>("/api/catalog/hardware").then(setHardwareCatalog); setRecommendations([]); setRecord(null); setMessage(`${detail} ${lang === "pt" ? "Recalcule os projetos existentes." : "Recalculate existing projects."}`); setCatalogManagerOpen(false); }} />}{calibrationOpen && <CalibrationCenter recommendation={calibrationRecommendation} catalogStatus={catalogStatus} hardwareCatalog={hardwareCatalog} initialHardwareTemplateId={scenario.constraints.requiredHardwareTemplateId ?? null} lang={lang} onClose={() => setCalibrationOpen(false)} onChanged={(detail) => { setMessage(detail); }} />}{busy && <div className="loading"><div /></div>}</div>;
 }

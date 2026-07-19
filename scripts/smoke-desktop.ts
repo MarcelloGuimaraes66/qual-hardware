@@ -263,6 +263,19 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     return text.includes("Qual Hardware") && text.length > 100 ? text : null;
   });
   assert(renderedText.includes("Qual Hardware"));
+  assert(renderedText.includes("Calibração de capacidade"), "the permanent calibration entry point must be visible");
+  const openedCalibration = await rendererValue<boolean>(application.debuggerUrl, `(() => {
+    const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.includes('Calibrar este computador') || item.textContent?.includes('Ver calibrações e instruções'));
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  assert.equal(openedCalibration, true, "the permanent calibration entry point must open");
+  const calibrationText = await waitFor("calibration actions", async () => {
+    const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
+    return text.includes("Teste rápido local") && text.includes("Calibração completa local") ? text : null;
+  });
+  assert(calibrationText.includes("Medição avançada de CPU/GPU"));
   await rendererValue(application.debuggerUrl, "location.assign('data:text/html,blocked'); true");
   await new Promise((resolveWait) => setTimeout(resolveWait, 300));
   assert.equal(await rendererValue<string>(application.debuggerUrl, "location.origin"), application.origin, "non-loopback navigation must be blocked");
