@@ -30,8 +30,8 @@ jobs:
       next_sequence: ${{ steps.gate.outputs.next_sequence }}
       previous_tag: ${{ steps.gate.outputs.previous_tag }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -64,7 +64,7 @@ jobs:
           echo "previous_sequence=$previous_sequence" >> "$GITHUB_OUTPUT"
           echo "next_sequence=$((previous_sequence + 1))" >> "$GITHUB_OUTPUT"
           echo "previous_tag=$tag" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: catalog-previous
           path: previous
@@ -76,14 +76,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run catalog:publisher -- collect --output artifacts/collection
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: catalog-collection
           path: artifacts/collection
@@ -94,13 +94,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: catalog-collection
           path: artifacts/collection
@@ -112,13 +112,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: catalog-collection
           path: artifacts/collection
@@ -142,7 +142,7 @@ jobs:
             chmod +x "$LLAMA_CPP_PATH"
           fi
           npm run catalog:publisher -- qwen --collection artifacts/collection/collection.json --output artifacts/qwen/qwen.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: catalog-qwen
           path: artifacts/qwen/qwen.json
@@ -153,21 +153,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: catalog-collection
           path: artifacts/collection
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: catalog-qwen
           path: artifacts/qwen
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: catalog-previous
           path: artifacts/previous
@@ -187,7 +187,7 @@ jobs:
       - run: npm run catalog:publisher -- validate --file artifacts/final/catalog-payload.json
       - run: npm run catalog:publisher -- validate --file artifacts/final/source-registry.json
       - run: npm run catalog:publisher -- validate --file artifacts/final/publication-report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: catalog-final-unsigned
           path: artifacts/final
@@ -201,13 +201,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: catalog-final-unsigned
           path: artifacts/signed

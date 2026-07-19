@@ -38,4 +38,6 @@ Matriz final da PR: Windows 11 x64 aprovado em 1m21s, macOS 26 arm64 aprovado em
 
 Primeiro dispatch de homologação após o merge foi rejeitado antes de criar uma execução porque o parser de expressões do GitHub Actions não suporta `+ 1` dentro de `${{ }}`. A sequência seguinte passou a ser calculada no shell do gate inicial e exposta como output; nenhuma coleta, assinatura ou Release ocorreu nessa tentativa.
 
+Dry-run corrigido aprovado no `main`: gate, coleta real, validação determinística, Qwen dispensado com zero candidatos, build do bundle, validação final e health concluíram; assinatura/publicação permaneceu intencionalmente pulada. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666520447>. As Actions auxiliares foram elevadas às versões Node 24 já usadas pelos workflows desktop para remover avisos de depreciação antes da publicação real.
+
 Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.
