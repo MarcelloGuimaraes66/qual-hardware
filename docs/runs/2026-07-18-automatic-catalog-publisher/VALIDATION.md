@@ -40,4 +40,6 @@ Primeiro dispatch de homologação após o merge foi rejeitado antes de criar um
 
 Dry-run corrigido aprovado no `main`: gate, coleta real, validação determinística, Qwen dispensado com zero candidatos, build do bundle, validação final e health concluíram; assinatura/publicação permaneceu intencionalmente pulada. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666520447>. As Actions auxiliares foram elevadas às versões Node 24 já usadas pelos workflows desktop para remover avisos de depreciação antes da publicação real.
 
+Primeira tentativa assinada: assinatura do bundle, validação Ed25519 contra a chave pública compilada e assinatura/validação do relatório foram aprovadas. O upload ao branch `catalog-data` foi interrompido antes da Release porque o Base64 do bundle excedeu o limite de argumentos do shell. O workflow agora gera um JSON de requisição em arquivo e o fornece ao `gh api --input`, sem colocar o conteúdo na linha de comando. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666684682>. Nenhuma Release foi criada nessa tentativa.
+
 Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.

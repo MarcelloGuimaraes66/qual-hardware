@@ -237,8 +237,9 @@ jobs:
               echo "Refusing to overwrite $path" >&2
               exit 1
             fi
-            content="$(base64 -w0 "artifacts/signed/${file}")"
-            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="catalog: publish ${TAG} ${file}" -f content="$content" -f branch=catalog-data >/dev/null
+            request="artifacts/signed/catalog-data-${file}.request.json"
+            base64 -w0 "artifacts/signed/${file}" | jq -Rs --arg message "catalog: publish ${TAG} ${file}" --arg branch "catalog-data" '{message:$message,content:.,branch:$branch}' > "$request"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" --input "$request" >/dev/null
           done
           gh release create "$TAG" artifacts/signed/catalog-bundle.json artifacts/signed/source-registry.json artifacts/signed/publication-report.json artifacts/signed/SHA256SUMS --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "Publicação automática assinada e append-only do catálogo público Qual Hardware."
 
