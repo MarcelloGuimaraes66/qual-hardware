@@ -324,6 +324,76 @@ export class SqlitePlannerStore implements PlannerStore {
     }
   }
 
+  private upsertNormalizedBenchmarkObservation(observation: PublicBenchmarkObservation, importedAt: string): void {
+    const suiteId = observation.benchmarkSuiteId ?? `${observation.benchmarkName}:${observation.benchmarkVersion}`;
+    const profileId = `${suiteId}::${observation.profileId}`;
+    const systemId = `${observation.hardwareTemplateId}::${observation.operatingSystem}::${observation.profileId}`;
+    const runId = `benchmark-run:${observation.id}`;
+    this.database.prepare(
+      "INSERT INTO benchmark_suites(id,name,version,license_policy,source_url,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,license_policy=excluded.license_policy,source_url=excluded.source_url",
+    ).run(suiteId, observation.benchmarkName, observation.benchmarkVersion, observation.licensePolicy ?? null, observation.sourceUrl, importedAt);
+    this.database.prepare(
+      "INSERT INTO benchmark_profiles(id,suite_id,stage,profile_json,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET suite_id=excluded.suite_id,stage=excluded.stage,profile_json=excluded.profile_json",
+    ).run(profileId, suiteId, observation.stage, JSON.stringify({
+      profileId: observation.profileId,
+      configuration: observation.configuration,
+      powerWatts: observation.powerWatts ?? null,
+      driverVersion: observation.driverVersion ?? null,
+      coolingProfile: observation.coolingProfile ?? null,
+    }), importedAt);
+    this.database.prepare(
+      "INSERT INTO benchmark_systems(id,hardware_template_id,operating_system,fingerprint_json,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hardware_template_id=excluded.hardware_template_id,operating_system=excluded.operating_system,fingerprint_json=excluded.fingerprint_json",
+    ).run(systemId, observation.hardwareTemplateId, observation.operatingSystem, JSON.stringify(observation.systemFingerprint ?? {
+      hardwareTemplateId: observation.hardwareTemplateId,
+      configuration: observation.configuration,
+    }), importedAt);
+    this.database.prepare(
+      "INSERT INTO benchmark_runs(id,observation_id,profile_id,system_id,run_json,observed_at,imported_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET profile_id=excluded.profile_id,system_id=excluded.system_id,run_json=excluded.run_json,observed_at=excluded.observed_at,imported_at=excluded.imported_at",
+    ).run(runId, observation.id, profileId, systemId, JSON.stringify(observation), observation.observedAt, importedAt);
+    this.database.prepare(
+      "INSERT INTO benchmark_metrics(id,run_id,metric_name,numeric_value,unit,higher_is_better,aggregation) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET metric_name=excluded.metric_name,numeric_value=excluded.numeric_value,unit=excluded.unit,higher_is_better=excluded.higher_is_better,aggregation=excluded.aggregation",
+    ).run(`benchmark-metric:${observation.id}`, runId, observation.metricName ?? observation.benchmarkName, observation.score,
+      observation.unit, observation.higherIsBetter ? 1 : 0, observation.aggregation ?? "single");
+    if (observation.componentId) {
+      this.database.prepare(
+        "INSERT INTO benchmark_component_links(run_id,component_id,component_kind) VALUES(?,?,?) ON CONFLICT(run_id,component_id) DO UPDATE SET component_kind=excluded.component_kind",
+      ).run(runId, observation.componentId, observation.componentKind ?? null);
+    }
+    this.database.prepare(
+      "INSERT INTO benchmark_quality_assessments(run_id,source_tier,reproducible,assessment_json,assessed_at) VALUES(?,?,?,?,?) ON CONFLICT(run_id) DO UPDATE SET source_tier=excluded.source_tier,reproducible=excluded.reproducible,assessment_json=excluded.assessment_json,assessed_at=excluded.assessed_at",
+    ).run(runId, observation.sourceTier, observation.reproducible === true ? 1 : 0, JSON.stringify({
+      qualityFlags: observation.qualityFlags ?? [],
+      evidenceLocator: observation.evidenceLocator ?? null,
+      rawArtifactSha256: observation.rawArtifactSha256 ?? null,
+      sampleCount: observation.sampleCount ?? null,
+    }), importedAt);
+  }
+
+  private upsertNormalizedPrediction(prediction: CapacityPrediction): void {
+    const modelId = `capacity-model:${prediction.schemaVersion}`;
+    this.database.prepare(
+      "INSERT INTO capacity_model_versions(id,schema_version,model_json,created_at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",
+    ).run(modelId, prediction.schemaVersion, JSON.stringify({
+      method: "stage_specific_conservative_ratio",
+      finalCapacity: "minimum_across_required_stages",
+      procurementGate: ["validated_local", "extrapolated_high"],
+    }), prediction.generatedAt);
+    const stageStatement = this.database.prepare(
+      "INSERT INTO capacity_prediction_stage_results(prediction_id,stage,result_json,raw_camera_capacity,safe_camera_capacity,reserve_percent) VALUES(?,?,?,?,?,?) ON CONFLICT(prediction_id,stage) DO UPDATE SET result_json=excluded.result_json,raw_camera_capacity=excluded.raw_camera_capacity,safe_camera_capacity=excluded.safe_camera_capacity,reserve_percent=excluded.reserve_percent",
+    );
+    for (const stage of prediction.stagePredictions) {
+      stageStatement.run(prediction.id, stage.stage, JSON.stringify(stage), stage.rawCameraCapacity, stage.safeCameraCapacity, stage.reservePercent);
+    }
+    this.database.prepare(
+      "INSERT INTO capacity_prediction_validations(prediction_id,procurement_eligibility,unsafe_overestimate_count,validation_json,validated_at) VALUES(?,?,?,?,?) ON CONFLICT(prediction_id) DO UPDATE SET procurement_eligibility=excluded.procurement_eligibility,unsafe_overestimate_count=excluded.unsafe_overestimate_count,validation_json=excluded.validation_json,validated_at=excluded.validated_at",
+    ).run(prediction.id, prediction.procurementEligibility, prediction.leaveOneOutUnsafeOverestimateCount, JSON.stringify({
+      status: prediction.status,
+      confidenceClass: prediction.confidenceClass,
+      reasons: prediction.reasons,
+      modelId,
+    }), prediction.generatedAt);
+  }
+
   private seedBundledCatalog(): void {
     const officialPublicationActive = Boolean(this.database.prepare("SELECT 1 AS present FROM catalog_bundle_active_state WHERE singleton=1").get());
     const conflictHardware = officialPublicationActive
@@ -475,7 +545,9 @@ export class SqlitePlannerStore implements PlannerStore {
     );
     this.inTransaction(() => {
       for (const observation of observations) {
-        statement.run(observation.id, observation.hardwareTemplateId, observation.stage, observation.profileId, JSON.stringify(observation), observation.observedAt, now());
+        const importedAt = now();
+        statement.run(observation.id, observation.hardwareTemplateId, observation.stage, observation.profileId, JSON.stringify(observation), observation.observedAt, importedAt);
+        this.upsertNormalizedBenchmarkObservation(observation, importedAt);
       }
     }, "IMMEDIATE");
   }
@@ -502,6 +574,7 @@ export class SqlitePlannerStore implements PlannerStore {
       ).run(snapshot.catalogVersion, JSON.stringify(snapshot), snapshot.generatedAt, importedAt);
       for (const observation of snapshot.observations) {
         observationStatement.run(observation.id, observation.hardwareTemplateId, observation.stage, observation.profileId, JSON.stringify(observation), observation.observedAt, importedAt);
+        this.upsertNormalizedBenchmarkObservation(observation, importedAt);
         this.database.prepare(
           "INSERT INTO evidence_snapshot_observations(catalog_version,observation_id) VALUES(?,?) ON CONFLICT(catalog_version,observation_id) DO NOTHING",
         ).run(snapshot.catalogVersion, observation.id);
@@ -605,7 +678,10 @@ export class SqlitePlannerStore implements PlannerStore {
         if (quote.scope === "component" && quote.componentId) insertComponentQuote.run(quote.id, quote.componentId, bundle.sequence, JSON.stringify(quote), quote.observedAt);
         else if (quote.hardwareTemplateId) insertQuote.run(quote.id, quote.hardwareTemplateId, JSON.stringify(quote), quote.observedAt);
       }
-      for (const observation of bundle.benchmarks) insertBenchmark.run(observation.id, observation.hardwareTemplateId, observation.stage, observation.profileId, JSON.stringify(observation), observation.observedAt, timestamp);
+      for (const observation of bundle.benchmarks) {
+        insertBenchmark.run(observation.id, observation.hardwareTemplateId, observation.stage, observation.profileId, JSON.stringify(observation), observation.observedAt, timestamp);
+        this.upsertNormalizedBenchmarkObservation(observation, timestamp);
+      }
       const componentMembership = this.database.prepare("INSERT INTO catalog_publication_component_membership(publication_sequence,component_id) VALUES(?,?)");
       for (const component of bundle.components) componentMembership.run(bundle.sequence, component.id);
       const benchmarkMembership = this.database.prepare("INSERT INTO catalog_publication_benchmark_membership(publication_sequence,observation_id) VALUES(?,?)");
@@ -629,6 +705,7 @@ export class SqlitePlannerStore implements PlannerStore {
     this.inTransaction(() => {
       for (const prediction of predictions) {
         statement.run(prediction.id, prediction.hardwareTemplateId, JSON.stringify(prediction), prediction.generatedAt);
+        this.upsertNormalizedPrediction(prediction);
       }
     });
   }

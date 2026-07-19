@@ -16,11 +16,11 @@ A coleta, a chave privada e o Qwen existem apenas nos runners. O operador não i
 
 ## Fontes cadastradas
 
-O contrato `qual-hardware-source-registry/1.0.0` registra 39 fontes iniciais e é espelhado no SQLite. Abrange:
+O contrato `qual-hardware-source-registry/1.0.0` registra as fontes iniciais e é espelhado no SQLite. Abrange:
 
 - especificações oficiais Intel, AMD, NVIDIA e Apple;
 - OEMs ASUS/ROG, Dell/Alienware/Precision/PowerEdge, HP/HPE, Lenovo/Legion/ThinkStation/ThinkSystem, Acer/Predator, MSI, Gigabyte/Aorus e Supermicro;
-- benchmarks MLCommons, OpenBenchmarking, Blender Open Data, SPEC e matrizes oficiais de codec;
+- benchmarks MLCommons, SPEC CPU, OpenBenchmarking/Phoronix para FFmpeg, OpenCV, STREAM e fio, Blender Open Data como indicador secundário e matrizes oficiais de codec NVIDIA, Intel, AMD e Apple;
 - preços públicos no Brasil, Estados Unidos e Alemanha;
 - câmbio oficial BCB, BCE e Federal Reserve.
 
@@ -59,7 +59,7 @@ Cada recomendação registra a versão do catálogo. Projetos e relatórios anti
 
 ## O que acontece no desktop
 
-Ao abrir e a cada 24 horas, Windows, macOS e Ubuntu consultam o mesmo repositório público, usam ETag e localizam a maior sequência. Antes da ativação, o aplicativo valida HTTPS/host, tamanho, SHA-256, schema, `keyId`, assinatura Ed25519, data, anti-rollback e toda a cadeia desde a primeira publicação. Hardware, componentes, benchmarks, preços, fontes, publicação e ponteiro ativo entram em uma transação única; SQLite v5 preserva integralmente as tabelas v4 do canal automático.
+Ao abrir e a cada 24 horas, Windows, macOS e Ubuntu consultam o mesmo repositório público, usam ETag e localizam a maior sequência. Antes da ativação, o aplicativo valida HTTPS/host, tamanho, SHA-256, schema, `keyId`, assinatura Ed25519, data, anti-rollback e toda a cadeia desde a primeira publicação. Hardware, componentes, benchmarks, preços, fontes, publicação e ponteiro ativo entram em uma transação única; SQLite v6 preserva integralmente as tabelas v1-v5 e normaliza as observações numéricas e previsões por estágio.
 
 Qualquer falha preserva o snapshot ativo. Um computador offline continua com o último bundle válido ou com o catálogo embarcado. O botão **Atualizar hardware** mostra versão, inventário, preços, mercados, última/ próxima coleta, fontes saudáveis/degradadas/indisponíveis, diferenças e eventual erro. **Verificar agora** apenas antecipa a consulta segura; não é necessário para manter o sistema atualizado. A importação manual de bundle oficial permanece escondida em **Recuperação avançada**.
 

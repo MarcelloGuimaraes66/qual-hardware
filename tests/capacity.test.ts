@@ -31,6 +31,8 @@ describe("capacity engine", () => {
     const resilient = recommendations.find((item) => item.policy === "n_plus_one")!;
     expect(resilient.primary.nodeCount).toBe(resilient.primary.activeNodeCount + 1);
     expect(resilient.primary.allocations.filter((node) => node.role === "reserve")).toHaveLength(1);
+    const recommended = recommendations.find((item) => item.policy === "recommended")!;
+    expect(recommended.primary.allocations.filter((node) => node.role === "reserve")).toHaveLength(cameras >= 64 ? 1 : 0);
   });
 
   it("charges source decode and multiple agents independently", () => {
@@ -184,7 +186,8 @@ describe("capacity engine", () => {
     scenario.constraints.requiredHardwareTemplateId = "laptop-vivobook-s16-285h-32gb-user";
     const recommendations = buildRecommendations("00000000-0000-4000-8000-000000000042", 1, scenario, HARDWARE_CATALOG, []);
     expect(recommendations.every((item) => item.primary.hardware.id === "laptop-vivobook-s16-285h-32gb-user")).toBe(true);
-    expect(recommendations[0]!.primary.maximumAdditionalCameras).toBeGreaterThan(0);
+    expect(recommendations[0]!.primary.maximumAdditionalCameras).toBe(0);
+    expect(recommendations[0]!.primary.procurementEligibility).toBe("blocked");
     expect(recommendations[0]!.primary.warnings).toEqual(expect.arrayContaining([
       "laptop_sustained_thermal_and_ac_power_benchmark_required",
       "wired_ethernet_adapter_required_for_production_rtsp",

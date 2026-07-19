@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { CatalogSource, SourceFetchRun, SourceObservation } from "../shared/types.js";
+import type { CalibrationStage, CatalogSource, SourceFetchRun, SourceObservation } from "../shared/types.js";
 
 const MAX_SOURCE_BYTES = 5_000_000;
 const MAX_REDIRECTS = 3;
@@ -111,6 +111,23 @@ function normalizedFieldName(value: string): string {
   if (["price", "preco", "preis"].includes(key)) return "price";
   if (["currency", "moeda", "wahrung"].includes(key)) return "priceCurrency";
   if (["availability", "disponibilidade", "verfugbarkeit"].includes(key)) return "availability";
+  if (["hardware template id", "hardware_template_id"].includes(key)) return "hardwareTemplateId";
+  if (["cpu", "processor", "processor name", "device", "device name", "system", "system name"].includes(key)) return "device";
+  if (["benchmark", "benchmark name", "test", "test name"].includes(key)) return "benchmarkName";
+  if (["benchmark version", "test version", "version"].includes(key)) return "benchmarkVersion";
+  if (["profile", "profile id", "workload", "workload profile"].includes(key)) return "profileId";
+  if (["metric", "metric name", "result type"].includes(key)) return "metricName";
+  if (["score", "result", "base rate result", "peak rate result", "throughput", "frames per second", "fps", "bandwidth"].includes(key)) return "score";
+  if (["unit", "units"].includes(key)) return "unit";
+  if (["sample count", "samples", "number of results", "number of benchmarks"].includes(key)) return "sampleCount";
+  if (["operating system", "os"].includes(key)) return "operatingSystem";
+  if (["power", "power watts", "tdp"].includes(key)) return "powerWatts";
+  if (["driver", "driver version"].includes(key)) return "driverVersion";
+  if (["cooling", "cooling profile"].includes(key)) return "coolingProfile";
+  if (["configuration", "test configuration", "notes"].includes(key)) return "configuration";
+  if (["higher is better", "higher_is_better"].includes(key)) return "higherIsBetter";
+  if (["reproducible", "validated"].includes(key)) return "reproducible";
+  if (key === "stage") return "stage";
   return key.replaceAll(" ", "_");
 }
 
@@ -119,7 +136,7 @@ function stripMarkup(value: string): string {
 }
 
 function identifyingRecord(value: Record<string, unknown>): Record<string, unknown> | null {
-  const sku = value.sku ?? value.mpn ?? value.model ?? value.productId ?? value.product_id;
+  const sku = value.sku ?? value.mpn ?? value.model ?? value.device ?? value.hardwareTemplateId ?? value.productId ?? value.product_id;
   if (typeof sku !== "string" && typeof sku !== "number") return null;
   const normalized = { ...value };
   if (normalized.sku === undefined && normalized.mpn === undefined) normalized.sku = String(sku);
@@ -223,8 +240,43 @@ function sitemapDiscoveryUrls(text: string, source: CatalogSource, baseUrl: stri
   return [...urls.values()];
 }
 
+const CALIBRATION_STAGES = new Set<CalibrationStage>([
+  "rtsp_ingest", "video_decode", "bgr_processing", "video_encode", "disk_write", "disk_read",
+  "frame_extraction", "local_inference", "memory_bandwidth", "network_ingest", "job_scheduler",
+  "intelligence_scheduler", "database_persistence", "dashboard_queries", "thermal_sustain",
+]);
+
+function numericValue(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\s/g, "").replace(/,(?=\d{3}(?:\D|$))/g, "").replace(/[^0-9.+-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function booleanValue(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return fallback;
+  if (/^(true|yes|sim|1)$/i.test(value.trim())) return true;
+  if (/^(false|no|nao|não|0)$/i.test(value.trim())) return false;
+  return fallback;
+}
+
+function benchmarkStage(source: CatalogSource, record: Record<string, unknown>): CalibrationStage | null {
+  const explicit = typeof record.stage === "string" ? record.stage.trim() as CalibrationStage : null;
+  if (explicit && CALIBRATION_STAGES.has(explicit)) return explicit;
+  const name = `${String(record.benchmarkName ?? "")} ${String(record.profileId ?? "")} ${String(record.metricName ?? "")} ${source.id}`.toLowerCase();
+  if (source.id === "benchmark-spec") return "job_scheduler";
+  if (source.id === "benchmark-mlcommons") return "local_inference";
+  if (/stream|memory bandwidth|ram bandwidth/.test(name)) return "memory_bandwidth";
+  if (/fio|disk|storage|nvme/.test(name)) return /read/.test(name) ? "disk_read" : "disk_write";
+  if (/opencv|bgr|pixel/.test(name)) return "bgr_processing";
+  if (/ffmpeg|video/.test(name)) return /encod/.test(name) ? "video_encode" : "video_decode";
+  return null;
+}
+
 function extractBenchmarkObservation(source: CatalogSource, url: string, contentType: string, text: string, retrievedAt: string): SourceObservation[] {
-  if (source.id !== "benchmark-blender" || !contentType.includes("html") || !url.includes("/devices/")) return [];
+  if (source.id === "benchmark-blender" && contentType.includes("html") && url.includes("/devices/")) {
   const device = /<title>([^<]+?)\s+-\s+Blender Open Data<\/title>/i.exec(text)?.[1]?.trim();
   const sampleCount = Number(/Number of Benchmarks<\/dt>\s*<dd>(\d+)<\/dd>/i.exec(text)?.[1] ?? "0");
   const score = Number(/<h2>Median Score<\/h2>\s*<h1[^>]*title="([0-9.]+)"/i.exec(text)?.[1] ?? "0");
@@ -233,8 +285,55 @@ function extractBenchmarkObservation(source: CatalogSource, url: string, content
   return [{
     id: `${source.id}:${contentHash}:device-median`, sourceId: source.id, retrievedAt, url, contentType, contentHash,
     evidenceLocator: "device-summary:Median Score+Number of Benchmarks",
-    payload: { kind: "public_benchmark", benchmarkName: "Blender Open Data", benchmarkVersion: "current-device-median", device, score, unit: "blender_score", sampleCount, higherIsBetter: true },
+    payload: { kind: "public_benchmark", benchmarkName: "Blender Open Data", benchmarkVersion: "current-device-median", device, stage: "local_inference", profileId: "blender-opendata-device-median-v1", metricName: "median_score", score, unit: "blender_score", sampleCount, higherIsBetter: true, reproducible: false },
   }];
+  }
+  if (source.category !== "benchmark") return [];
+  const contentHash = createHash("sha256").update(text).digest("hex");
+  const observations: SourceObservation[] = [];
+  for (const [index, item] of deterministicRecords(contentType, text).entries()) {
+    const record = item.record;
+    const score = numericValue(record.score);
+    const device = [record.device, record.model, record.sku].find((value) => typeof value === "string" && value.trim());
+    const stage = benchmarkStage(source, record);
+    if (score === null || score <= 0 || typeof device !== "string" || !stage) continue;
+    const benchmarkName = typeof record.benchmarkName === "string" && record.benchmarkName.trim()
+      ? record.benchmarkName.trim() : source.organization;
+    const benchmarkVersion = typeof record.benchmarkVersion === "string" && record.benchmarkVersion.trim()
+      ? record.benchmarkVersion.trim() : "source-current";
+    const metricName = typeof record.metricName === "string" && record.metricName.trim()
+      ? record.metricName.trim() : "score";
+    observations.push({
+      id: `${source.id}:${contentHash}:benchmark-${index}`,
+      sourceId: source.id,
+      retrievedAt,
+      url,
+      contentType,
+      contentHash,
+      evidenceLocator: item.locator,
+      payload: {
+        kind: "public_benchmark",
+        hardwareTemplateId: record.hardwareTemplateId,
+        benchmarkName,
+        benchmarkVersion,
+        device,
+        stage,
+        profileId: typeof record.profileId === "string" && record.profileId.trim() ? record.profileId.trim() : `${source.id}-${stage}`,
+        metricName,
+        score,
+        unit: typeof record.unit === "string" && record.unit.trim() ? record.unit.trim() : "score",
+        sampleCount: Math.max(1, Math.trunc(numericValue(record.sampleCount) ?? 1)),
+        higherIsBetter: booleanValue(record.higherIsBetter, !/latency|time/.test(metricName.toLowerCase())),
+        operatingSystem: record.operatingSystem,
+        powerWatts: numericValue(record.powerWatts),
+        driverVersion: record.driverVersion,
+        coolingProfile: record.coolingProfile,
+        configuration: record.configuration,
+        reproducible: booleanValue(record.reproducible, false),
+      },
+    });
+  }
+  return observations;
 }
 
 function discoveredProductUrls(observations: SourceObservation[], source: CatalogSource): URL[] {

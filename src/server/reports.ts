@@ -8,6 +8,7 @@ import type {
   RecommendationPolicy,
   ScenarioRecord,
 } from "../shared/types.js";
+import { CAPACITY_RECOMMENDATION_EXPORT_VERSION } from "../shared/types.js";
 
 export interface ReportContext {
   scenario: ScenarioRecord;
@@ -51,19 +52,23 @@ export function buildExecutiveNarrative(context: ReportContext): ExecutiveNarrat
   const priceText = selected.price.median === null
     ? "O preço precisa de cotação comercial itemizada."
     : `O valor central é ${selected.price.currency} ${formatMoney(selected.price.median)} para o projeto; ${selected.price.quotationRequired ? "ele é uma referência e exige cotação antes da compra" : "ele usa cotações válidas do snapshot ativo"}.`;
-  const recommendation = `Para equilibrar segurança operacional, custo e possibilidade de crescimento, a escolha principal é ${selected.nodeCount} unidade(s) de ${selected.hardware.name}, com ${selected.hardware.cpuModel}, ${selected.hardware.gpuCount} × ${selected.hardware.gpuModel}, ${selected.hardware.ramGb} GB de memória por nó e ${selected.headroomPercent}% de folga planejada.`;
+  const commerciallyEligible = selected.procurementEligibility === "eligible";
+  const recommendation = commerciallyEligible
+    ? `Para equilibrar segurança operacional, custo e possibilidade de crescimento, a escolha principal apta para aquisição é ${selected.nodeCount} unidade(s) de ${selected.hardware.name}, com ${selected.hardware.cpuModel}, ${selected.hardware.gpuCount} × ${selected.hardware.gpuModel}, ${selected.hardware.ramGb} GB de memória por nó e ${selected.headroomPercent}% de folga planejada.`
+    : `Ainda não há evidência suficiente para aprovar uma compra. A configuração ${selected.hardware.name}, com ${selected.nodeCount} unidade(s), aparece somente como referência de planejamento para orientar as calibrações que faltam; ela não deve ser adquirida com base neste relatório.`;
   return {
     title: "Nossa leitura e recomendação em linguagem direta",
     paragraphs: [
       `Analisamos o trabalho completo de ${scenario.totalCameras} câmera(s): recebimento RTSP, decodificação, processamento de imagem, criação e leitura de clipes, gravação em disco, tráfego de rede e inferência no AiQ/Qwen local. O FPS de leitura RTSP (${sourceFps.join("/ ")} por câmera) foi tratado separadamente do FPS efetivamente enviado ao modelo (${inferenceFps.join("/ ")}), porque esses dois momentos consomem recursos diferentes.`,
       `${recommendation} O limitante calculado desta proposta é ${selected.bottleneck}; por isso a recomendação considera o conjunto CPU, GPU, VRAM, RAM, SSD, rede e sustentação térmica, e não apenas a marca ou um score genérico.`,
       `Sobre a força da evidência: ${evidenceText}. ${priceText}`,
-      `A opção mínima, ${minimum!.primary.hardware.name}, reduz o investimento inicial, mas trabalha com menos reserva para picos e crescimento. A opção recomendada oferece o melhor equilíbrio para operação contínua. A opção N+1, ${resilient!.primary.hardware.name}, custa mais porque mantém redundância e continuidade quando um nó estiver indisponível.`,
+      `A opção mínima, ${minimum!.primary.hardware.name}, é sempre informativa e trabalha com menos reserva para picos. A opção recomendada busca o melhor equilíbrio para operação contínua e, a partir de 64 câmeras, já inclui N+1. A opção N+1, ${resilient!.primary.hardware.name}, mantém redundância para a indisponibilidade de um nó. ${commerciallyEligible ? "As opções aptas passaram pelo gate de evidências de todos os estágios." : "Neste momento todas continuam bloqueadas para aquisição até a cobertura ficar completa."}`,
     ],
     recommendation,
     cautions: [
       ...(selected.price.staleQuoteCount > 0 ? [`${selected.price.staleQuoteCount} cotação(ões) vencida(s) foram excluídas do cálculo.`] : []),
       ...(evidence?.status === "validated_local" || evidence?.status === "extrapolated_high" ? [] : ["Não trate esta estimativa como validação física; execute a calibração completa do Perceptrum antes de fechar a compra."]),
+      ...(!commerciallyEligible ? ["VEREDITO COMERCIAL: relatório não apto para compra; capacidade segura não comprovada para todos os estágios."] : []),
       "Driver, perfil de energia, refrigeração, versão do Perceptrum, modelo AiQ e workload devem permanecer iguais aos registrados na evidência.",
     ],
   };
@@ -73,6 +78,7 @@ function qualifiedOptions(recommendations: CapacityRecommendation[]): Recommenda
   const byHardware = new Map<string, RecommendationAlternative>();
   for (const recommendation of recommendations) {
     for (const option of [recommendation.primary, ...recommendation.alternatives]) {
+      if (option.procurementEligibility !== "eligible") continue;
       const current = byHardware.get(option.hardware.id);
       const cost = option.price.median ?? Number.POSITIVE_INFINITY;
       const currentCost = current?.price.median ?? Number.POSITIVE_INFINITY;
@@ -85,14 +91,31 @@ function qualifiedOptions(recommendations: CapacityRecommendation[]): Recommenda
   );
 }
 
+function planningOptions(recommendations: CapacityRecommendation[]): RecommendationAlternative[] {
+  const byHardware = new Map<string, RecommendationAlternative>();
+  for (const recommendation of recommendations) {
+    for (const option of [recommendation.primary, ...recommendation.alternatives]) {
+      if (option.procurementEligibility === "eligible") continue;
+      const current = byHardware.get(option.hardware.id);
+      if (!current || (option.price.median ?? Number.POSITIVE_INFINITY) < (current.price.median ?? Number.POSITIVE_INFINITY)) {
+        byHardware.set(option.hardware.id, option);
+      }
+    }
+  }
+  return [...byHardware.values()].sort((left, right) =>
+    (left.price.median ?? Number.POSITIVE_INFINITY) - (right.price.median ?? Number.POSITIVE_INFINITY) ||
+    left.hardware.name.localeCompare(right.hardware.name));
+}
+
 export function jsonReport(context: ReportContext): Buffer {
   const recommendations = orderedRecommendations(context.recommendations);
   return Buffer.from(JSON.stringify({
-    schemaVersion: "capacity-recommendation-export/2.3.0",
+    schemaVersion: CAPACITY_RECOMMENDATION_EXPORT_VERSION,
     generatedAt: new Date().toISOString(),
     scenario: context.scenario,
     executiveNarrative: buildExecutiveNarrative(context),
     qualifiedOptions: qualifiedOptions(recommendations),
+    planningOptions: planningOptions(recommendations),
     recommendations,
   }, null, 2));
 }
@@ -211,6 +234,7 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
       policy: recommendation.policy,
       proposal: POLICY_LABELS[recommendation.policy],
       confidence: recommendation.confidence,
+      procurementEligibility: design.procurementEligibility,
       nodePlan: `${design.nodeCount} total / ${design.activeNodeCount} active / ${design.nodeCount - design.activeNodeCount} reserve`,
       hardware: design.hardware.name,
       formFactor: design.hardware.kind,
@@ -236,10 +260,23 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
     nodes: design.nodeCount,
     bottleneck: design.bottleneck,
     evidence: design.calibration?.status ?? "estimated",
+    procurementEligibility: design.procurementEligibility,
     confidence: design.calibration?.confidenceClass ?? "none",
     reservePercent: design.calibration?.reservePercent ?? null,
     medianProjectCost: priceValue(design.price.median),
     quotationRequired: design.price.quotationRequired,
+  })));
+
+  appendSheet(workbook, "Planning Only", planningOptions(recommendations).map((design, index) => ({
+    costOrder: index + 1,
+    hardware: design.hardware.name,
+    cpu: design.hardware.cpuModel,
+    gpu: `${design.hardware.gpuCount} x ${design.hardware.gpuModel}`,
+    operatingSystem: operatingSystemFor(design.hardware),
+    evidence: design.calibration?.status ?? "reference_only",
+    procurementEligibility: design.procurementEligibility,
+    reason: "Evidence coverage is incomplete; do not use as purchase approval.",
+    medianProjectCost: priceValue(design.price.median),
   })));
 
   appendSheet(workbook, "BOM", recommendations.flatMap((recommendation) => {
@@ -542,9 +579,15 @@ export async function pdfReport({ scenario, recommendations: input }: ReportCont
     writer.line(`CPU ${design.hardware.cpuModel}; RAM ${design.hardware.ramGb} GB/nó (${design.hardware.memoryArchitecture}); GPU ${design.hardware.gpuCount} x ${design.hardware.gpuModel}; ${gpuMemoryDescription(design.hardware)}; folga ${design.headroomPercent}%; preço ${formatPrice(design)}.`, 9, false, 10);
   }
 
-  writer.heading("Outras maquinas qualificadas em ordem crescente de custo");
-  for (const [index, option] of qualifiedOptions(recommendations).entries()) {
+  const qualified = qualifiedOptions(recommendations);
+  writer.heading("Maquinas aptas para aquisicao em ordem crescente de custo");
+  if (!qualified.length) writer.line("Nenhuma maquina esta apta para aquisicao: faltam evidencias numericas e calibracoes fisicas completas para todos os estagios.", 9.5, true);
+  for (const [index, option] of qualified.entries()) {
     writer.line(`${index + 1}. ${option.hardware.name} - ${option.hardware.cpuModel} - ${option.hardware.gpuModel} - ${formatPrice(option)} - evidencia ${option.calibration?.status ?? "estimada"}.`, 9.5);
+  }
+  writer.heading("Referencias de planejamento bloqueadas para compra");
+  for (const [index, option] of planningOptions(recommendations).entries()) {
+    writer.line(`${index + 1}. ${option.hardware.name} - ${formatPrice(option)} - ${option.calibration?.status ?? "reference_only"}; nao comprar sem completar as evidencias.`, 9.5);
   }
 
   writer.heading("Carga de cameras e Agents usada no calculo");

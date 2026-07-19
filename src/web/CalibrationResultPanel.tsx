@@ -3,6 +3,17 @@ import type { LocalCalibrationRun, TelemetryMetricSummary } from "../shared/type
 
 type Language = "pt" | "en";
 
+const STAGE_LABELS: Record<string, { pt: string; en: string }> = {
+  rtsp_ingest: { pt: "Recepção RTSP", en: "RTSP ingest" }, video_decode: { pt: "Decodificação", en: "Video decode" },
+  bgr_processing: { pt: "Conversão BGR e movimento", en: "BGR and motion" }, video_encode: { pt: "Codificação e clipes", en: "Encoding and clips" },
+  disk_write: { pt: "Escrita sustentada no SSD", en: "Sustained SSD write" }, disk_read: { pt: "Leitura sustentada no SSD", en: "Sustained SSD read" },
+  frame_extraction: { pt: "Extração e mosaico de quadros", en: "Frame extraction and mosaic" }, local_inference: { pt: "Inferência AiQ/Qwen local", en: "Local AiQ/Qwen inference" },
+  memory_bandwidth: { pt: "Largura de banda da memória", en: "Memory bandwidth" }, network_ingest: { pt: "Transporte de rede", en: "Network transport" },
+  job_scheduler: { pt: "Jobs, Steps e Agents", en: "Jobs, Steps and Agents" }, intelligence_scheduler: { pt: "Scheduler de Intelligence", en: "Intelligence scheduler" },
+  database_persistence: { pt: "Persistência e eventos", en: "Persistence and events" }, dashboard_queries: { pt: "Dashboard e consultas", en: "Dashboard and queries" },
+  thermal_sustain: { pt: "Sustentação térmica", en: "Thermal sustain" },
+};
+
 function formatBytes(value: number | null | undefined): string {
   if (value === null || value === undefined) return "Não medido";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -63,7 +74,7 @@ export function CalibrationResultPanel({
   const overall = result.resourceSummaries?.find((item) => item.phase === "sustained") ?? result.resourceSummaries?.at(-1);
 
   return <section className="calibration-result" aria-labelledby="calibration-result-title">
-    <div className="calibration-result-heading"><div><span>RESULTADO / {result.schemaVersion.endsWith("1.1.0") ? "TELEMETRIA COMPLETA" : "LEGADO"}</span><h3 id="calibration-result-title">{lang === "pt" ? "Resultado da calibração" : "Calibration result"}</h3></div><b className={`calibration-verdict ${status}`}>{status === "anchor_approved" ? (lang === "pt" ? "Âncora aprovada" : "Approved anchor") : status === "invalid" ? (lang === "pt" ? "Teste inválido" : "Invalid test") : (lang === "pt" ? "Diagnóstico" : "Diagnostic")}</b></div>
+    <div className="calibration-result-heading"><div><span>RESULTADO / {result.schemaVersion.endsWith("2.0.0") ? "PIPELINE INTEGRAL" : result.schemaVersion.endsWith("1.1.0") ? "TELEMETRIA" : "LEGADO"}</span><h3 id="calibration-result-title">{lang === "pt" ? "Resultado da calibração" : "Calibration result"}</h3></div><b className={`calibration-verdict ${status}`}>{status === "anchor_approved" ? (lang === "pt" ? "Âncora aprovada" : "Approved anchor") : status === "invalid" ? (lang === "pt" ? "Teste inválido" : "Invalid test") : (lang === "pt" ? "Diagnóstico" : "Diagnostic")}</b></div>
     <p className="calibration-natural-verdict">{verdict}</p>
     <div className="calibration-result-grid">
       <div><span>{lang === "pt" ? "Capacidade segura" : "Safe capacity"}</span><b>{safeCapacity} {result.overallSafeCameraCapacity === null ? "" : lang === "pt" ? "câmeras" : "cameras"}</b><small>{lang === "pt" ? "margem conservadora aplicada" : "conservative reserve applied"}</small></div>
@@ -79,7 +90,15 @@ export function CalibrationResultPanel({
       <div><span>SSD / SO</span><b>{result.fingerprint.storageModel}</b><small>{result.fingerprint.filesystem} · {result.fingerprint.operatingSystem} {result.fingerprint.operatingSystemVersion}</small></div>
     </div>
     {result.phases.length > 0 && <div className="calibration-phases"><h4>{lang === "pt" ? "Fases do teste" : "Test phases"}</h4>{result.phases.map((phase) => <div key={phase.name}><span>{phase.name}</span><div><i style={{ width: `${Math.min(100, phase.loadPercent / 1.2)}%` }} /></div><b>{phase.loadPercent}% · {(phase.inferenceSuccessRate * 100).toFixed(1)}% AiQ · {((phase.frameDeliveryRate ?? 0) * 100).toFixed(1)}% RTSP</b></div>)}</div>}
-    <div className="calibration-table-wrap"><table className="calibration-stage-table"><thead><tr><th>{lang === "pt" ? "Etapa real" : "Real stage"}</th><th>{lang === "pt" ? "Evidência" : "Evidence"}</th><th>{lang === "pt" ? "Capacidade" : "Capacity"}</th><th>p95</th><th>{lang === "pt" ? "Utilização" : "Utilization"}</th></tr></thead><tbody>{result.stages.map((stage) => <tr key={stage.stage}><td>{stage.stage}</td><td><span className={`evidence-state ${stage.evidenceStatus ?? "legacy"}`}>{stage.evidenceStatus ?? (lang === "pt" ? "não medido nesta versão" : "not measured in this version")}</span><small>{stage.reason ?? stage.measurementSource}</small></td><td>{stage.safeCameraCapacity === null ? "—" : `${stage.safeCameraCapacity.toFixed(1)} ${lang === "pt" ? "câmeras" : "cameras"}`}</td><td>{stage.p95LatencyMs === null ? "—" : `${stage.p95LatencyMs.toFixed(1)} ms`}</td><td>{stage.peakUtilizationPercent === null ? "—" : `${stage.peakUtilizationPercent.toFixed(1)}%`}</td></tr>)}</tbody></table></div>
+    <div className="calibration-table-wrap"><table className="calibration-stage-table"><thead><tr><th>{lang === "pt" ? "Etapa real" : "Real stage"}</th><th>{lang === "pt" ? "Evidência" : "Evidence"}</th><th>{lang === "pt" ? "Capacidade" : "Capacity"}</th><th>p95</th><th>{lang === "pt" ? "Utilização" : "Utilization"}</th></tr></thead><tbody>{result.stages.map((stage) => <tr key={stage.stage}><td><b>{STAGE_LABELS[stage.stage]?.[lang] ?? stage.stage}</b><small>{stage.stage}</small></td><td><span className={`evidence-state ${stage.evidenceStatus ?? "legacy"}`}>{stage.evidenceStatus ?? (lang === "pt" ? "não medido nesta versão" : "not measured in this version")}</span><small>{stage.reason ?? stage.measurementSource}</small></td><td>{stage.safeCameraCapacity === null ? "—" : `${stage.safeCameraCapacity.toFixed(1)} ${lang === "pt" ? "câmeras" : "cameras"}`}</td><td>{stage.p95LatencyMs === null ? "—" : `${stage.p95LatencyMs.toFixed(1)} ms`}</td><td>{stage.peakUtilizationPercent === null ? "—" : `${stage.peakUtilizationPercent.toFixed(1)}%`}</td></tr>)}</tbody></table></div>
+    {result.pipelineEvidence && <details className="calibration-sensors" open><summary>{lang === "pt" ? "Comprovação do pipeline de produção" : "Production pipeline proof"}</summary>{[
+      ["jobSchedulerExecuted", lang === "pt" ? "Scheduler de Jobs executado" : "Job scheduler executed"],
+      ["jobRuntimeExecuted", lang === "pt" ? "Jobs, Steps e Agents executados" : "Jobs, Steps and Agents executed"],
+      ["jobStepRunsPersisted", lang === "pt" ? "Execuções dos Steps persistidas" : "Step runs persisted"],
+      ["databaseWritesPersisted", lang === "pt" ? "Eventos e gravações persistidos" : "Events and writes persisted"],
+      ["intelligenceSchedulerExecuted", lang === "pt" ? "Intelligence real executado" : "Real Intelligence executed"],
+      ["dashboardQueriesExecuted", lang === "pt" ? "Dashboard e consultas executados" : "Dashboard and queries executed"],
+    ].map((item) => { const [key, label] = item as [string, string]; const measured = result.pipelineEvidence?.[key] === true; return <div key={key}><span className={`evidence-state ${measured ? "measured" : "failed"}`}>{measured ? "measured" : "missing"}</span><b>{label}</b><small>{measured ? (lang === "pt" ? "comprovado no resultado" : "proven in result") : (lang === "pt" ? "ausente; bloqueia compra" : "missing; blocks purchase")}</small></div>; })}</details>}
     {result.telemetryCapabilities && <details className="calibration-sensors"><summary>{lang === "pt" ? "Sensores e capacidades de telemetria" : "Telemetry sensors and capabilities"}</summary>{result.telemetryCapabilities.map((item) => <div key={item.id}><span className={`evidence-state ${item.status}`}>{item.status}</span><b>{item.id}</b><small>{item.provider}{item.reason ? ` · ${item.reason}` : ""}</small></div>)}</details>}
     {(result.qualityGate?.failures.length || result.qualityGate?.warnings.length) ? <div className="calibration-findings">{result.qualityGate?.failures.map((item) => <div className="failure" key={item}>✕ {item}</div>)}{result.qualityGate?.warnings.map((item) => <div className="warning" key={item}>△ {item}</div>)}</div> : null}
     <div className="calibration-artifact"><span>{lang === "pt" ? "Arquivo salvo antes da importação" : "File saved before import"}</span><code>{artifactPath || result.artifact?.fileName || "—"}</code><small>SHA-256: {result.artifact?.payloadSha256 ?? (lang === "pt" ? "não disponível na versão 1.0" : "not available in version 1.0")}</small></div>

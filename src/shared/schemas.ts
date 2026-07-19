@@ -6,6 +6,7 @@ import {
   EVIDENCE_CATALOG_VERSION,
   LEGACY_LOCAL_CALIBRATION_VERSION,
   LOCAL_CALIBRATION_VERSION,
+  TELEMETRY_LOCAL_CALIBRATION_VERSION,
   WORKLOAD_CONTRACT_VERSION,
 } from "./types.js";
 
@@ -60,7 +61,7 @@ export const cameraGroupSchema = z.object({
 
 export const capacityScenarioSchema = z.object({
   schemaVersion: z.literal("capacity-scenario/1.0.0"),
-  workloadContractVersion: z.enum([WORKLOAD_CONTRACT_VERSION, "perceptrum-workload/1.1.0", "perceptrum-workload/1.0.0"]),
+  workloadContractVersion: z.enum([WORKLOAD_CONTRACT_VERSION, "perceptrum-workload/2.0.0", "perceptrum-workload/1.1.0", "perceptrum-workload/1.0.0"]),
   projectName: z.string().min(1).max(160),
   customerName: z.string().max(160),
   market: z.enum(["BR", "US", "DE"]),
@@ -149,9 +150,14 @@ export const calibrationStageSchema = z.enum([
   "video_encode",
   "disk_write",
   "disk_read",
+  "frame_extraction",
   "local_inference",
   "memory_bandwidth",
   "network_ingest",
+  "job_scheduler",
+  "intelligence_scheduler",
+  "database_persistence",
+  "dashboard_queries",
   "thermal_sustain",
 ]);
 
@@ -166,13 +172,17 @@ const telemetryMetricSummarySchema = z.object({
 });
 
 export const localCalibrationRunSchema = z.object({
-  schemaVersion: z.union([z.literal(LEGACY_LOCAL_CALIBRATION_VERSION), z.literal(LOCAL_CALIBRATION_VERSION)]),
+  schemaVersion: z.union([
+    z.literal(LEGACY_LOCAL_CALIBRATION_VERSION),
+    z.literal(TELEMETRY_LOCAL_CALIBRATION_VERSION),
+    z.literal(LOCAL_CALIBRATION_VERSION),
+  ]),
   id: z.string().uuid(),
   planId: z.string().uuid(),
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime(),
   completedAt: z.iso.datetime(),
-  workloadContractVersion: z.literal(WORKLOAD_CONTRACT_VERSION),
+  workloadContractVersion: z.union([z.literal(WORKLOAD_CONTRACT_VERSION), z.literal("perceptrum-workload/2.0.0")]),
   mode: z.enum(["quick", "full"]),
   executionMode: z.enum(["readiness", "production_pipeline"]).optional(),
   developmentOnly: z.literal(true).optional(),
@@ -234,13 +244,17 @@ export const localCalibrationRunSchema = z.object({
     reason: z.string().min(1).max(500).optional(),
     measurementSource: z.string().min(1).max(240).optional(),
     utilizationEvidence: z.array(z.string().min(1).max(500)).max(50).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
   })).min(6),
   phases: z.array(z.object({
-    name: z.enum(["warmup", "sustained", "surge"]),
+    name: z.enum(["warmup", "ramp", "sustained", "surge"]),
     durationSeconds: z.number().int().positive(),
     loadPercent: z.number().positive(),
     cameraCount: z.number().int().positive(),
     inferenceSuccessRate: z.number().min(0).max(1),
+    p99InferenceLatencyMs: z.number().nonnegative().optional(),
+    inferenceIntervalMs: z.number().positive().optional(),
+    inferenceIntervalSeconds: z.number().positive().optional(),
     maxQueueDepth: z.number().int().nonnegative(),
     queueGrowthPerMinute: z.number(),
     outOfMemoryCount: z.number().int().nonnegative(),
@@ -248,7 +262,7 @@ export const localCalibrationRunSchema = z.object({
     decodedFrames: z.number().int().nonnegative().optional(),
     frameDeliveryRate: z.number().min(0).max(1).optional(),
     thermalThrottlePercent: z.number().min(0).max(100).nullable().optional(),
-  })).length(3),
+  })).min(3).max(4),
   overallSafeCameraCapacity: z.number().nonnegative().nullable(),
   bottleneck: calibrationStageSchema,
   pipelineEvidence: z.object({
@@ -304,9 +318,9 @@ export const localCalibrationRunSchema = z.object({
   if (value.qualityGate?.eligibleForCapacityExtrapolation && value.pipelineEvidence?.complete !== true) {
     context.addIssue({ code: "custom", path: ["pipelineEvidence"], message: "Eligible calibration requires complete production-pipeline evidence." });
   }
-  if (value.schemaVersion === LOCAL_CALIBRATION_VERSION) {
+  if (value.schemaVersion === TELEMETRY_LOCAL_CALIBRATION_VERSION || value.schemaVersion === LOCAL_CALIBRATION_VERSION) {
     if (!value.telemetryCapabilities?.length) {
-      context.addIssue({ code: "custom", path: ["telemetryCapabilities"], message: "Calibration 1.1 requires telemetry capabilities." });
+      context.addIssue({ code: "custom", path: ["telemetryCapabilities"], message: "Telemetry calibration requires capability declarations." });
     }
     value.telemetryCapabilities?.forEach((capability, index) => {
       if (capability.status !== "measured" && !capability.reason?.trim()) {
@@ -314,18 +328,51 @@ export const localCalibrationRunSchema = z.object({
       }
     });
     if (!value.resourceSummaries || !value.processGroups) {
-      context.addIssue({ code: "custom", path: ["resourceSummaries"], message: "Calibration 1.1 requires resource and process summaries." });
+      context.addIssue({ code: "custom", path: ["resourceSummaries"], message: "Telemetry calibration requires resource and process summaries." });
     }
     value.stages.forEach((stage, index) => {
       if (!stage.evidenceStatus) {
-        context.addIssue({ code: "custom", path: ["stages", index, "evidenceStatus"], message: "Calibration 1.1 requires evidence status for every stage." });
+        context.addIssue({ code: "custom", path: ["stages", index, "evidenceStatus"], message: "Telemetry calibration requires evidence status for every stage." });
       }
       if (stage.evidenceStatus && stage.evidenceStatus !== "measured" && !stage.reason?.trim()) {
         context.addIssue({ code: "custom", path: ["stages", index, "reason"], message: "Unavailable stage evidence requires a reason." });
       }
     });
     if (!value.artifact) {
-      context.addIssue({ code: "custom", path: ["artifact"], message: "Calibration 1.1 requires persisted artifact metadata." });
+      context.addIssue({ code: "custom", path: ["artifact"], message: "Telemetry calibration requires persisted artifact metadata." });
+    }
+  }
+  if (value.schemaVersion === LOCAL_CALIBRATION_VERSION) {
+    const requiredStages = new Set([
+      "rtsp_ingest", "video_decode", "bgr_processing", "video_encode", "disk_write", "disk_read",
+      "frame_extraction", "local_inference", "memory_bandwidth", "network_ingest", "job_scheduler",
+      "intelligence_scheduler", "database_persistence", "dashboard_queries", "thermal_sustain",
+    ]);
+    const measuredStages = new Set(value.stages.map((stage) => stage.stage));
+    for (const stage of requiredStages) {
+      if (!measuredStages.has(stage as typeof value.stages[number]["stage"])) {
+        context.addIssue({ code: "custom", path: ["stages"], message: `Calibration 2.0 is missing required stage ${stage}.` });
+      }
+    }
+    if (value.workloadContractVersion !== WORKLOAD_CONTRACT_VERSION) {
+      context.addIssue({ code: "custom", path: ["workloadContractVersion"], message: "Calibration 2.0 requires the Perceptrum workload 3.0 contract." });
+    }
+    if (value.mode === "full" && value.phases.map((phase) => phase.name).join(",") !== "warmup,ramp,sustained,surge") {
+      context.addIssue({ code: "custom", path: ["phases"], message: "Full calibration 2.0 requires warmup, ramp, sustained and surge phases." });
+    }
+    if (value.qualityGate?.eligibleForCapacityExtrapolation) {
+      const proof = value.pipelineEvidence;
+      const requiredProof = [
+        proof?.jobSchedulerExecuted,
+        proof?.jobRuntimeExecuted,
+        proof?.jobStepRunsPersisted,
+        proof?.databaseWritesPersisted,
+        proof?.intelligenceSchedulerExecuted,
+        proof?.dashboardQueriesExecuted,
+      ];
+      if (requiredProof.some((item) => item !== true)) {
+        context.addIssue({ code: "custom", path: ["pipelineEvidence"], message: "Purchase-eligible calibration requires Jobs, Steps, Agents, Intelligence, persistence and dashboard proof." });
+      }
     }
   }
 });
@@ -383,6 +430,14 @@ export const publicBenchmarkObservationSchema = z.object({
   coolingProfile: z.string().min(1).max(240).nullable().optional(),
   sampleCount: z.number().int().positive().max(1_000_000).optional(),
   qualityFlags: z.array(z.string().min(1).max(120)).max(40).optional(),
+  benchmarkSuiteId: z.string().min(1).max(240).optional(),
+  metricName: z.string().min(1).max(240).optional(),
+  aggregation: z.enum(["single", "mean", "median", "p95", "p99", "peak", "rate"]).optional(),
+  systemFingerprint: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  evidenceLocator: z.string().min(1).max(1_000).optional(),
+  rawArtifactSha256: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
+  licensePolicy: z.string().min(1).max(500).optional(),
+  reproducible: z.boolean().optional(),
 });
 
 export const evidenceCatalogSnapshotSchema = z.object({

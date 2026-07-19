@@ -14,6 +14,7 @@ import type {
 import {
   CALIBRATION_PLAN_VERSION,
   CAPACITY_PREDICTION_VERSION,
+  LOCAL_CALIBRATION_VERSION,
   WORKLOAD_CONTRACT_VERSION,
 } from "../shared/types.js";
 
@@ -24,9 +25,14 @@ export const REQUIRED_CALIBRATION_STAGES: CalibrationStage[] = [
   "video_encode",
   "disk_write",
   "disk_read",
+  "frame_extraction",
   "local_inference",
   "memory_bandwidth",
   "network_ingest",
+  "job_scheduler",
+  "intelligence_scheduler",
+  "database_persistence",
+  "dashboard_queries",
   "thermal_sustain",
 ];
 
@@ -53,17 +59,52 @@ function comparableBenchmark(
     (!target.componentKind || !anchor.componentKind || target.componentKind === anchor.componentKind);
 }
 
+function publicObservationEligible(observation: PublicBenchmarkObservation): boolean {
+  const rejectedFlags = new Set([
+    "anonymous", "overclock", "incomplete_configuration", "missing_driver", "missing_power",
+    "incompatible_version", "marketing_only", "unverified", "synthetic_projection",
+  ]);
+  return observation.sourceTier <= 2 &&
+    observation.reproducible === true &&
+    Boolean(observation.benchmarkSuiteId && observation.metricName && observation.evidenceLocator) &&
+    /^[0-9a-f]{64}$/i.test(observation.rawArtifactSha256 ?? "") &&
+    !(observation.qualityFlags ?? []).some((flag) => rejectedFlags.has(flag));
+}
+
 function benchmarkRatio(target: PublicBenchmarkObservation, anchor: PublicBenchmarkObservation): number {
   if (!comparableBenchmark(target, anchor)) return Number.NaN;
   return target.higherIsBetter ? target.score / anchor.score : anchor.score / target.score;
 }
 
 function calibrationRunEligible(run: LocalCalibrationRun): boolean {
-  return run.mode === "full" && run.executionMode === "production_pipeline" &&
+  const covered = new Map(run.stages.map((stage) => [stage.stage, stage]));
+  const pipelineProof = run.pipelineEvidence;
+  return run.schemaVersion === LOCAL_CALIBRATION_VERSION &&
+    run.workloadContractVersion === WORKLOAD_CONTRACT_VERSION &&
+    run.mode === "full" && run.executionMode === "production_pipeline" &&
     run.developmentOnly !== true &&
-    run.pipelineEvidence?.complete === true && run.qualityGate?.eligibleForCapacityExtrapolation === true &&
+    pipelineProof?.complete === true &&
+    pipelineProof.jobSchedulerExecuted === true &&
+    pipelineProof.jobRuntimeExecuted === true &&
+    pipelineProof.jobStepRunsPersisted === true &&
+    pipelineProof.databaseWritesPersisted === true &&
+    pipelineProof.intelligenceSchedulerExecuted === true &&
+    pipelineProof.dashboardQueriesExecuted === true &&
+    run.qualityGate?.eligibleForCapacityExtrapolation === true &&
     run.externalRequestCount === 0 && run.openAiRequestCount === 0 &&
-    run.phases.every((phase) => phase.outOfMemoryCount === 0 && phase.queueGrowthPerMinute <= 0.05 && phase.inferenceSuccessRate >= 0.99);
+    REQUIRED_CALIBRATION_STAGES.every((stage) => {
+      const evidence = covered.get(stage);
+      return evidence?.evidenceStatus === "measured" &&
+        evidence.safeCameraCapacity !== null && evidence.safeCameraCapacity > 0;
+    }) &&
+    run.phases.map((phase) => phase.name).join(",") === "warmup,ramp,sustained,surge" &&
+    run.phases.every((phase) => phase.outOfMemoryCount === 0 &&
+      phase.queueGrowthPerMinute <= 0 &&
+      phase.inferenceSuccessRate >= 0.995 &&
+      phase.frameDeliveryRate !== undefined && phase.frameDeliveryRate >= 0.995 &&
+      phase.p99InferenceLatencyMs !== undefined &&
+      (phase.inferenceIntervalMs !== undefined || phase.inferenceIntervalSeconds !== undefined) &&
+      phase.p99InferenceLatencyMs < (phase.inferenceIntervalMs ?? (phase.inferenceIntervalSeconds ?? 0) * 1_000) * 0.75);
 }
 
 function compatibleAnchor(
@@ -97,13 +138,13 @@ function contributionsFor(
   observations: PublicBenchmarkObservation[],
   excludedRunId?: string,
 ): Contribution[] {
-  const targets = observations.filter((item) => item.hardwareTemplateId === target.id && item.stage === stage);
+  const targets = observations.filter((item) => item.hardwareTemplateId === target.id && item.stage === stage && publicObservationEligible(item));
   const contributions: Contribution[] = [];
   for (const run of runs) {
     if (run.id === excludedRunId || !run.fingerprint.hardwareTemplateId || !calibrationRunEligible(run)) continue;
     const measured = run.stages.find((item) => item.stage === stage);
     if (!measured || measured.safeCameraCapacity === null || measured.safeCameraCapacity <= 0) continue;
-    const anchors = observations.filter((item) => item.hardwareTemplateId === run.fingerprint.hardwareTemplateId && item.stage === stage);
+    const anchors = observations.filter((item) => item.hardwareTemplateId === run.fingerprint.hardwareTemplateId && item.stage === stage && publicObservationEligible(item));
     for (const targetObservation of targets) {
       const anchor = anchors.find((item) => comparableBenchmark(targetObservation, item));
       if (!anchor) continue;
@@ -242,7 +283,8 @@ export function createCalibrationPlan(
         ]
       : [
           { name: "warmup", durationSeconds: 600, loadPercent: 100 },
-          { name: "sustained", durationSeconds: 2400, loadPercent: 100 },
+          { name: "ramp", durationSeconds: 1200, loadPercent: 100 },
+          { name: "sustained", durationSeconds: 1200, loadPercent: 100 },
           { name: "surge", durationSeconds: 600, loadPercent: 120 },
         ],
     sourceProfiles: scenario.cameraGroups.map((group) => ({ ...group.source })),
@@ -280,11 +322,12 @@ export function buildCapacityPredictions(
         hardwareTemplateId: target.id,
         generatedAt: new Date().toISOString(),
         status: "validated_local",
+        procurementEligibility: "eligible",
         confidenceClass: "A",
-        safeCameraMinimum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.9),
-        safeCameraMaximum: Math.floor(exact.overallSafeCameraCapacity ?? 0),
+        safeCameraMinimum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.8 * 0.9),
+        safeCameraMaximum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.8),
         bottleneck: exact.bottleneck,
-        reservePercent: 10,
+        reservePercent: 20,
         exactCalibrationRunId: exact.id,
         stagePredictions: [],
         leaveOneOutUnsafeOverestimateCount: unsafeCount,
@@ -320,9 +363,7 @@ export function buildCapacityPredictions(
       });
     }
 
-    const requiredCoverage = REQUIRED_CALIBRATION_STAGES.filter((stage) =>
-      stage !== "disk_read" && stage !== "memory_bandwidth",
-    );
+    const requiredCoverage = REQUIRED_CALIBRATION_STAGES;
     const covered = new Set(stagePredictions.map((item) => item.stage));
     const complete = requiredCoverage.every((stage) => covered.has(stage));
     if (!complete || stagePredictions.length === 0) overallClass = "C";
@@ -330,18 +371,25 @@ export function buildCapacityPredictions(
     const reservePercent = stagePredictions.length
       ? Math.max(...stagePredictions.map((item) => item.reservePercent))
       : RESERVE_BY_CLASS[overallClass];
+    if (unsafeCount > 0 && overallClass === "A") overallClass = "B";
     const status = overallClass === "A"
       ? "extrapolated_high"
       : overallClass === "B" ? "extrapolated_medium" : "reference_only";
+    const procurementEligibility = status === "extrapolated_high"
+      ? "eligible"
+      : status === "extrapolated_medium" ? "planning_only" : "blocked";
+    const safeCameraMaximum = status === "reference_only" ? null : bottleneckPrediction?.safeCameraCapacity ?? null;
+    const missingStages = requiredCoverage.filter((stage) => !covered.has(stage));
     return {
       schemaVersion: CAPACITY_PREDICTION_VERSION,
       id: randomUUID(),
       hardwareTemplateId: target.id,
       generatedAt: new Date().toISOString(),
       status,
+      procurementEligibility,
       confidenceClass: overallClass,
-      safeCameraMinimum: bottleneckPrediction ? Math.max(0, Math.floor(bottleneckPrediction.safeCameraCapacity * 0.9)) : null,
-      safeCameraMaximum: bottleneckPrediction?.safeCameraCapacity ?? null,
+      safeCameraMinimum: safeCameraMaximum === null ? null : Math.max(0, Math.floor(safeCameraMaximum * 0.9)),
+      safeCameraMaximum,
       bottleneck: bottleneckPrediction?.stage ?? null,
       reservePercent,
       exactCalibrationRunId: null,
@@ -355,7 +403,10 @@ export function buildCapacityPredictions(
             "Stage-specific ratios use the conservative minimum across comparable physical anchors.",
             `The effective reserve is the largest of the class floor, empirical overprediction and repeat variability (${reservePercent}%).`,
           ]
-        : ["Public or eligible physical anchor coverage is incomplete; this machine is reference-only."],
+        : [
+            "Public or eligible physical anchor coverage is incomplete; this machine is reference-only and blocked for acquisition.",
+            `Missing stage evidence: ${missingStages.join(", ") || "comparable physical anchors"}.`,
+          ],
     } satisfies CapacityPrediction;
   });
 }

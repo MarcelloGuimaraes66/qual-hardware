@@ -5,7 +5,7 @@ import { HARDWARE_CATALOG, SEED_PRICE_QUOTES } from "../src/engine/catalog.js";
 import { BUNDLED_SOURCE_REGISTRY } from "../src/engine/sourceRegistry.js";
 import { sourceRegistrySchema, catalogBundleSchema, signedCatalogBundleSchema } from "../src/shared/catalogSchemas.js";
 import { OFFICIAL_CATALOG_CHANNEL, QWEN_CATALOG_MODEL_SHA256 } from "../src/shared/catalogChannel.js";
-import type { CatalogBundle, CatalogSource, HardwareComponent, PriceQuote, PublicBenchmarkObservation, SignedCatalogBundle, SourceObservation } from "../src/shared/types.js";
+import type { CalibrationStage, CatalogBundle, CatalogSource, HardwareComponent, HardwareNodeTemplate, PriceQuote, PublicBenchmarkObservation, SignedCatalogBundle, SourceObservation } from "../src/shared/types.js";
 import { collectCatalogSource, type SourceCollectionResult } from "../src/server/catalogSourceFetcher.js";
 import { buildCatalogBundle, isPublicationDue, rejectUnconfirmedPriceOutliers, sha256, signCatalogBundle, verifyCatalogBundle } from "../src/server/catalogPublication.js";
 import { classifyCatalogCandidate, createLlamaCppRunner, QWEN_CATALOG_METADATA } from "../src/server/qwenCatalog.js";
@@ -126,6 +126,11 @@ function componentsFromHardware(observations: SourceObservation[]): HardwareComp
     components.set(cpuId, { id: cpuId, kind: "cpu", manufacturer: hardware.cpuVendor, sku: hardware.cpuModel, architecture: hardware.cpuArchitecture ?? "undisclosed", specifications: { physicalCores: hardware.physicalCores }, sourceUrls: hardware.sources.map((source) => source.url) });
     const gpuId = `gpu:${hardware.gpuVendor}:${hardware.gpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-");
     components.set(gpuId, { id: gpuId, kind: "gpu", manufacturer: hardware.gpuVendor, sku: hardware.gpuModel, architecture: hardware.gpuArchitecture ?? "undisclosed", specifications: { count: hardware.gpuCount, vramGb: hardware.gpuVramGbTotal, decodeStreams: hardware.gpuDecode1080p30Streams }, sourceUrls: hardware.sources.map((source) => source.url) });
+    const manufacturer = hardware.name.split(" ")[0] ?? "OEM";
+    components.set(`memory:${hardware.id}`, { id: `memory:${hardware.id}`, kind: "memory", manufacturer, sku: `${hardware.id}-memory`, architecture: hardware.memoryArchitecture, specifications: { ramGb: hardware.ramGb, ecc: hardware.ecc }, sourceUrls: hardware.sources.map((source) => source.url) });
+    components.set(`storage:${hardware.id}`, { id: `storage:${hardware.id}`, kind: "storage", manufacturer, sku: hardware.storageModel, architecture: "nvme", specifications: { usableStorageTb: hardware.usableStorageTb, sustainedWriteMbps: hardware.diskWriteMbps }, sourceUrls: hardware.sources.map((source) => source.url) });
+    components.set(`network:${hardware.id}`, { id: `network:${hardware.id}`, kind: "network", manufacturer, sku: `${hardware.id}-nic`, architecture: "ethernet", specifications: { nicGbps: hardware.nicGbps }, sourceUrls: hardware.sources.map((source) => source.url) });
+    components.set(`system:${hardware.id}`, { id: `system:${hardware.id}`, kind: "system", manufacturer, sku: hardware.id, architecture: hardware.chassis, specifications: { cooling: hardware.cooling, thermalClass: hardware.thermalClass ?? null, operatingSystem: hardware.operatingSystemFamily }, sourceUrls: hardware.sources.map((source) => source.url) });
   }
   for (const observation of observations) {
     const identity = observedComponentIdentity(observation);
@@ -214,21 +219,74 @@ function priceQuotesFromObservations(observations: SourceObservation[], collecte
   return [...SEED_PRICE_QUOTES.filter((quote) => !replacedMpns.has(quote.mpn.toLowerCase())), ...quoteValues];
 }
 
+function normalizedHardwareName(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function matchingHardware(observation: SourceObservation): HardwareNodeTemplate[] {
+  const explicit = normalized(observation.payload.hardwareTemplateId);
+  if (explicit) return HARDWARE_CATALOG.filter((hardware) => hardware.id === explicit);
+  const device = normalized(observation.payload.device);
+  if (!device) return [];
+  const needle = normalizedHardwareName(device);
+  if (needle.length < 5) return [];
+  return HARDWARE_CATALOG.filter((hardware) => [hardware.cpuModel, hardware.gpuModel, hardware.storageModel, hardware.name]
+    .some((value) => {
+      const candidate = normalizedHardwareName(value);
+      return candidate === needle || candidate.includes(needle) || needle.includes(candidate);
+    }));
+}
+
+function componentForStage(hardware: HardwareNodeTemplate, stage: CalibrationStage): { id: string; kind: HardwareComponent["kind"] } {
+  if (["video_decode", "video_encode", "local_inference"].includes(stage)) {
+    return { id: `gpu:${hardware.gpuVendor}:${hardware.gpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-"), kind: "gpu" };
+  }
+  if (stage === "memory_bandwidth") return { id: `memory:${hardware.id}`, kind: "memory" };
+  if (stage === "disk_read" || stage === "disk_write") return { id: `storage:${hardware.id}`, kind: "storage" };
+  if (stage === "network_ingest" || stage === "rtsp_ingest") return { id: `network:${hardware.id}`, kind: "network" };
+  if (["thermal_sustain", "database_persistence", "dashboard_queries", "intelligence_scheduler"].includes(stage)) return { id: `system:${hardware.id}`, kind: "system" };
+  return { id: `cpu:${hardware.cpuVendor}:${hardware.cpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-"), kind: "cpu" };
+}
+
 function benchmarksFromObservations(observations: SourceObservation[]): PublicBenchmarkObservation[] {
   const benchmarks: PublicBenchmarkObservation[] = [];
+  const sources = new Map(BUNDLED_SOURCE_REGISTRY.sources.map((source) => [source.id, source]));
   for (const observation of observations) {
     const payload = observation.payload;
-    if (payload.kind !== "public_benchmark" || typeof payload.device !== "string" || typeof payload.score !== "number" || typeof payload.sampleCount !== "number") continue;
-    for (const hardware of HARDWARE_CATALOG.filter((candidate) => candidate.gpuModel.toLowerCase().includes(payload.device.toLowerCase()))) {
-      const componentId = `gpu:${hardware.gpuVendor}:${hardware.gpuModel}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-");
+    if (payload.kind !== "public_benchmark" || typeof payload.device !== "string" || typeof payload.score !== "number" ||
+        typeof payload.sampleCount !== "number" || typeof payload.stage !== "string") continue;
+    const source = sources.get(observation.sourceId);
+    if (!source || source.category !== "benchmark") continue;
+    const stage = payload.stage as CalibrationStage;
+    const configuration = normalized(payload.configuration);
+    const benchmarkVersion = normalized(payload.benchmarkVersion) ?? "source-current";
+    const reproducible = payload.reproducible === true && Boolean(configuration && configuration.length >= 20) && benchmarkVersion !== "source-current";
+    for (const hardware of matchingHardware(observation)) {
+      const component = componentForStage(hardware, stage);
+      const profileId = normalized(payload.profileId) ?? `${observation.sourceId}-${stage}`;
+      const metricName = normalized(payload.metricName) ?? "score";
+      const qualityFlags = [
+        ...(reproducible ? ["deterministic_parser", "exact_hardware_match"] : ["incomplete_reproducibility_metadata"]),
+        ...(observation.sourceId === "benchmark-blender" ? ["profile_not_aiq", "secondary_gpu_indicator_only"] : []),
+        ...(observation.sourceId === "benchmark-mlcommons" && !/qwen|aiq/i.test(`${payload.profileId ?? ""} ${payload.benchmarkName ?? ""}`) ? ["model_not_aiq"] : []),
+      ];
       benchmarks.push({
-        id: `blender:${hardware.id}:${observation.contentHash.slice(0, 16)}`,
-        hardwareTemplateId: hardware.id, stage: "local_inference", profileId: "blender-opendata-device-median-v1",
-        benchmarkName: "Blender Open Data", benchmarkVersion: "current-device-median", score: payload.score,
-        unit: "blender_score", higherIsBetter: true, componentId, componentKind: "gpu", sourceTier: 2,
+        id: `${observation.sourceId}:${hardware.id}:${profileId}:${observation.contentHash.slice(0, 16)}`,
+        hardwareTemplateId: hardware.id, stage, profileId,
+        benchmarkName: normalized(payload.benchmarkName) ?? source.organization, benchmarkVersion, score: payload.score,
+        unit: normalized(payload.unit) ?? "score", higherIsBetter: payload.higherIsBetter !== false,
+        componentId: component.id, componentKind: component.kind, sourceTier: source.trustTier,
         sourceUrl: observation.url, observedAt: observation.retrievedAt, operatingSystem: "any",
-        configuration: `Public device median across ${payload.sampleCount} disclosed Blender Open Data submission(s); retained as a GPU-compute ratio only and never substituted for the AiQ model profile.`,
-        sampleCount: payload.sampleCount, qualityFlags: ["public_device_median", "profile_not_aiq", "do_not_substitute_stage_profile"],
+        configuration: configuration ?? `Public numerical observation for ${payload.device}; the source did not disclose enough configuration metadata for purchasing extrapolation.`,
+        powerWatts: typeof payload.powerWatts === "number" ? payload.powerWatts : null,
+        driverVersion: normalized(payload.driverVersion), coolingProfile: normalized(payload.coolingProfile),
+        sampleCount: payload.sampleCount, qualityFlags,
+        benchmarkSuiteId: `${observation.sourceId}:${normalized(payload.benchmarkName) ?? source.organization}:${benchmarkVersion}`,
+        metricName, aggregation: observation.sourceId === "benchmark-blender" ? "median" : "single",
+        systemFingerprint: { hardwareTemplateId: hardware.id, device: payload.device, operatingSystem: normalized(payload.operatingSystem) ?? "any" },
+        evidenceLocator: observation.evidenceLocator, rawArtifactSha256: observation.contentHash,
+        licensePolicy: observation.sourceId === "benchmark-spec" ? "Normalized result metadata only; SPEC tools are not redistributed." : "Normalized public observation with source attribution.",
+        reproducible,
       });
     }
   }

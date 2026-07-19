@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createDefaultScenario } from "../src/shared/schemas.js";
@@ -224,6 +224,7 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
     "/dist/server/desktop/main.js",
     "/contracts/perceptrum-workload-v1.json",
     "/contracts/perceptrum-workload-v2.json",
+    "/contracts/perceptrum-workload-v3.json",
     "/contracts/qual-hardware-source-registry-v1.schema.json",
     "/contracts/qual-hardware-catalog-bundle-v1.schema.json",
     "/database/sqlite-schema.sql",
@@ -354,7 +355,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
-    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/2.3.0");
+    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/3.0.0");
   }
 
   const macScenario = createDefaultScenario(4);
@@ -408,13 +409,19 @@ async function main(): Promise<void> {
     assert(scenarios.some((scenario) => scenario.id === scenarioId), "SQLite data did not persist across restarts");
     await stopDesktop(running);
     running = null;
+
+    const database = await readFile(join(userData, "qual-hardware.sqlite"));
+    assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
+    console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}`);
   } finally {
     if (running) await stopDesktop(running);
+    if (process.env.QUAL_HARDWARE_KEEP_SMOKE_DATA === "1") {
+      console.log(`Smoke data preserved by explicit request: ${userData}`);
+    } else {
+      await rm(userData, { recursive: true, force: true });
+      console.log(`Temporary smoke data removed: ${userData}`);
+    }
   }
-
-  const database = await readFile(join(userData, "qual-hardware.sqlite"));
-  assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
-  console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}; data=${userData}`);
 }
 
 await main();

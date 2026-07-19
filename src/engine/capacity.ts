@@ -522,8 +522,6 @@ function evaluateTemplate(
   if (scenario.constraints.requireEcc && !template.ecc) return null;
   if (aggregate.gpuDecode1080p30Streams > 0 && !template.supportsPerceptrumGpuDecode) return null;
   if (prediction?.status === "incompatible") return null;
-  if (prediction && prediction.status !== "reference_only" && prediction.safeCameraMaximum !== null &&
-      prediction.safeCameraMaximum < scenario.totalCameras) return null;
 
   const headroomPercent = POLICY_HEADROOM[policy];
   const utilizationLimit = 1 - headroomPercent / 100;
@@ -532,11 +530,12 @@ function evaluateTemplate(
   const highest = ratioFor(aggregate, adjustedCapacity);
   let activeNodes = Math.max(1, Math.ceil(highest.value));
   if (!Number.isFinite(activeNodes)) return null;
-  let totalNodes = activeNodes + (policy === "n_plus_one" ? 1 : 0);
+  const reserveRequired = policy === "n_plus_one" || (policy === "recommended" && scenario.totalCameras >= 64);
+  let totalNodes = activeNodes + (reserveRequired ? 1 : 0);
 
   let allocations: NodeAllocation[] | null = null;
   for (let attempt = 0; attempt < 256; attempt += 1) {
-    totalNodes = activeNodes + (policy === "n_plus_one" ? 1 : 0);
+    totalNodes = activeNodes + (reserveRequired ? 1 : 0);
     if (scenario.constraints.maxNodes !== null && totalNodes > scenario.constraints.maxNodes) return null;
     allocations = allocateGroups(groups, fixed, template, activeNodes, totalNodes, utilizationLimit);
     if (allocations) break;
@@ -545,6 +544,11 @@ function evaluateTemplate(
   if (!allocations) return null;
 
   const activeAllocations = allocations.filter((allocation) => allocation.role === "active");
+  const calibratedCapacity = prediction?.safeCameraMaximum ?? null;
+  if (prediction?.procurementEligibility === "eligible" && calibratedCapacity !== null &&
+      activeAllocations.some((allocation) => allocation.cameraGroups.reduce((sum, group) => sum + group.cameras, 0) > calibratedCapacity)) {
+    return null;
+  }
   const worst = activeAllocations
     .flatMap((allocation) => SIZING_RESOURCE_KEYS.map((key) => ({ key, value: allocation.utilization[key] })))
     .sort((left, right) => right.value - left.value)[0] ?? { key: "cpuCores" as const, value: 0 };
@@ -567,6 +571,18 @@ function evaluateTemplate(
   }
   if (!prediction || prediction.status === "reference_only") candidateWarnings.push("physical_calibration_or_comparable_public_evidence_required");
   else if (prediction.status.startsWith("extrapolated")) candidateWarnings.push(`capacity_${prediction.status}_not_physically_validated`);
+  if (reserveRequired && policy !== "n_plus_one") candidateWarnings.push("n_plus_one_required_for_64_or_more_cameras");
+
+  const predictionEligibility = prediction?.procurementEligibility ?? (
+    prediction?.status === "validated_local" || prediction?.status === "extrapolated_high"
+      ? "eligible"
+      : prediction?.status === "extrapolated_medium" ? "planning_only" : "blocked"
+  );
+  const procurementEligibility = policy === "minimum" && predictionEligibility === "eligible"
+    ? "planning_only"
+    : predictionEligibility;
+  if (procurementEligibility === "blocked") candidateWarnings.push("not_eligible_for_hardware_acquisition");
+  if (procurementEligibility === "planning_only") candidateWarnings.push("planning_only_not_approved_for_hardware_acquisition");
 
   return {
     id: randomUUID(),
@@ -578,15 +594,16 @@ function evaluateTemplate(
     aggregateDemand: aggregate,
     headroomPercent,
     bottleneck: worst.key,
-    maximumAdditionalCameras: estimateAdditionalCameras(
-      aggregate,
-      fixed,
-      template,
-      activeNodes,
-      utilizationLimit,
-      scenario.totalCameras,
-    ),
+    maximumAdditionalCameras: procurementEligibility === "blocked" ? 0 : estimateAdditionalCameras(
+        aggregate,
+        fixed,
+        template,
+        activeNodes,
+        utilizationLimit,
+        scenario.totalCameras,
+      ),
     price,
+    procurementEligibility,
     warnings: [...new Set(candidateWarnings)],
     ...(prediction ? { calibration: prediction } : {}),
   };
@@ -625,17 +642,19 @@ function selectCandidates(
   primary: RecommendationAlternative;
   alternatives: RecommendationAlternative[];
 } {
+  const commercialCandidates = candidates.filter((candidate) => candidate.procurementEligibility === "eligible");
+  const consideredCandidates = commercialCandidates.length > 0 ? commercialCandidates : candidates;
   const explicitKind = scenario.constraints.infrastructureKind !== "either";
-  const singleComputerFits = candidates.some((candidate) => candidate.hardware.kind !== "rack" && candidate.activeNodeCount === 1);
+  const singleComputerFits = consideredCandidates.some((candidate) => candidate.hardware.kind !== "rack" && candidate.activeNodeCount === 1);
   // Laptops, mini PCs and towers compete for a small one-node deployment. Rack designs
   // become automatic only when no single non-rack computer carries the selected policy.
   const deploymentCandidates = explicitKind
-    ? candidates
+    ? consideredCandidates
     : singleComputerFits
-      ? candidates.filter((candidate) => candidate.hardware.kind !== "rack")
-      : candidates.some((candidate) => candidate.hardware.kind === "rack")
-        ? candidates.filter((candidate) => candidate.hardware.kind === "rack")
-        : candidates;
+      ? consideredCandidates.filter((candidate) => candidate.hardware.kind !== "rack")
+      : consideredCandidates.some((candidate) => candidate.hardware.kind === "rack")
+        ? consideredCandidates.filter((candidate) => candidate.hardware.kind === "rack")
+        : consideredCandidates;
   const unusedCandidates = deploymentCandidates.filter((candidate) => !excludedPrimaryHardwareIds.has(candidate.hardware.id));
   const nonDowngradeCandidates = minimumHardware === null ? unusedCandidates : unusedCandidates.filter((candidate) => {
     const hardware = candidate.hardware;
@@ -739,7 +758,10 @@ export function buildRecommendations(
         "Video frame extraction includes one FFmpeg process per sampled frame, capped at 300 frames per request.",
         "AiQ/Qwen Core uses one effective inference frame per second in 60-second execution cycles; RTSP receive/decode FPS remains independent.",
         "Disk write throughput and at least one day of rolling temporary source clips participate in sizing; configured retention and RAID factor increase capacity demand.",
-        "The final safe camera count is the minimum across receive, decode, BGR processing, encode, local inference, RAM/VRAM, disk, network and sustained thermal evidence.",
+        "The final safe camera count is the minimum across RTSP ingest, decode, BGR, encode, frame extraction, AiQ, memory bandwidth, SSD read/write, network, Jobs, Steps, Agents, Intelligence, database, dashboard and sustained thermal evidence.",
+        selected.primary.procurementEligibility === "eligible"
+          ? "This design passed the commercial evidence gate; the minimum policy remains planning-only and deployments of 64 or more cameras include N+1 reserve in the recommended policy."
+          : "This design is shown for planning or diagnosis only and is not approved for hardware acquisition until every required stage has comparable evidence.",
         "Built-in component costs are dated planning references converted with official FX snapshots; current compatible market quotes take precedence when available.",
         "Reference estimates exclude taxes, shipping, licenses, energy, support and TCO and still require a purchase quotation.",
         operatingSystemAssumption(selected.primary.hardware),
@@ -752,6 +774,7 @@ export function buildRecommendations(
         `perceptrum-build:${scenario.perceptrumBuildHash}`,
         `catalog-version:${catalogVersion}`,
         `operating-system:${operatingSystemFor(selected.primary.hardware)}`,
+        `procurement-eligibility:${selected.primary.procurementEligibility}`,
         ...selected.primary.hardware.sources.map((source) => source.url),
       ],
     });

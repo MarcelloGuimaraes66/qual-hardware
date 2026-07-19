@@ -1,15 +1,19 @@
-export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/2.0.0" as const;
+export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/3.0.0" as const;
 export type WorkloadContractVersion =
   | typeof WORKLOAD_CONTRACT_VERSION
+  | "perceptrum-workload/2.0.0"
   | "perceptrum-workload/1.1.0"
   | "perceptrum-workload/1.0.0";
 
 export const LEGACY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0" as const;
-export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.1.0" as const;
+export const TELEMETRY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.1.0" as const;
+export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0" as const;
 export const CALIBRATION_HANDOFF_VERSION = "qual-hardware-calibration-handoff/1.0.0" as const;
 export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
-export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/2.0.0" as const;
-export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/1.0.0" as const;
+export const BENCHMARK_SUITE_VERSION = "qual-hardware-benchmark-suite/1.0.0" as const;
+export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/3.0.0" as const;
+export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/2.0.0" as const;
+export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/3.0.0" as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
 export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
 
@@ -49,6 +53,7 @@ export type CalibrationStatus =
   | "extrapolated_medium"
   | "reference_only"
   | "incompatible";
+export type ProcurementEligibility = "eligible" | "planning_only" | "blocked";
 export type CalibrationStage =
   | "rtsp_ingest"
   | "video_decode"
@@ -56,9 +61,14 @@ export type CalibrationStage =
   | "video_encode"
   | "disk_write"
   | "disk_read"
+  | "frame_extraction"
   | "local_inference"
   | "memory_bandwidth"
   | "network_ingest"
+  | "job_scheduler"
+  | "intelligence_scheduler"
+  | "database_persistence"
+  | "dashboard_queries"
   | "thermal_sustain";
 export type TelemetryEvidenceStatus = "measured" | "unavailable" | "failed" | "not_applicable";
 export type CalibrationValidationStatus = "diagnostic" | "anchor_approved" | "invalid";
@@ -459,6 +469,7 @@ export interface RecommendationAlternative {
   bottleneck: keyof ResourceDemand;
   maximumAdditionalCameras: number;
   price: PriceSummary;
+  procurementEligibility: ProcurementEligibility;
   warnings: string[];
   calibration?: CapacityPrediction;
 }
@@ -596,14 +607,18 @@ export interface CalibrationStageMetric {
   reason?: string;
   measurementSource?: string;
   utilizationEvidence?: string[];
+  details?: Record<string, unknown>;
 }
 
 export interface CalibrationPhaseMetric {
-  name: "warmup" | "sustained" | "surge";
+  name: "warmup" | "ramp" | "sustained" | "surge";
   durationSeconds: number;
   loadPercent: number;
   cameraCount: number;
   inferenceSuccessRate: number;
+  p99InferenceLatencyMs?: number;
+  inferenceIntervalMs?: number;
+  inferenceIntervalSeconds?: number;
   maxQueueDepth: number;
   queueGrowthPerMinute: number;
   outOfMemoryCount: number;
@@ -653,13 +668,16 @@ export interface CalibrationProcessGroupSummary {
 }
 
 export interface LocalCalibrationRun {
-  schemaVersion: typeof LOCAL_CALIBRATION_VERSION | typeof LEGACY_LOCAL_CALIBRATION_VERSION;
+  schemaVersion:
+    | typeof LOCAL_CALIBRATION_VERSION
+    | typeof TELEMETRY_LOCAL_CALIBRATION_VERSION
+    | typeof LEGACY_LOCAL_CALIBRATION_VERSION;
   id: string;
   planId: string;
   createdAt: string;
   startedAt: string;
   completedAt: string;
-  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
+  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION | "perceptrum-workload/2.0.0";
   mode: "quick" | "full";
   executionMode?: "readiness" | "production_pipeline";
   developmentOnly?: true;
@@ -692,6 +710,12 @@ export interface LocalCalibrationRun {
     schedulerClaimedJob: boolean;
     aiqLocalCompleted: boolean;
     resultPersisted: boolean;
+    jobSchedulerExecuted?: boolean;
+    jobRuntimeExecuted?: boolean;
+    jobStepRunsPersisted?: boolean;
+    databaseWritesPersisted?: boolean;
+    intelligenceSchedulerExecuted?: boolean;
+    dashboardQueriesExecuted?: boolean;
     [key: string]: unknown;
   };
   qualityGate?: {
@@ -768,7 +792,7 @@ export interface CalibrationPlan {
   rtspOrigin: "rtsp://127.0.0.1";
   aiqOrigin: "http://127.0.0.1";
   inferenceProvider: "aiq_local";
-  phases: Array<{ name: "warmup" | "sustained" | "surge"; durationSeconds: number; loadPercent: number }>;
+  phases: Array<{ name: "warmup" | "ramp" | "sustained" | "surge"; durationSeconds: number; loadPercent: number }>;
   sourceProfiles: Array<Pick<CameraSourceProfile, "codec" | "width" | "height" | "sourceFps" | "bitrateMbps">>;
   requestedInferenceFps: number[];
   instructions: string[];
@@ -808,6 +832,14 @@ export interface PublicBenchmarkObservation {
   coolingProfile?: string | null;
   sampleCount?: number;
   qualityFlags?: string[];
+  benchmarkSuiteId?: string;
+  metricName?: string;
+  aggregation?: "single" | "mean" | "median" | "p95" | "p99" | "peak" | "rate";
+  systemFingerprint?: Record<string, string | number | boolean | null>;
+  evidenceLocator?: string;
+  rawArtifactSha256?: string;
+  licensePolicy?: string;
+  reproducible?: boolean;
 }
 
 export interface EvidenceCatalogSnapshot {
@@ -839,6 +871,7 @@ export interface CapacityPrediction {
   hardwareTemplateId: string;
   generatedAt: string;
   status: CalibrationStatus;
+  procurementEligibility: ProcurementEligibility;
   confidenceClass: CalibrationConfidenceClass;
   safeCameraMinimum: number | null;
   safeCameraMaximum: number | null;

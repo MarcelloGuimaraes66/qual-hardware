@@ -7,7 +7,7 @@ Aplicativo **exclusivamente desktop** e independente da Aiquimist para calcular 
 - O executável inicia uma API interna em uma porta aleatória de `127.0.0.1`; ela não é um site, não aceita conexões da rede e termina quando o aplicativo é encerrado. No macOS, fechar somente a janela mantém o aplicativo ativo conforme o ciclo de vida nativo.
 - Media and RTSP credentials are never accepted by the internal Qual Hardware API.
 - Calibration files contain aggregate metrics and hashed hardware/build identifiers only; media, credentials and external/OpenAI requests are rejected.
-- Rolling source clips, encode/decode, disk read/write, network and thermal limits participate in workload v2 sizing.
+- Rolling source clips, encode/decode, frame extraction, Jobs, Steps, Agents, Intelligence, database/dashboard activity, disk read/write, network and thermal limits participate in workload v3 sizing.
 - Catalog collectors run centrally in GitHub Actions, only for explicitly allowlisted public sources, and honor `robots.txt`; operators' computers never scrape stores.
 - This project has no deployment command and must never target retired Drakon infrastructure.
 
@@ -63,7 +63,7 @@ O catálogo ativo aparece nessa mesma janela e inclui faixas econômicas. A vers
 
 Apple Silicon é uma opção explícita de plataforma. Os Macs usam memória unificada e não são tratados como se possuíssem VRAM NVIDIA dedicada. O Perceptrum macOS e o AiQ/Qwen local participam com CPU decode até uma calibração comprovar aceleração diferente. O catálogo inclui o MacBook Pro M4 Max de 36 GB deste laboratório como perfil de âncora, sem atribuir seus resultados a outro Mac.
 
-Os botões PDF, XLSX e JSON geram um único relatório consolidado com as três políticas: mínimo técnico, recomendado e N+1. Cada política mostra até seis máquinas qualificadas em custo crescente, procurando quatro Intel, pelo menos uma AMD e OEMs distintos sem reduzir a segurança. O PDF possui comparação e seções técnicas; o XLSX inclui resumo, BOM, nós, carga, cálculos, preços, fontes, âncoras, gargalo, intervalo e margem. O JSON usa `capacity-recommendation-export/2.3.0`.
+Os botões PDF, XLSX e JSON geram um único relatório consolidado com as três políticas: mínimo técnico, recomendado e N+1. Cada política mostra até seis máquinas qualificadas em custo crescente, procurando quatro Intel, pelo menos uma AMD e OEMs distintos sem reduzir a segurança. O PDF começa com um resumo didático em linguagem natural e continua com comparação e seções técnicas; o XLSX inclui resumo, BOM, nós, carga, cálculos, preços, fontes, âncoras, gargalo, intervalo e margem. O JSON usa `capacity-recommendation-export/3.0.0`. Somente `validated_local` e `extrapolated_high` aparecem como aptos para aquisição; as demais opções ficam separadas como planejamento ou referência.
 
 Pré-requisitos, instalação, smoke tests, limitações dos pacotes sem assinatura e diagnóstico estão em `docs/CROSS_PLATFORM_DESKTOP.md`.
 
@@ -78,6 +78,6 @@ npm run desktop:smoke
 npm run audit:source
 ```
 
-See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, `docs/PUBLIC_EVIDENCE_CURATION.md`, and `contracts/perceptrum-workload-v2.json`.
+See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, `docs/PUBLIC_EVIDENCE_CURATION.md`, and `contracts/perceptrum-workload-v3.json`.
 
-A área permanente **Calibração de capacidade** inicia testes locais de 10 ou 60 minutos no Perceptrum desktop em macOS, Windows ou Ubuntu. O fluxo de um clique usa uma sessão descartável autenticada em `127.0.0.1`, abre `perceptrum://calibration/run`, acompanha o progresso, importa o resultado e recalcula as previsões. O Perceptrum salva antes o `.qhcal.json` em **Documentos/Qual Hardware/Calibracoes**, de forma append-only. A tela separa FPS de leitura RTSP de FPS de inferência AiQ e mostra CPU, GPU, RAM, SSD, rede, fases, dez etapas, gargalo, sensores indisponíveis, caminho, checksum e JSON completo. O teste usa MediaMTX, FFmpeg e AiQ/Qwen locais, sem câmeras físicas, OpenAI ou APIs externas. `.qhplan.json` e importação manual permanecem como recuperação.
+A área permanente **Calibração de capacidade** inicia testes locais de 10 ou 60 minutos no Perceptrum desktop em macOS, Windows ou Ubuntu. O fluxo de um clique usa uma sessão descartável autenticada em `127.0.0.1`, abre `perceptrum://calibration/run`, acompanha o progresso, importa o resultado e recalcula as previsões. O Perceptrum salva antes o `.qhcal.json` em **Documentos/Qual Hardware/Calibracoes**, de forma append-only. A tela separa FPS de leitura RTSP de FPS de inferência AiQ e mostra CPU, GPU, RAM, SSD, rede, quatro fases, quinze etapas, Jobs, Steps, Agents, Intelligence, banco/dashboard, gargalo, sensores indisponíveis, caminho, checksum e JSON completo. O teste usa MediaMTX, FFmpeg, sondas nativas de memória/SSD e AiQ/Qwen locais, sem câmeras físicas, OpenAI ou APIs externas. `.qhplan.json` e importação manual permanecem como recuperação.

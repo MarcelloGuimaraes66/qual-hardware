@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, 70+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 21-item catalog, the 39-source automatic channel, Windows/Ubuntu/macOS recommendation targets, SQLite v5, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 2.3 exports, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, 70+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the 21-item catalog, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v6, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 3.0 exports, single-instance behavior and persistence after restart.
 
 ```sh
 npm ci
@@ -24,13 +24,13 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 
 ## Local calibration gate
 
-1. Quick: 2 minutes warm-up, 5 sustained and 3 at 120%; full: 10, 40 and 10 minutes.
+1. Quick: 2 minutes warm-up, 5 sustained and 3 at 120%; full: 10 minutes warm-up, 20 ramp, 20 sustained and 10 at 120%.
 2. MediaMTX, FFmpeg and the real AiQ/Qwen backend remain on `127.0.0.1`; external/OpenAI count is zero.
-3. Decoded frames reach at least 80% of planned RTSP throughput; inference success is at least 99%; no OOM or sustained queue growth.
-4. All ten stages, phase metrics, exact fingerprint/build/model hashes, temperatures and frame counters are present.
+3. Delivered frames and completed inferences reach at least 99.5%; no OOM, sustained queue growth or critical throttling occurs, and p99 inference latency stays below 75% of the configured interval.
+4. All fifteen stages, four phase summaries, exact fingerprint/build/model hashes, temperatures and frame counters are present. The stages include frame extraction, Jobs, Intelligence, database persistence and concurrent dashboard queries in addition to media, memory, storage, network and thermal work.
 5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases but never creates importable evidence.
 6. Import rejects a selected catalog profile when CPU, GPU or form factor does not match the measured fingerprint.
-7. Results 1.0 remain readable; 1.1 additionally requires telemetry capability states, evidence per stage, resource/process summaries and artifact SHA-256.
+7. Results 1.0 and 1.1 remain readable as historical/diagnostic evidence. Version 2.0 is required for purchase eligibility and additionally requires workload 3.0, production-pipeline proof, fifteen-stage coverage and artifact SHA-256.
 8. Session tests cover token hashing, expiry, replay, callback authentication, protocol allowlisting, native Documents paths, live progress and automatic result persistence/recalculation.
 
 ## Audited source baseline
@@ -39,10 +39,8 @@ Run `PERCEPTRUM_SOURCE_ROOT=/path/to/perceptrum npm run audit:source` whenever P
 
 ## Design policies
 
-- Minimum: 15% capacity reserve.
-- Recommended: 30% capacity reserve.
-- N+1: 30% reserve after loss of one compute node.
-- Workload v2 includes rolling clip write/read and at least one day of workspace. Explicit retention and RAID increase demand; legacy workload versions remain readable without silently changing prior sizing.
+- Validated/high-confidence purchase results apply at least 20% reserve; planning-only results use at least 30%; cross-architecture/reference results use at least 40% and never claim purchase capacity.
+- Workload v3 includes rolling clip write/read, frame extraction, Jobs, Steps, Agents, Intelligence, database/dashboard concurrency and at least one day of workspace. Explicit retention and RAID increase demand; legacy workload versions remain readable without silently changing prior sizing or approving purchase.
 - Missing seller quotes use a visibly identified, dated and sourced componentized reference estimate; values are never presented as a firm offer and purchase quotation remains required.
 - Minimum, recommended and N+1 use different primaries when possible. Each policy exposes up to six cost-ordered qualified options, preferring four Intel, one AMD and multiple OEMs only after capacity safety.
 - A hardware template is rejected if any compute, memory, decoder or network dimension exceeds its policy-adjusted capacity.

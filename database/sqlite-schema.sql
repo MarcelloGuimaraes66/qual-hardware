@@ -237,4 +237,100 @@ CREATE TABLE IF NOT EXISTS catalog_publication_benchmark_membership (
   PRIMARY KEY (publication_sequence, observation_id)
 ) STRICT;
 
-PRAGMA user_version = 5;
+-- v6 keeps the JSON evidence records for backward compatibility and adds a
+-- normalized, queryable numerical layer. No existing table or row is replaced.
+CREATE TABLE IF NOT EXISTS benchmark_suites (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  license_policy TEXT,
+  source_url TEXT NOT NULL,
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS benchmark_profiles (
+  id TEXT PRIMARY KEY,
+  suite_id TEXT NOT NULL REFERENCES benchmark_suites(id),
+  stage TEXT NOT NULL,
+  profile_json TEXT NOT NULL CHECK (json_valid(profile_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS benchmark_profiles_stage_idx
+  ON benchmark_profiles(stage, suite_id);
+
+CREATE TABLE IF NOT EXISTS benchmark_systems (
+  id TEXT PRIMARY KEY,
+  hardware_template_id TEXT NOT NULL,
+  operating_system TEXT NOT NULL,
+  fingerprint_json TEXT NOT NULL CHECK (json_valid(fingerprint_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS benchmark_systems_hardware_idx
+  ON benchmark_systems(hardware_template_id, operating_system);
+
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+  id TEXT PRIMARY KEY,
+  observation_id TEXT NOT NULL UNIQUE REFERENCES public_benchmark_observations(id),
+  profile_id TEXT NOT NULL REFERENCES benchmark_profiles(id),
+  system_id TEXT NOT NULL REFERENCES benchmark_systems(id),
+  run_json TEXT NOT NULL CHECK (json_valid(run_json)),
+  observed_at TEXT NOT NULL,
+  imported_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS benchmark_runs_profile_idx
+  ON benchmark_runs(profile_id, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS benchmark_metrics (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES benchmark_runs(id),
+  metric_name TEXT NOT NULL,
+  numeric_value REAL NOT NULL,
+  unit TEXT NOT NULL,
+  higher_is_better INTEGER NOT NULL CHECK (higher_is_better IN (0,1)),
+  aggregation TEXT NOT NULL,
+  UNIQUE(run_id, metric_name, aggregation)
+) STRICT;
+CREATE INDEX IF NOT EXISTS benchmark_metrics_lookup_idx
+  ON benchmark_metrics(metric_name, unit, numeric_value);
+
+CREATE TABLE IF NOT EXISTS benchmark_component_links (
+  run_id TEXT NOT NULL REFERENCES benchmark_runs(id),
+  component_id TEXT NOT NULL,
+  component_kind TEXT,
+  PRIMARY KEY(run_id, component_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS benchmark_quality_assessments (
+  run_id TEXT PRIMARY KEY REFERENCES benchmark_runs(id),
+  source_tier INTEGER NOT NULL CHECK (source_tier BETWEEN 1 AND 3),
+  reproducible INTEGER NOT NULL CHECK (reproducible IN (0,1)),
+  assessment_json TEXT NOT NULL CHECK (json_valid(assessment_json)),
+  assessed_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS capacity_model_versions (
+  id TEXT PRIMARY KEY,
+  schema_version TEXT NOT NULL,
+  model_json TEXT NOT NULL CHECK (json_valid(model_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS capacity_prediction_stage_results (
+  prediction_id TEXT NOT NULL REFERENCES hardware_predictions(id),
+  stage TEXT NOT NULL,
+  result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+  raw_camera_capacity REAL NOT NULL,
+  safe_camera_capacity INTEGER NOT NULL,
+  reserve_percent REAL NOT NULL,
+  PRIMARY KEY(prediction_id, stage)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS capacity_prediction_validations (
+  prediction_id TEXT PRIMARY KEY REFERENCES hardware_predictions(id),
+  procurement_eligibility TEXT NOT NULL CHECK (procurement_eligibility IN ('eligible','planning_only','blocked')),
+  unsafe_overestimate_count INTEGER NOT NULL CHECK (unsafe_overestimate_count >= 0),
+  validation_json TEXT NOT NULL CHECK (json_valid(validation_json)),
+  validated_at TEXT NOT NULL
+) STRICT;
+
+PRAGMA user_version = 6;

@@ -95,6 +95,26 @@ describe("safe catalog sources", () => {
     expect(benchmark?.payload.sampleCount).toBe(3066);
   });
 
+  it("extracts numerical STREAM, fio, FFmpeg and OpenCV records without letting AI decide values", async () => {
+    const cases = [
+      { id: "benchmark-openbenchmarking-stream", metric: "STREAM Triad", expectedStage: "memory_bandwidth" },
+      { id: "benchmark-openbenchmarking-fio", metric: "fio sustained read", expectedStage: "disk_read" },
+      { id: "benchmark-openbenchmarking-ffmpeg", metric: "FFmpeg H.265 encode", expectedStage: "video_encode" },
+      { id: "benchmark-openbenchmarking-opencv", metric: "OpenCV BGR conversion", expectedStage: "bgr_processing" },
+    ];
+    for (const item of cases) {
+      const registered = BUNDLED_SOURCE_REGISTRY.sources.find((candidate) => candidate.id === item.id)!;
+      const candidate = { ...registered, primaryUrl: "https://openbenchmarking.org/fixture", robotsRequired: false };
+      const body = `<table><tr><th>Processor</th><th>Benchmark</th><th>Version</th><th>Profile</th><th>Metric</th><th>Score</th><th>Unit</th><th>Samples</th><th>Configuration</th><th>Reproducible</th></tr><tr><td>Intel Core Ultra 9 285H</td><td>${item.metric}</td><td>1.0</td><td>${item.id}-profile</td><td>${item.metric}</td><td>123.5</td><td>MB/s</td><td>5</td><td>Exact power driver operating system and cooling configuration</td><td>true</td></tr></table>`;
+      const result = await collectCatalogSource(candidate, async () => new Response(body, { status: 200, headers: { "content-type": "text/html" } }));
+      const benchmark = result.observations.find((observation) => observation.payload.kind === "public_benchmark");
+      expect(benchmark?.payload.stage).toBe(item.expectedStage);
+      expect(benchmark?.payload.score).toBe(123.5);
+      expect(benchmark?.payload.reproducible).toBe(true);
+      expect(benchmark?.contentHash).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
   it("parses API, CSV, HTML table and textual PDF records deterministically", async () => {
     const cases: Array<{ parser: CatalogSource["parser"]; contentType: string; body: string; expected: string }> = [
       { parser: "api", contentType: "application/json", body: JSON.stringify({ products: [{ sku: "API-CPU-1", name: "API CPU" }] }), expected: "API-CPU-1" },
@@ -231,6 +251,7 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     const check = new DatabaseSync(path);
     expect((check.prepare("SELECT value FROM legacy_evidence WHERE id='kept'").get() as { value: string }).value).toBe("yes");
     expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(QUAL_HARDWARE_SQLITE_SCHEMA_VERSION);
+    expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('benchmark_suites','benchmark_profiles','benchmark_systems','benchmark_runs','benchmark_metrics','capacity_prediction_stage_results')").get() as { total: number }).total).toBe(6);
     check.close();
   });
 

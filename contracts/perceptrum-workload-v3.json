@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/schemas/perceptrum-workload-v3.json",
+  "title": "Perceptrum production-pipeline capacity workload",
+  "schemaVersion": "perceptrum-workload/3.0.0",
+  "pipelineStages": [
+    "rtsp_ingest",
+    "video_decode",
+    "bgr_processing",
+    "video_encode",
+    "disk_write",
+    "disk_read",
+    "frame_extraction",
+    "local_inference",
+    "memory_bandwidth",
+    "network_ingest",
+    "job_scheduler",
+    "intelligence_scheduler",
+    "database_persistence",
+    "dashboard_queries",
+    "thermal_sustain"
+  ],
+  "productionProof": {
+    "requiredForProcurement": true,
+    "required": [
+      "real_rtsp_runtime",
+      "real_ffmpeg_pipeline",
+      "jobs_steps_agents",
+      "real_intelligence_scheduler",
+      "local_aiq_qwen",
+      "isolated_database_persistence",
+      "concurrent_dashboard_queries"
+    ]
+  },
+  "fps": {
+    "rtspSource": {
+      "minimum": 1,
+      "maximum": 120,
+      "meaning": "frames received and decoded per camera"
+    },
+    "aiqInference": {
+      "minimum": 1,
+      "maximum": 5,
+      "integer": true,
+      "currentlyProvenEffectiveFps": 1,
+      "defaultIntervalSeconds": 60,
+      "meaning": "frames extracted and submitted to the local AiQ model"
+    },
+    "legacyInferenceValuesAboveMaximum": "preserve stored value, execute as 5 and warn"
+  },
+  "media": {
+    "segmentSeconds": 10,
+    "aggregateClipSeconds": 60,
+    "codecs": ["h264", "h265"],
+    "resolutions": ["720p", "1080p", "4k"],
+    "decodeBackends": ["cpu", "gpu_when_declared_and_measured"],
+    "encodeBackends": ["cpu", "gpu_when_declared_and_measured"]
+  },
+  "localCalibration": {
+    "rtspOrigin": "rtsp://127.0.0.1",
+    "aiqOrigin": "http://127.0.0.1",
+    "provider": "aiq_local",
+    "externalNetworkAllowed": false,
+    "openAiAllowed": false,
+    "acceptMedia": false,
+    "acceptCredentials": false,
+    "quickPhasesSeconds": {
+      "warmup": 120,
+      "sustained": 300,
+      "surge": 180
+    },
+    "fullPhasesSeconds": {
+      "warmup": 600,
+      "ramp": 1200,
+      "sustained": 1200,
+      "surge": 600
+    },
+    "surgeLoadPercent": 120
+  },
+  "microbenchmarks": {
+    "memory": "packaged STREAM-equivalent probe; results never represented as official STREAM",
+    "storage": "packaged fio-equivalent direct-I/O probe; cache-controlled result required",
+    "network": "local transport measurement combined with exact NIC specification",
+    "aiq": "real Perceptrum visual request; generic llama score is insufficient"
+  },
+  "storage": {
+    "capacityIsSizingConstraint": true,
+    "throughputIsSizingConstraint": true,
+    "latencyAndIopsAreSizingConstraints": true,
+    "minimumRollingTemporaryRetentionDays": 1,
+    "configuredRetentionAndRaidAreApplied": true
+  },
+  "safety": {
+    "capacityRule": "minimum_across_all_pipeline_stages",
+    "procurementStatuses": ["validated_local", "extrapolated_high"],
+    "minimumDeliveredFramesAndInferencePercent": 99.5,
+    "maximumInferenceP99IntervalPercent": 75,
+    "minimumReservePercent": 20,
+    "planningReservePercent": 30,
+    "referenceReservePercent": 40,
+    "nPlusOneRequiredFromCameras": 64
+  }
+}

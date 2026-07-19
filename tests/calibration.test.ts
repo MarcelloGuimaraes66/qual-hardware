@@ -43,14 +43,17 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
       evidenceStatus: "measured", measurementSource: "perceptrum-production-pipeline",
     })),
     phases: [
-      { name: "warmup", durationSeconds: 600, loadPercent: 100, cameraCount: capacity, inferenceSuccessRate: 1, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
-      { name: "sustained", durationSeconds: 2400, loadPercent: 100, cameraCount: capacity, inferenceSuccessRate: 1, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
-      { name: "surge", durationSeconds: 600, loadPercent: 120, cameraCount: capacity, inferenceSuccessRate: 1, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
+      { name: "warmup", durationSeconds: 600, loadPercent: 100, cameraCount: capacity, inferenceSuccessRate: 1, frameDeliveryRate: 1, p99InferenceLatencyMs: 100, inferenceIntervalMs: 60_000, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
+      { name: "ramp", durationSeconds: 1200, loadPercent: 100, cameraCount: capacity, inferenceSuccessRate: 1, frameDeliveryRate: 1, p99InferenceLatencyMs: 100, inferenceIntervalMs: 60_000, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
+      { name: "sustained", durationSeconds: 1200, loadPercent: 100, cameraCount: capacity, inferenceSuccessRate: 1, frameDeliveryRate: 1, p99InferenceLatencyMs: 100, inferenceIntervalMs: 60_000, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
+      { name: "surge", durationSeconds: 600, loadPercent: 120, cameraCount: capacity, inferenceSuccessRate: 1, frameDeliveryRate: 1, p99InferenceLatencyMs: 100, inferenceIntervalMs: 60_000, maxQueueDepth: 1, queueGrowthPerMinute: 0, outOfMemoryCount: 0 },
     ],
     overallSafeCameraCapacity: capacity, bottleneck: "local_inference",
     pipelineEvidence: {
       complete: true, isolatedDatabase: true, sourceRegistered: true, rtspClipProvided: true,
       intelligenceJobQueued: true, schedulerClaimedJob: true, aiqLocalCompleted: true, resultPersisted: true,
+      jobSchedulerExecuted: true, jobRuntimeExecuted: true, jobStepRunsPersisted: true,
+      databaseWritesPersisted: true, intelligenceSchedulerExecuted: true, dashboardQueriesExecuted: true,
     },
     qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", validationStatus: "anchor_approved", failures: [], warnings: [] },
     telemetryCapabilities: [{ id: "cpu.utilization", status: "measured", provider: "test" }],
@@ -69,6 +72,9 @@ function observations(): PublicBenchmarkObservation[] {
     sourceTier: 1 as const, sourceUrl: `https://example.com/${stage}`, observedAt: "2026-07-18T12:00:00.000Z",
     operatingSystem: "windows" as const,
     configuration: "Exact version, performance power profile, disclosed driver and sustained cooling configuration.",
+    benchmarkSuiteId: `suite-${stage}`, metricName: `metric-${stage}`, aggregation: "rate" as const,
+    evidenceLocator: `fixture:${hardware.id}:${stage}`, rawArtifactSha256: "b".repeat(64),
+    licensePolicy: "Redistributable normalized observation", reproducible: true,
   })));
 }
 
@@ -80,7 +86,7 @@ describe("local calibration and conservative extrapolation", () => {
     expect(quick.inferenceProvider).toBe("aiq_local");
     expect(quick.targetHardwareTemplateId).toBe("target-c");
     expect(quick.phases.map((phase) => phase.durationSeconds)).toEqual([120, 300, 180]);
-    expect(full.phases.map((phase) => phase.durationSeconds)).toEqual([600, 2400, 600]);
+    expect(full.phases.map((phase) => phase.durationSeconds)).toEqual([600, 1200, 1200, 600]);
     expect(quick.requestedInferenceFps).toEqual([1]);
     expect(quick.executionMode).toBe("readiness");
     expect(full.executionMode).toBe("production_pipeline");
@@ -94,6 +100,7 @@ describe("local calibration and conservative extrapolation", () => {
     ], observations());
     const target = predictions.find((item) => item.hardwareTemplateId === "target-c")!;
     expect(target.status).toBe("extrapolated_high");
+    expect(target.procurementEligibility).toBe("eligible");
     expect(target.confidenceClass).toBe("A");
     expect(target.safeCameraMaximum).toBe(10);
     expect(target.stagePredictions.every((stage) => stage.anchorRunIds.length === 3)).toBe(true);
@@ -115,6 +122,7 @@ describe("local calibration and conservative extrapolation", () => {
     const target = buildCapacityPredictions(catalog, [legacy], observations())
       .find((item) => item.hardwareTemplateId === "target-c")!;
     expect(target.status).toBe("reference_only");
+    expect(target.procurementEligibility).toBe("blocked");
     expect(target.safeCameraMaximum).toBeNull();
   });
 
