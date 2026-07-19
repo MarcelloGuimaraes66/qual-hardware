@@ -10,6 +10,12 @@ Estado após implementação:
 - última coleta real: 26 observações, 21 equipamentos, 49 componentes, 5 benchmarks e 12 preços BRL/USD/EUR;
 - Qwen permaneceu opcional e não foi chamado quando o parser determinístico resolveu todos os candidatos;
 - 64 testes, auditoria sem vulnerabilidades, pacote/smoke macOS e matriz Windows/macOS/Ubuntu aprovados;
+- primeira publicação assinada concluída como `catalog-2026-07-19.1`, sequência `1`, em <https://github.com/MarcelloGuimaraes66/qual-hardware/releases/tag/catalog-2026-07-19.1>;
+- Release e espelho append-only no branch `catalog-data` verificados por download, SHA-256 e assinatura Ed25519;
+- desktop macOS empacotado comprovadamente consumiu e ativou a publicação oficial sem configuração do operador;
+- segunda execução imediata comprovou o gate quinzenal e não criou publicação duplicada;
 - nenhuma base, projeto, snapshot, Release ou evidência anterior foi removida.
 
-Pendência operacional única: publicar/verificar a primeira Release assinada e comprovar o desktop consumindo-a. O branch padrão e o dry-run já foram aprovados. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua um gate humano separado; CI não deve ser descrito como prova física.
+Não há pendência de software para ativar o canal quinzenal: o cron está no branch padrão, a chave privada está no segredo do GitHub e a chave pública correspondente está compilada no desktop. O próximo ciclo é decidido automaticamente a partir da última Release válida e, se falhar, o agendamento diário tenta novamente sem substituir o catálogo ativo.
+
+Limite de evidência preservado: a homologação física Windows 11 e Ubuntu GNOME/Wayland continua um gate humano separado; CI não deve ser descrito como prova física.
