@@ -30,6 +30,7 @@ describe("cross-platform desktop runtime", () => {
     expect(isLocalApplicationUrl("http://127.0.0.1:4179/path", "http://127.0.0.1:4178")).toBe(false);
     expect(isLocalApplicationUrl("not a url", "http://127.0.0.1:4178")).toBe(false);
     expect(externalHttpUrl("https://example.com/catalog")).toBe("https://example.com/catalog");
+    expect(externalHttpUrl("https://aiquimist.ai/")).toBe("https://aiquimist.ai/");
     expect(externalHttpUrl("javascript:alert(1)")).toBeNull();
     expect(externalHttpUrl("invalid")).toBeNull();
   });
@@ -45,5 +46,22 @@ describe("cross-platform desktop runtime", () => {
     const styles = await readFile(new URL("../src/web/styles.css", import.meta.url), "utf8");
     expect(styles).not.toContain("fonts.googleapis.com");
     expect(styles).not.toMatch(/@import\s+url\(['\"]https?:/i);
+  });
+
+  it("uses the original proportional Aiquimist logo as the canonical external brand link", async () => {
+    const [application, styles, logo] = await Promise.all([
+      readFile(new URL("../src/web/App.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../src/web/styles.css", import.meta.url), "utf8"),
+      readFile(new URL("../public/brand/aiquimist-logo-white.png", import.meta.url)),
+    ]);
+    expect(application).toContain('href="https://aiquimist.ai/"');
+    expect(application).toContain('target="_blank" rel="noreferrer"');
+    expect(application).toContain('src="/brand/aiquimist-logo-white.png"');
+    expect(styles).toContain("aspect-ratio:8.84");
+    expect(styles).toContain("width:121%");
+    expect(styles).toContain("height:auto");
+    expect(logo.subarray(1, 4).toString("ascii")).toBe("PNG");
+    expect(logo.readUInt32BE(16)).toBe(1080);
+    expect(logo.readUInt32BE(20)).toBe(1080);
   });
 });

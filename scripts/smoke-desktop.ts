@@ -220,6 +220,7 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
   const listing = execFileSync(process.execPath, [asarCli, "list", paths.asar], { encoding: "utf8" }).replaceAll("\\", "/");
   for (const required of [
     "/dist/web/index.html",
+    "/dist/web/brand/aiquimist-logo-white.png",
     "/dist/server/desktop/main.js",
     "/contracts/perceptrum-workload-v1.json",
     "/contracts/perceptrum-workload-v2.json",
@@ -263,6 +264,36 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     return text.includes("Qual Hardware") && text.length > 100 ? text : null;
   });
   assert(renderedText.includes("Qual Hardware"));
+  const brand = await waitFor("the Aiquimist brand", async () => {
+    const state = await rendererValue<{
+      href: string;
+      target: string;
+      rel: string;
+      imageWidth: number;
+      imageHeight: number;
+      viewportRatio: number;
+    } | null>(application.debuggerUrl, `(() => {
+      const link = document.querySelector('header a.brand');
+      const image = link?.querySelector('img');
+      const viewport = link?.querySelector('.brand-logo-viewport');
+      if (!(link instanceof HTMLAnchorElement) || !(image instanceof HTMLImageElement) || !(viewport instanceof HTMLElement) || !image.complete || image.naturalWidth === 0) return null;
+      const bounds = viewport.getBoundingClientRect();
+      return {
+        href: link.href,
+        target: link.target,
+        rel: link.rel,
+        imageWidth: image.naturalWidth,
+        imageHeight: image.naturalHeight,
+        viewportRatio: bounds.width / bounds.height,
+      };
+    })()`);
+    return state?.imageWidth === 1080 ? state : null;
+  });
+  assert.equal(brand.href, "https://aiquimist.ai/");
+  assert.equal(brand.target, "_blank");
+  assert(brand.rel.split(/\s+/).includes("noreferrer"));
+  assert.equal(brand.imageWidth, brand.imageHeight, "the original logo proportions must remain intact");
+  assert(Math.abs(brand.viewportRatio - 8.84) < 0.05, "the responsive viewport must frame the horizontal brand without distortion");
   assert(renderedText.includes("Calibração de capacidade"), "the permanent calibration entry point must be visible");
   const openedCalibration = await rendererValue<boolean>(application.debuggerUrl, `(() => {
     const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.includes('Calibrar este computador') || item.textContent?.includes('Ver calibrações e instruções'));
