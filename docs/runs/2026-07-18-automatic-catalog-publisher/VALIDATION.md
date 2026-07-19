@@ -26,7 +26,6 @@
 
 ## Gates restantes antes da publicação
 
-- Matriz nativa Windows/macOS/Ubuntu no GitHub.
 - Dry-run do workflow, primeira Release assinada e smoke consumindo a Release.
 
 Primeira execução remota: macOS aprovado; Windows compilou/empacotou e revelou que a saída do utilitário ASAR usa `\\` naquele sistema. O smoke foi corrigido para normalizar separadores antes de inspecionar o conteúdo e precisa ser reexecutado. A falha não ocorreu dentro do aplicativo.
@@ -34,5 +33,7 @@ Primeira execução remota: macOS aprovado; Windows compilou/empacotou e revelou
 Ubuntu também compilou/empacotou, mas o Xvfb atingiu o limite de 30 segundos antes de expor o renderer após a consulta segura ao canal. O limite exclusivo do smoke foi elevado para 90 segundos e uma nova falha passará a incluir os logs do Electron. Nenhum timeout do aplicativo foi relaxado.
 
 Segunda execução Ubuntu: os novos logs provaram que o Chromium abortou porque o `chrome-sandbox` do pacote descompactado não tinha proprietário root/modo `4755` no runner. Os workflows de CI e release agora configuram essas permissões antes do smoke Linux. Nenhum `--no-sandbox` foi introduzido; a proteção permanece obrigatória.
+
+Matriz final da PR: Windows 11 x64 aprovado em 1m21s, macOS 26 arm64 aprovado em 58s e Ubuntu 24.04 x64/Xvfb aprovado em 49s. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666313133>.
 
 Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.
