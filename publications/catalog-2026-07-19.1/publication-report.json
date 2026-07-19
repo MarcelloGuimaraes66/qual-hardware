@@ -1,0 +1,44 @@
+{
+  "payload": {
+    "schemaVersion": "qual-hardware-publication-report/1.0.0",
+    "publicationId": "catalog-2026-07-19.1",
+    "sequence": 1,
+    "generatedAt": "2026-07-19T00:25:00.862Z",
+    "checkedSources": 39,
+    "successfulSources": 18,
+    "skippedSources": 20,
+    "failedSources": [
+      {
+        "sourceId": "price-br-dell",
+        "error": "source_requires_interactive_access"
+      }
+    ],
+    "observations": 26,
+    "qwenUsed": false,
+    "qwen": {
+      "metadata": {
+        "model": "Qwen/Qwen3-1.7B-GGUF:Q8_0",
+        "modelSha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+        "promptVersion": "qual-hardware-catalog-normalizer/1.0.0",
+        "temperature": 0,
+        "mode": "/no_think"
+      },
+      "classifications": []
+    },
+    "summary": {
+      "added": 87,
+      "updated": 0,
+      "unchanged": 0,
+      "rejected": 0,
+      "checkedWithoutChanges": false
+    },
+    "guarantees": {
+      "openAiCalls": 0,
+      "paidAiCalls": 0,
+      "userDataUploaded": false,
+      "appendOnly": true
+    }
+  },
+  "keyId": "catalog-2026-01",
+  "signature": "rUsZ2eZ6zIx70inmnbr4JgVh2eTB6ghlEZvGmOCBmSXEoTZCwpPlrRLGhS54HK10SBjBN4VqDwryNASZMWx3DQ=="
+}
