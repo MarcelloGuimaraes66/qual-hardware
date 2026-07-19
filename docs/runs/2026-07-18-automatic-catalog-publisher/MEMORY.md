@@ -12,4 +12,4 @@ Estado após implementação:
 - 64 testes, auditoria sem vulnerabilidades, pacote/smoke macOS e matriz Windows/macOS/Ubuntu aprovados;
 - nenhuma base, projeto, snapshot, Release ou evidência anterior foi removida.
 
-Pendência operacional única: integrar no branch padrão, executar dry-run do publicador, publicar/verificar a primeira Release assinada e comprovar o desktop consumindo-a. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua um gate humano separado; CI não deve ser descrito como prova física.
+Pendência operacional única: publicar/verificar a primeira Release assinada e comprovar o desktop consumindo-a. O branch padrão e o dry-run já foram aprovados. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua um gate humano separado; CI não deve ser descrito como prova física.
