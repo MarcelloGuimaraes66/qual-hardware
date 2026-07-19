@@ -36,4 +36,6 @@ Segunda execução Ubuntu: os novos logs provaram que o Chromium abortou porque 
 
 Matriz final da PR: Windows 11 x64 aprovado em 1m21s, macOS 26 arm64 aprovado em 58s e Ubuntu 24.04 x64/Xvfb aprovado em 49s. Execução: <https://github.com/MarcelloGuimaraes66/qual-hardware/actions/runs/29666313133>.
 
+Primeiro dispatch de homologação após o merge foi rejeitado antes de criar uma execução porque o parser de expressões do GitHub Actions não suporta `+ 1` dentro de `${{ }}`. A sequência seguinte passou a ser calculada no shell do gate inicial e exposta como output; nenhuma coleta, assinatura ou Release ocorreu nessa tentativa.
+
 Este arquivo será finalizado com links/hashes concretos após os gates externos. A homologação física Windows 11 e Ubuntu GNOME/Wayland continua separada da prova de compilação/CI.
