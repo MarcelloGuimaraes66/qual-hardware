@@ -76,7 +76,12 @@ export const catalogBundleSchema = z.object({
   publicationId: z.string().regex(/^catalog-\d{4}-\d{2}-\d{2}\.\d+$/), catalogVersion: z.string().min(1).max(160),
   generatedAt: z.iso.datetime(), publishedAt: z.iso.datetime(), validUntil: z.iso.datetime(),
   previousBundleSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(), collectorCommit: z.string().min(7).max(64),
-  qwen: z.object({ model: z.literal("Qwen/Qwen3-1.7B-GGUF:Q8_0"), modelSha256: z.string().regex(/^[a-f0-9]{64}$/), promptVersion: z.string().min(1), used: z.boolean() }),
+  qwen: z.object({
+    model: z.string().min(1).max(240), modelSha256: z.string().regex(/^[a-f0-9]{64}$/), promptVersion: z.string().min(1), used: z.boolean(),
+    temperature: z.literal(0).optional(), mode: z.literal("/no_think").optional(), profileVersion: z.string().min(1).max(160).optional(),
+    parameterBillions: z.number().positive().max(10_000).optional(), quantization: z.string().min(1).max(40).optional(),
+    sizeBytes: z.number().int().positive().optional(), selection: z.enum(["pinned_ci", "explicit", "auto_detected"]).optional(),
+  }),
   markets: z.array(marketSchema).min(1).max(3), hardware: z.array(hardwareNodeTemplateSchema).min(1).max(100_000),
   components: z.array(hardwareComponentSchema).max(100_000), benchmarks: z.array(publicBenchmarkObservationSchema).max(100_000),
   prices: z.array(priceQuoteSchema).max(1_000_000), sources: z.array(catalogSourceSchema).min(1).max(10_000),

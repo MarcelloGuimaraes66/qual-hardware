@@ -135,11 +135,13 @@ jobs:
           echo "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a  artifacts/qwen/model/Qwen3-1.7B-Q8_0.gguf" | sha256sum --check
       - env:
           QWEN_MODEL_PATH: ${{ github.workspace }}/artifacts/qwen/model/Qwen3-1.7B-Q8_0.gguf
+          QWEN_MODEL_ID: Qwen/Qwen3-1.7B-GGUF:Q8_0
+          QWEN_MODEL_SHA256: 061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a
         run: |
           if [ "${{ steps.candidates.outputs.count }}" != "0" ]; then
-            export LLAMA_CPP_PATH="$(find artifacts/qwen/runtime -type f -name llama-cli -print -quit)"
-            test -n "$LLAMA_CPP_PATH"
-            chmod +x "$LLAMA_CPP_PATH"
+            export LLAMA_SERVER_PATH="$(find artifacts/qwen/runtime -type f -name llama-server -print -quit)"
+            test -n "$LLAMA_SERVER_PATH"
+            chmod +x "$LLAMA_SERVER_PATH"
           fi
           npm run catalog:publisher -- qwen --collection artifacts/collection/collection.json --output artifacts/qwen/qwen.json
       - uses: actions/upload-artifact@v7

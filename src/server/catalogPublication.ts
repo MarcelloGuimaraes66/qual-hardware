@@ -69,6 +69,7 @@ export interface BuildCatalogBundleInput {
   prices: PriceQuote[];
   sources: CatalogSource[];
   qwenUsed: boolean;
+  qwen?: CatalogBundle["qwen"];
   previousHardwareCount?: number;
   previousSourceCount?: number;
   summary?: CatalogBundle["summary"];
@@ -88,7 +89,7 @@ export function buildCatalogBundle(input: BuildCatalogBundleInput): CatalogBundl
     publicationId: id, catalogVersion: `hardware-reference/${id}`, generatedAt: publishedAt, publishedAt,
     validUntil: new Date(input.now.getTime() + PRICE_CURRENT_DAYS * DAY_MS).toISOString(),
     previousBundleSha256: input.previousBundleSha256, collectorCommit: input.collectorCommit,
-    qwen: { ...QWEN_CATALOG_METADATA, used: input.qwenUsed }, markets: ["BR", "US", "DE"],
+    qwen: input.qwen ? { ...input.qwen, used: input.qwenUsed } : { ...QWEN_CATALOG_METADATA, used: input.qwenUsed }, markets: ["BR", "US", "DE"],
     hardware: input.hardware, components: input.components, benchmarks: input.benchmarks,
     prices: filteredPrices.accepted, sources: input.sources, sourceHealth: health,
     summary: input.summary

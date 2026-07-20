@@ -340,10 +340,17 @@ export interface CatalogBundle {
   previousBundleSha256: string | null;
   collectorCommit: string;
   qwen: {
-    model: "Qwen/Qwen3-1.7B-GGUF:Q8_0";
+    model: string;
     modelSha256: string;
     promptVersion: string;
     used: boolean;
+    temperature?: 0;
+    mode?: "/no_think";
+    profileVersion?: string;
+    parameterBillions?: number;
+    quantization?: string;
+    sizeBytes?: number;
+    selection?: "pinned_ci" | "explicit" | "auto_detected";
   };
   markets: Market[];
   hardware: HardwareNodeTemplate[];

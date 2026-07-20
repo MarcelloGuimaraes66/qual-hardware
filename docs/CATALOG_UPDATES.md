@@ -28,9 +28,13 @@ Cada entrada define hosts/redirecionamentos permitidos, mercados, moedas, parser
 
 ## Papel limitado do Qwen
 
-Quando um documento público não puder ser relacionado deterministicamente a um SKU, o runner pode executar `Qwen/Qwen3-1.7B-GGUF:Q8_0` localmente por llama.cpp. Modelo, checksum, prompt, parâmetros e resposta ficam no relatório. A temperatura é zero, o prompt usa `/no_think` e a resposta deve seguir JSON Schema e citar um trecho existente.
+Quando um documento público não puder ser relacionado deterministicamente a um SKU, o runner executa um Qwen textual local por llama.cpp. No GitHub Actions, `Qwen/Qwen3-1.7B-GGUF:Q8_0` continua fixado por versão e checksum para que toda publicação seja reproduzível. Em uma estação de desenvolvimento, o comando escolhe automaticamente o maior Qwen textual GGUF que caiba em até 68% da memória física, preservando reserva para o sistema. `QWEN_MODEL_PATH` permite selecionar explicitamente um arquivo e `QWEN_MODEL_SEARCH_PATHS` acrescenta diretórios de busca usando o separador nativo do sistema. Modelo, checksum, tamanho, quantização, prompt, parâmetros e origem da seleção ficam no relatório; caminhos absolutos locais nunca entram no bundle.
+
+`npm run catalog:qwen:detect` mostra qual modelo e qual `llama-server` seriam usados, sem iniciar uma coleta. No Mac de desenvolvimento atual, a seleção comprovada é `Qwen3-32B-Q4_K_M`, com 32 bilhões de parâmetros e SHA-256 `efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689`. O servidor temporário escuta somente em `127.0.0.1`, carrega o modelo uma vez para todo o lote e é encerrado mesmo quando uma classificação falha.
 
 O Qwen pode classificar página, fabricante, SKU e arquitetura. Ele não pode definir preço, moeda, capacidade do Perceptrum, compatibilidade de compra, assinatura ou publicação. Uma alucinação, prompt injection, timeout ou modelo indisponível rejeita somente o candidato ambíguo; os parsers determinísticos continuam. Não existe chamada OpenAI nem IA paga.
+
+O executável desktop do operador não inicia esse modelo nem precisa reservá-lo em memória. Ele apenas baixa bundles assinados. O Perceptrum permanece responsável pelas calibrações de câmera e não é modificado por essa seleção textual.
 
 ## Publicação e confiança
 

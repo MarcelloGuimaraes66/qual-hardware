@@ -215,6 +215,20 @@ describe("limited Qwen role", () => {
     expect(() => validateQwenClassification(JSON.stringify({ kind: "cpu", manufacturer: "Intel", sku: "X", architecture: null, evidenceExcerpt: "not on page" }), page)).toThrow("qwen_evidence_not_found");
     expect(() => validateQwenClassification(JSON.stringify({ kind: "cpu", manufacturer: "Intel", sku: "X", architecture: null, evidenceExcerpt: "Intel", price: 99 }), page)).toThrow("qwen_forbidden_decision_field");
   });
+
+  it("preserves the exact audited local model metadata in the catalog bundle", () => {
+    const result = buildCatalogBundle({
+      sequence: 9, previousBundleSha256: null, now: new Date("2026-07-19T20:00:00.000Z"),
+      collectorCommit: "c112f83", hardware: HARDWARE_CATALOG.slice(0, 1), components: [], benchmarks: [], prices: [],
+      sources: [source()], qwenUsed: true,
+      qwen: {
+        model: "local-gguf/Qwen3-32B-Q4_K_M", modelSha256: "e".repeat(64), promptVersion: "qual-hardware-catalog-normalizer/1.0.0",
+        used: true, temperature: 0, mode: "/no_think", profileVersion: "qual-hardware-qwen-model-profile/1.0.0",
+        parameterBillions: 32, quantization: "Q4_K_M", sizeBytes: 19_762_149_024, selection: "auto_detected",
+      },
+    });
+    expect(result.qwen).toMatchObject({ model: "local-gguf/Qwen3-32B-Q4_K_M", parameterBillions: 32, selection: "auto_detected", used: true });
+  });
 });
 
 describe("price evidence gates", () => {

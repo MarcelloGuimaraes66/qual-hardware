@@ -1,14 +1,15 @@
-import { createHash, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
+import { sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { HARDWARE_CATALOG, SEED_PRICE_QUOTES } from "../src/engine/catalog.js";
 import { BUNDLED_SOURCE_REGISTRY } from "../src/engine/sourceRegistry.js";
 import { sourceRegistrySchema, catalogBundleSchema, signedCatalogBundleSchema } from "../src/shared/catalogSchemas.js";
-import { OFFICIAL_CATALOG_CHANNEL, QWEN_CATALOG_MODEL_SHA256 } from "../src/shared/catalogChannel.js";
+import { OFFICIAL_CATALOG_CHANNEL, QWEN_CATALOG_MODEL_SHA256, QWEN_CATALOG_PROMPT_VERSION } from "../src/shared/catalogChannel.js";
 import type { CalibrationStage, CatalogBundle, CatalogSource, HardwareComponent, HardwareNodeTemplate, PriceQuote, PublicBenchmarkObservation, SignedCatalogBundle, SourceObservation } from "../src/shared/types.js";
 import { collectCatalogSource, type SourceCollectionResult } from "../src/server/catalogSourceFetcher.js";
 import { buildCatalogBundle, isPublicationDue, rejectUnconfirmedPriceOutliers, sha256, signCatalogBundle, verifyCatalogBundle } from "../src/server/catalogPublication.js";
-import { classifyCatalogCandidate, createLlamaCppRunner, QWEN_CATALOG_METADATA } from "../src/server/qwenCatalog.js";
+import { classifyCatalogCandidate, createLlamaCppServerRunner, QWEN_CATALOG_METADATA, type QwenCatalogMetadata } from "../src/server/qwenCatalog.js";
+import { discoverBestQwenTextModel, discoverLlamaCppServer } from "../src/server/qwenModelSelection.js";
 import { canonicalComponentId, deriveComponentCatalog } from "../src/engine/componentCatalog.js";
 import { componentStages, isPublicObservationEligible } from "../src/engine/evidence.js";
 import { BENCHMARK_OBSERVATION_VERSION } from "../src/shared/types.js";
@@ -84,22 +85,33 @@ async function collect(outputDirectory: string): Promise<void> {
 async function runQwen(collectionFile: string, outputFile: string): Promise<void> {
   const collection = await readJson<CollectionArtifact>(collectionFile);
   const classifications: Array<{ observationId: string; classification?: unknown; error?: string }> = [];
-  const executable = process.env.LLAMA_CPP_PATH;
-  const model = process.env.QWEN_MODEL_PATH;
+  let metadata: Readonly<QwenCatalogMetadata> = QWEN_CATALOG_METADATA;
   let used = false;
-  if (collection.qwenCandidates.length && executable && model) {
-    const modelHash = createHash("sha256").update(await readFile(model)).digest("hex");
-    if (modelHash !== QWEN_CATALOG_MODEL_SHA256) throw new Error("qwen_model_checksum_mismatch");
-    const runner = createLlamaCppRunner(executable, model);
-    for (const candidate of collection.qwenCandidates) {
-      const sourceText = JSON.stringify(candidate.payload);
-      try { classifications.push({ observationId: candidate.id, classification: await classifyCatalogCandidate(sourceText, runner) }); used = true; }
-      catch (error) { classifications.push({ observationId: candidate.id, error: error instanceof Error ? error.message : "qwen_failed" }); }
+  if (collection.qwenCandidates.length) {
+    const selectedModel = await discoverBestQwenTextModel({ explicitPath: process.env.QWEN_MODEL_PATH });
+    const executable = await discoverLlamaCppServer();
+    if (selectedModel && executable) {
+      const expectedHash = process.env.QWEN_MODEL_SHA256?.trim() || (process.env.CI ? QWEN_CATALOG_MODEL_SHA256 : null);
+      if (expectedHash && selectedModel.modelSha256 !== expectedHash) throw new Error("qwen_model_checksum_mismatch");
+      metadata = Object.freeze({
+        model: selectedModel.modelId, modelSha256: selectedModel.modelSha256, promptVersion: QWEN_CATALOG_PROMPT_VERSION,
+        temperature: 0, mode: "/no_think", profileVersion: selectedModel.profileVersion,
+        parameterBillions: selectedModel.parameterBillions, quantization: selectedModel.quantization,
+        sizeBytes: selectedModel.sizeBytes, selection: selectedModel.source,
+      });
+      const server = await createLlamaCppServerRunner(executable, selectedModel.path);
+      try {
+        for (const candidate of collection.qwenCandidates) {
+          const sourceText = JSON.stringify(candidate.payload);
+          try { classifications.push({ observationId: candidate.id, classification: await classifyCatalogCandidate(sourceText, server.run) }); used = true; }
+          catch (error) { classifications.push({ observationId: candidate.id, error: error instanceof Error ? error.message : "qwen_failed" }); }
+        }
+      } finally { await server.close(); }
+    } else {
+      for (const candidate of collection.qwenCandidates) classifications.push({ observationId: candidate.id, error: "qwen_model_or_runtime_unavailable_candidate_rejected" });
     }
-  } else {
-    for (const candidate of collection.qwenCandidates) classifications.push({ observationId: candidate.id, error: "qwen_model_unavailable_candidate_rejected" });
   }
-  await writeJson(outputFile, { schemaVersion: "qual-hardware-qwen-classification/1.0.0", metadata: QWEN_CATALOG_METADATA, used, classifications });
+  await writeJson(outputFile, { schemaVersion: "qual-hardware-qwen-classification/1.0.0", metadata, used, classifications });
 }
 
 function normalized(value: unknown): string | null {
@@ -369,10 +381,14 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
   const added = [...currentIndex.keys()].filter((id) => !previousIndex.has(id)).length;
   const updated = [...currentIndex].filter(([id, value]) => previousIndex.has(id) && previousIndex.get(id) !== value).length;
   const unchanged = [...currentIndex].filter(([id, value]) => previousIndex.get(id) === value).length;
+  const qwenMetadata = qwen.metadata && typeof qwen.metadata === "object"
+    ? { ...(qwen.metadata as CatalogBundle["qwen"]), used: qwen.used }
+    : null;
   const payload = buildCatalogBundle({
     sequence, now: new Date(), serial, previousBundleSha256: previousHash,
     collectorCommit: process.env.GITHUB_SHA ?? argument("commit", "0846ff7"), hardware: HARDWARE_CATALOG,
     components, benchmarks, prices, sources: collection.sources, qwenUsed: qwen.used,
+    ...(qwenMetadata ? { qwen: qwenMetadata } : {}),
     previousHardwareCount: previousBundle?.hardware.length,
     previousSourceCount: previousBundle?.sources.length,
     summary: { added, updated, unchanged, rejected: priceGate.rejected.length, checkedWithoutChanges: added === 0 && updated === 0 },
