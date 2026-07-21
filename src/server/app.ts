@@ -593,7 +593,7 @@ export function createApp(
     let filename: string;
     if (format === "json") { body = jsonReport(reportContext); contentType = "application/json; charset=utf-8"; filename = "qual-hardware-relatorio-comercial-e-neutro.json"; }
     else if (format === "xlsx") { body = await xlsxReport(reportContext); contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; filename = "qual-hardware-relatorio-comercial-e-neutro.xlsx"; }
-    else if (format === "pdf") { body = await pdfReport(reportContext); contentType = "application/pdf"; filename = "qual-hardware-relatorio-comercial-e-neutro.pdf"; }
+    else if (format === "pdf") { body = await pdfReport(reportContext); contentType = "application/pdf"; filename = "qual-hardware-recomendacoes.pdf"; }
     else if (format === "tr-json") { body = procurementAnnexJson(reportContext); contentType = "application/json; charset=utf-8"; filename = "qual-hardware-anexo-tecnico-neutro.json"; }
     else if (format === "tr-pdf") { body = await procurementAnnexPdf(reportContext); contentType = "application/pdf"; filename = "qual-hardware-anexo-tecnico-neutro.pdf"; }
     else if (format === "tr-docx") { body = await procurementAnnexDocx(reportContext); contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; filename = "qual-hardware-anexo-tecnico-neutro.docx"; }

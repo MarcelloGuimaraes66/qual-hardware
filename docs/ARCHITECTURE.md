@@ -49,7 +49,7 @@
 7. Signed public stage observations scale physical anchors by a per-stage rule of three; the most conservative anchor and bottleneck win, followed by 20/30/40% margins and leave-one-out error checks.
 8. GitHub Actions checks the approved source registry every 15 days, validates structured observations, signs one immutable catalog bundle and publishes it as a `catalog-*` Release plus an append-only `catalog-data` history.
 9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically. SQLite v9 preserves all v1-v8 data and adds immutable manufacturer observations per field, deterministic parser versions, explicit resolutions/conflicts, inheritance records, source mappings and numbered report sections. A consistent SQLite backup is created before a persistent older database is migrated.
-10. Every option is exported twice in the combined report: an internal commercial reference with numbered component-level official specifications followed by a workload-derived neutral specification. The separated DOCX/PDF/JSON annex removes all commercial identifiers and is blocked when the benchmark gate, component-completeness gate or competition gate fails.
+10. The PDF preserves the original commercial report as an independent Part I and appends official component specifications as Part II. Detailed benchmark/BOM audit remains in XLSX/JSON. The separated DOCX/PDF/JSON neutral annex removes all commercial identifiers and is blocked when the benchmark gate, component-completeness gate or competition gate fails.
 
 ## Security model
 

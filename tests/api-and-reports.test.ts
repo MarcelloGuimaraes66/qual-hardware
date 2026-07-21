@@ -6,6 +6,7 @@ import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import type { BenchmarkManifest, CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
+import { PDF_REPORT_OUTLINE } from "../src/server/reports.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
 
 describe("Qual Hardware API and reports", () => {
@@ -66,8 +67,25 @@ describe("Qual Hardware API and reports", () => {
     const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
     expect(pdf.status).toBe(200);
     expect(pdf.headers.get("content-type")).toContain("application/pdf");
+    expect(pdf.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-recomendacoes.pdf"');
     expect(new TextDecoder().decode(pdfBytes.slice(0, 5))).toBe("%PDF-");
     expect((await PDFDocument.load(pdfBytes)).getPageCount()).toBeGreaterThanOrEqual(4);
+    expect(PDF_REPORT_OUTLINE).toEqual({
+      title: "Relatório comparativo de infraestrutura",
+      executiveNarrative: "Nossa leitura e recomendação em linguagem direta",
+      configurations: "As três configurações sugeridas",
+      qualifiedMachines: "Outras máquinas qualificadas em ordem crescente de custo",
+      workload: "Carga de câmeras e Agents usada no cálculo",
+      proposalSections: [
+        "Resumo de capacidade",
+        "Especificação técnica por nó",
+        "Custo por componente e total do projeto",
+        "Distribuição das câmeras e utilização",
+        "Demanda agregada calculada",
+        "Fontes, premissas e avisos",
+      ],
+      detailedSpecifications: "Parte II - Especificações técnicas detalhadas por máquina",
+    });
 
     const spreadsheet = await app.request(`/api/recommendations/${recommendation.id}/export/xlsx`);
     expect(spreadsheet.status).toBe(200);

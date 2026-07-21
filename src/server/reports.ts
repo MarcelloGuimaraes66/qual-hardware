@@ -25,6 +25,23 @@ const POLICY_LABELS: Record<RecommendationPolicy, string> = {
   n_plus_one: "3. N+1 resiliente",
 };
 
+export const PDF_REPORT_OUTLINE = Object.freeze({
+  title: "Relatório comparativo de infraestrutura",
+  executiveNarrative: "Nossa leitura e recomendação em linguagem direta",
+  configurations: "As três configurações sugeridas",
+  qualifiedMachines: "Outras máquinas qualificadas em ordem crescente de custo",
+  workload: "Carga de câmeras e Agents usada no cálculo",
+  proposalSections: [
+    "Resumo de capacidade",
+    "Especificação técnica por nó",
+    "Custo por componente e total do projeto",
+    "Distribuição das câmeras e utilização",
+    "Demanda agregada calculada",
+    "Fontes, premissas e avisos",
+  ],
+  detailedSpecifications: "Parte II - Especificações técnicas detalhadas por máquina",
+} as const);
+
 function orderedRecommendations(recommendations: CapacityRecommendation[]): CapacityRecommendation[] {
   const byPolicy = new Map(recommendations.map((item) => [item.policy, item]));
   const ordered = POLICY_ORDER.map((policy) => byPolicy.get(policy)).filter((item): item is CapacityRecommendation => Boolean(item));
@@ -630,9 +647,11 @@ function wrappedLines(text: string, font: PDFFont, size: number, width: number):
 function pdfText(value: string): string {
   const normalized = value.normalize("NFC")
     .replaceAll("→", " para ")
+    .replaceAll("×", "x")
     .replaceAll("≥", ">=")
     .replaceAll("≤", "<=")
     .replaceAll("−", "-")
+    .replace(/[\u2013\u2014]/g, "-")
     .replace(/[\u2000-\u200B\u202F\u205F\u3000]/g, " ");
   const winAnsiExtras = new Set([0x0152, 0x0153, 0x0160, 0x0161, 0x0178, 0x017D, 0x017E, 0x0192, 0x02C6, 0x02DC, 0x2013, 0x2014, 0x2018, 0x2019, 0x201A, 0x201C, 0x201D, 0x201E, 0x2020, 0x2021, 0x2022, 0x2026, 0x2030, 0x2039, 0x203A, 0x20AC, 0x2122]);
   return [...normalized].map((character) => {
@@ -785,6 +804,23 @@ function reportExclusion(value: string): string {
   return ({ taxes: "tributos", shipping: "frete", licenses: "licenças", energy: "energia", support: "suporte", TCO: "custo total de propriedade" } as Record<string, string>)[value] ?? value;
 }
 
+function reportComponentCostName(value: string): string {
+  return ({
+    "Placa-mae / plataforma": "Placa-mãe / plataforma",
+    "Memoria RAM": "Memória RAM",
+    "Fonte, refrigeracao e chassi": "Fonte, refrigeração e chassi",
+    "Montagem e integracao": "Montagem e integração",
+  } as Record<string, string>)[value] ?? value;
+}
+
+function reportCameraGroupName(value: string): string {
+  return value === "Main camera group" ? "Grupo principal de câmeras" : value;
+}
+
+function reportAgentName(value: string): string {
+  return value === "Continuous video analysis" ? "Análise contínua de vídeo" : value;
+}
+
 function reportWarning(value: string): string {
   const exact: Record<string, string> = {
     reference_price_estimate_purchase_quote_required: "Os preços são estimativas de referência; obtenha cotação itemizada antes da aquisição.",
@@ -859,12 +895,12 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   });
   writer.y = 720;
 
-  writer.heading("Resumo de capacidade");
+  writer.heading(PDF_REPORT_OUTLINE.proposalSections[0]);
   writer.paragraph(`Nós: ${design.nodeCount}; ativos: ${design.activeNodeCount}; reserva: ${design.nodeCount - design.activeNodeCount}.`);
   writer.paragraph(`Folga-alvo: ${design.headroomPercent}%; gargalo dominante: ${reportLabel(design.bottleneck)}; capacidade estimada neste perfil: ${recommendation.primary.maximumAdditionalCameras + recommendation.primary.allocations.filter((node) => node.role === "active").reduce((sum, node) => sum + node.cameraGroups.reduce((cameraSum, group) => cameraSum + group.cameras, 0), 0)} câmeras (${design.maximumAdditionalCameras} adicionais).`);
   writer.paragraph(`Preço do projeto: ${formatPrice(design)}.`);
 
-  writer.heading("Especificação técnica resumida por nó");
+  writer.heading(PDF_REPORT_OUTLINE.proposalSections[1]);
   writer.line(`Sistema: ${hardware.name}; formato: ${reportHardwareKind(hardware.kind)}; plataforma: ${reportOperatingSystem(operatingSystemFor(hardware))}; ${reportLabel(hardware.generation)}.`, 10, true);
   writer.paragraph(`CPU: ${hardware.cpuModel}; fabricante ${displayManufacturer(hardware.cpuVendor)}; ${hardware.physicalCores} núcleos físicos; fator conservador sustentado de ${Math.round((hardware.sustainedComputeFactor ?? 1) * 100)}%.`);
   writer.paragraph(`Placa-mãe ou plataforma: ${hardware.motherboard}.`);
@@ -878,12 +914,11 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   }
   writer.paragraph(`Rede: ${hardware.nicGbps} GbE; fonte: ${hardware.powerSupply}; refrigeração: ${hardware.cooling}.`);
   writer.paragraph(`Chassi: ${hardware.chassis}; sistema operacional: ${hardware.windowsEdition}; índice de expansão: ${hardware.expansionScore}.`);
-  writer.paragraph(evidenceCoverageSummary(design, true), 9);
 
-  writer.heading("Custo por componente e total do projeto");
+  writer.heading(PDF_REPORT_OUTLINE.proposalSections[2]);
   if (design.price.componentEstimates?.length) {
     for (const component of design.price.componentEstimates) {
-      writer.paragraph(`${component.component}: ${component.quantityPerNode} por nó; ${design.price.currency} ${formatMoney(component.perNodeAmount)} por nó; ${design.price.currency} ${formatMoney(component.projectAmount)} no projeto.`);
+      writer.paragraph(`${reportComponentCostName(component.component)}: ${component.quantityPerNode} por nó; ${design.price.currency} ${formatMoney(component.perNodeAmount)} por nó; ${design.price.currency} ${formatMoney(component.projectAmount)} no projeto.`);
     }
     const perNodeTotal = design.price.median === null ? null : design.price.median / design.nodeCount;
     writer.line(`TOTAL POR NÓ: ${design.price.currency} ${formatMoney(perNodeTotal)}.`, 10, true);
@@ -892,20 +927,20 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
     writer.paragraph(`Base: ${priceBasisPt(design)}; referência: ${design.price.observedAt ?? "não disponível"}; exclui ${(design.price.exclusions ?? []).map(reportExclusion).join(", ")}.`);
   } else writer.line("Sem estimativa compatível; obter cotação itemizada antes da proposta comercial.");
 
-  writer.heading("Distribuição das câmeras e utilização");
+  writer.heading(PDF_REPORT_OUTLINE.proposalSections[3]);
   for (const node of design.allocations) {
     const cameraCount = node.cameraGroups.reduce((sum, group) => sum + group.cameras, 0);
-    writer.line(`Nó ${node.nodeIndex} — ${reportLabel(node.role)} — ${cameraCount} câmera(s) — ${node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(", ") || "reserva sem câmeras"}.`, 9.5, true);
+    writer.line(`Nó ${node.nodeIndex} — ${reportLabel(node.role)} — ${cameraCount} câmera(s) — ${node.cameraGroups.map((group) => `${reportCameraGroupName(group.groupName)}: ${group.cameras}`).join(", ") || "reserva sem câmeras"}.`, 9.5, true);
     writer.line(`CPU ${Math.round(node.utilization.cpuCores * 100)}%; RAM ${Math.round(node.utilization.ramGb * 100)}%; VRAM ${Math.round(node.utilization.gpuVramGb * 100)}%; NVDEC ${Math.round(node.utilization.gpuDecode1080p30Streams * 100)}%; LAN ${Math.round(node.utilization.lanGbps * 100)}%; Internet ${Math.round(node.utilization.internetUploadMbps * 100)}%.`, 9, false, 10);
   }
 
-  writer.heading("Demanda agregada calculada");
+  writer.heading(PDF_REPORT_OUTLINE.proposalSections[4]);
   for (const [resource, demand] of Object.entries(design.aggregateDemand)) {
     const sizing = true;
     writer.line(`${reportLabel(resource)}: ${Math.round(demand * 1000) / 1000}${resource === design.bottleneck ? " — GARGALO" : ""}${sizing ? "" : " — observacional"}.`);
   }
 
-  writer.heading("Fontes, premissas e avisos");
+  writer.heading(PDF_REPORT_OUTLINE.proposalSections[5]);
   for (const source of hardware.sources) writer.line(`Fonte técnica: ${source.title} — ${source.url}`, 8.5);
   for (const source of design.price.sourceUrls) writer.line(`Fonte de preço: ${source}`, 8.5);
   for (const warning of coreWarnings(design.warnings)) writer.paragraph(`AVISO: ${reportWarning(warning)}`, 9);
@@ -936,40 +971,6 @@ function commercialComponentName(manufacturer: string, model: string): string {
   return model.toLowerCase().startsWith(display.toLowerCase()) ? model : `${display} ${model}`;
 }
 
-function ptBrText(value: string): string {
-  const replacements: Array<[RegExp, string]> = [
-    [/\bnao\b/gi, "não"], [/\btecnica\b/gi, "técnica"], [/\btecnico\b/gi, "técnico"],
-    [/\baplicacao\b/gi, "aplicação"], [/\boperacao\b/gi, "operação"], [/\bgravacao\b/gi, "gravação"],
-    [/\bconfiguracao\b/gi, "configuração"], [/\bcodigo\b/gi, "código"], [/\bcriterio\b/gi, "critério"],
-    [/\bminima\b/gi, "mínima"], [/\bmaxima\b/gi, "máxima"], [/\bpotencia\b/gi, "potência"],
-    [/\btermica\b/gi, "térmica"], [/\brefrigeracao\b/gi, "refrigeração"], [/\bmecanica\b/gi, "mecânica"],
-    [/\bexpansao\b/gi, "expansão"], [/\bmanutencao\b/gi, "manutenção"], [/\bcomprovacao\b/gi, "comprovação"],
-    [/\bespecificacoes\b/gi, "especificações"], [/\breferencia\b/gi, "referência"], [/\brelatorio\b/gi, "relatório"],
-    [/\baquisicao\b/gi, "aquisição"], [/\bpublicacao\b/gi, "publicação"], [/\banalise\b/gi, "análise"],
-    [/\bevidencias\b/gi, "evidências"], [/\bcalibracoes\b/gi, "calibrações"], [/\bfisicas\b/gi, "físicas"],
-    [/\bconcorrencia\b/gi, "concorrência"], [/\bequivalencia\b/gi, "equivalência"], [/\butilizacao\b/gi, "utilização"],
-  ];
-  return replacements.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), value);
-}
-
-function componentRolePt(value: string): string {
-  const labels: Record<string, string> = {
-    compute: "processamento central", acceleration: "aceleração", operating_storage: "armazenamento operacional",
-    retention_storage: "armazenamento de retenção", network: "rede", power: "alimentação elétrica",
-    cooling: "refrigeração", chassis: "chassi", oem_system: "sistema completo", memory: "memória",
-  };
-  return labels[value] ?? reportLabel(value);
-}
-
-function proofMethodPt(value: string): string {
-  return ({
-    official_datasheet: "ficha técnica oficial do fabricante",
-    independent_benchmark: "benchmark independente e reproduzível",
-    technical_proposal: "proposta técnica acompanhada de memória de cálculo",
-    sample_or_poc: "amostra ou prova de conceito",
-  } as Record<string, string>)[value] ?? ptBrText(reportLabel(value));
-}
-
 function addDetailedCommercialComponents(writer: PdfWriter, design: RecommendationAlternative, components: HardwareComponent[], machineIndex: number): void {
   const byId = new Map(components.map((component) => [component.id, component]));
   const commercial = design.commercialReference;
@@ -980,7 +981,7 @@ function addDetailedCommercialComponents(writer: PdfWriter, design: Recommendati
   for (const [componentIndex, reference] of commercial.components.entries()) {
     const number = `${machineIndex}.${componentIndex + 1}`;
     const label = COMPONENT_LABELS[reference.kind] ?? reference.kind;
-    writer.subheading(`${number}. ${label} — especificação resumida`);
+    writer.subheading(`${number}. ${label} - especificação resumida`);
     writer.paragraph(`${reference.quantityPerNode} unidade(s) por nó. Referência comercial: ${commercialComponentName(reference.manufacturer, reference.model)}. Código canônico: ${reference.canonicalMpn}. Completude das especificações oficiais: ${reference.specificationCompletenessPercent}%.`, 9.5);
     const component = byId.get(reference.componentId);
     writer.subheading(`${number}.1. Especificação técnica detalhada do fabricante`);
@@ -1008,147 +1009,104 @@ function addDetailedCommercialComponents(writer: PdfWriter, design: Recommendati
       }
     }
     const missing = component?.technicalSpecification?.completeness.missingRequiredFieldCodes ?? [];
-    if (missing.length) writer.paragraph(`Campos oficiais obrigatórios ainda ausentes: ${missing.map(reportLabel).join(", ")}. Enquanto houver ausência, conflito ou ambiguidade, o componente permanece bloqueado para aquisição.`, 8.8, 8);
+    const fieldLabels = new Map(component?.technicalSpecification?.fields.map((field) => [field.code, field.labelPt]) ?? []);
+    if (missing.length) writer.paragraph(`Campos oficiais obrigatórios ainda ausentes: ${missing.map((code) => fieldLabels.get(code) ?? reportLabel(code)).join(", ")}. Enquanto houver ausência, conflito ou ambiguidade, o componente permanece bloqueado para aquisição.`, 8.8, 8);
     const urls = [...new Set(component?.technicalSpecification?.fields.flatMap((field) => field.sourceEvidence.map((evidence) => evidence.url)) ?? reference.sourceUrls)];
     for (const [sourceIndex, url] of urls.entries()) writer.line(`${number}.1.F${sourceIndex + 1}. Fonte oficial: ${url}`, 8, false, 8);
   }
 }
 
-function addEvidenceAudit(writer: PdfWriter, design: RecommendationAlternative, machineIndex: number): void {
-  const bom = design.bom;
-  writer.heading(`${machineIndex}.A. Auditoria de compatibilidade, benchmarks e calibrações`);
-  if (!bom) {
-    writer.paragraph("Esta recomendação legada não possui uma BOM normalizada. A ausência fica registrada e impede que a opção seja liberada automaticamente para aquisição.");
-    return;
-  }
-  writer.paragraph(`Identificador da configuração: ${bom.id}. Classe: ${reportHardwareKind(bom.kind)}. Gate de aquisição: ${reportLabel(bom.procurementGate.status)}. ${evidenceCoverageSummary(design)}`, 9.2);
-  writer.subheading(`${machineIndex}.A.1. Lista de componentes da BOM`);
-  for (const [index, item] of bom.items.entries()) {
-    writer.line(`${machineIndex}.A.1.${index + 1}. ${COMPONENT_LABELS[item.kind] ?? reportLabel(item.kind)}: ${item.quantity} unidade(s) por nó; ${item.required ? "obrigatório" : "opcional"}; código interno auditável ${item.componentId}.`, 8.8);
-  }
-  writer.subheading(`${machineIndex}.A.2. Decisões de compatibilidade`);
-  for (const [index, decision] of bom.compatibility.entries()) {
-    writer.paragraph(`${machineIndex}.A.2.${index + 1}. ${decision.compatible ? "Compatível" : "Incompatível"}: ${reportWarning(decision.message)} (regra ${decision.code}).`, 8.8);
-  }
-  writer.subheading(`${machineIndex}.A.3. Cobertura por estágio do Perceptrum`);
-  for (const [index, stage] of bom.coverage.stages.entries()) {
-    const evidence = `${stage.eligibleObservationIds.length} benchmark(s) elegível(is) e ${stage.physicalAnchorRunIds.length} calibração(ões) física(s)`;
-    const reason = stage.reasons.length ? ` Motivo: ${stage.reasons.map(reportWarning).join(" ")}` : " Evidência suficiente para este estágio.";
-    writer.paragraph(`${machineIndex}.A.3.${index + 1}. ${reportLabel(stage.stage)}: ${stage.covered ? "coberto" : "bloqueado"}; ${evidence}.${reason}`, 8.8);
-  }
-  writer.subheading(`${machineIndex}.A.4. Avisos técnicos registrados`);
-  for (const [index, warning] of [...new Set(design.warnings)].entries()) {
-    writer.paragraph(`${machineIndex}.A.4.${index + 1}. ${reportWarning(warning)}`, 8.8);
-  }
-}
-
-function addCommercialAndNeutralOption(writer: PdfWriter, design: RecommendationAlternative, index: number, total: number, components: HardwareComponent[]): void {
+function addDetailedMachineSpecification(writer: PdfWriter, design: RecommendationAlternative, index: number, total: number, components: HardwareComponent[]): void {
   writer.newPage();
   writer.page.drawRectangle({ x: 0, y: 744, width: 595, height: 98, color: rgb(0.04, 0.09, 0.11) });
-  writer.page.drawText(pdfText(`MÁQUINA ${index} DE ${total} — REFERÊNCIA E REQUISITOS`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
+  writer.page.drawText(pdfText(`MÁQUINA ${index} DE ${total} - ESPECIFICAÇÕES OFICIAIS`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
   writer.page.drawText(pdfText(design.hardware.name), { x: 48, y: 774, size: 18, font: writer.bold, color: rgb(0.94, 0.97, 0.98) });
-  writer.page.drawText(pdfText(`${design.nodeCount} nó(s) — ${formatPrice(design)}`), { x: 48, y: 754, size: 9, font: writer.regular, color: rgb(0.65, 0.73, 0.76) });
+  writer.page.drawText(pdfText(`${design.nodeCount} nó(s) - ${formatPrice(design)}`), { x: 48, y: 754, size: 9, font: writer.regular, color: rgb(0.65, 0.73, 0.76) });
   writer.y = 720;
 
-  writer.heading(`${index}. Referência comercial interna`);
-  writer.paragraph("Esta seção identifica a configuração usada na análise interna. Ela preserva fabricante, modelo e código para pesquisa de preços, conferência de compatibilidade e auditoria, mas não deve ser copiada para o edital nem para o anexo técnico neutro.", 9.5);
+  writer.heading(`${index}. Configuração comercial e componentes`);
   const commercial = design.commercialReference;
   if (!commercial) writer.line("Referência comercial indisponível nesta recomendação legada.");
   else {
-    writer.line(`${commercial.hardwareName}; ${commercial.nodeCount} nó(s), ${commercial.activeNodeCount} ativo(s); plataforma ${reportOperatingSystem(commercial.operatingSystem)}; preço do projeto ${commercial.currency} ${formatMoney(commercial.projectPrice)} (${reportLabel(commercial.priceBasis)}).`, 10, true);
+    writer.line(`${commercial.hardwareName}; ${commercial.nodeCount} nó(s), ${commercial.activeNodeCount} ativo(s); plataforma ${reportOperatingSystem(commercial.operatingSystem)}; preço do projeto ${commercial.currency} ${formatMoney(commercial.projectPrice)} (${priceBasisPt(design)}).`, 10, true);
+    writer.paragraph(`CPU ${design.hardware.cpuModel}; memória RAM de ${design.hardware.ramGb} GB por nó; GPU ${design.hardware.gpuCount} × ${design.hardware.gpuModel}; ${gpuMemoryDescription(design.hardware)}; armazenamento operacional de ${design.hardware.usableStorageTb} TB úteis; rede de ${design.hardware.nicGbps} GbE.`, 9.5);
     addDetailedCommercialComponents(writer, design, components, index);
   }
-
-  addEvidenceAudit(writer, design, index);
-
-  writer.heading(`${index}.${(commercial?.components.length ?? 0) + 1}. Especificação técnica não comercial`);
-  const neutral = design.procurementNeutralSpecification;
-  if (!neutral) writer.line("Especificação neutra indisponível nesta recomendação legada.", 9.5, true);
-  else {
-    writer.line(`Estado: ${reportLabel(neutral.status).toUpperCase()}; gate técnico: ${reportLabel(neutral.procurementEligibility)}; concorrência: ${reportLabel(neutral.marketCompetitionAssessment.status)}.`, 10, true);
-    if (neutral.status === "blocked") writer.line("NÃO UTILIZAR COMO ESPECIFICAÇÃO DE AQUISIÇÃO. Evidências, completude ou concorrência ainda são insuficientes.", 10, true);
-    for (const item of neutral.requirements) {
-      const comparison = item.comparator === "minimum" ? "no mínimo"
-        : item.comparator === "maximum" ? "no máximo"
-          : item.comparator === "equals" ? "igual a"
-            : item.comparator === "supports" ? "deve suportar"
-              : item.comparator === "prohibited" ? "proibido" : "dentro do intervalo";
-      writer.line(`${componentRolePt(item.componentRole)} — ${ptBrText(item.characteristic)}: ${comparison} ${String(item.value)}${item.unit ? ` ${item.unit}` : ""}; quantidade ${item.quantityPerNode} por nó / ${item.projectQuantity} no projeto.`, 9.5, item.mandatory);
-      writer.paragraph(`Justificativa: ${ptBrText(item.rationale)} Comprovação: ${proofMethodPt(item.proofMethod)}. Critério de aceite: ${ptBrText(item.acceptanceCriterion)}`, 8.5, 10);
-    }
-    writer.heading("Competitividade e controle de direcionamento");
-    writer.paragraph(`Produtos no requisito limitante: ${neutral.marketCompetitionAssessment.matchingProductCount}; fabricantes distintos: ${neutral.marketCompetitionAssessment.distinctManufacturerCount}; publicação automática: ${neutral.marketCompetitionAssessment.safeForPublication ? "permitida" : "bloqueada ou sujeita a revisão"}.`);
-    for (const reason of neutral.marketCompetitionAssessment.reasons) writer.paragraph(ptBrText(reportWarning(reason)));
-    for (const finding of neutral.forbiddenIdentifierFindings) writer.line(`IDENTIFICADOR COMERCIAL DETECTADO: ${finding}.`);
-    for (const disclaimer of neutral.disclaimers) writer.paragraph(`Nota: ${ptBrText(disclaimer)}`);
-  }
+  writer.heading(`${index}.${(commercial?.components.length ?? 0) + 1}. Situação das evidências`);
+  writer.paragraph(evidenceCoverageSummary(design), 9.2);
+  writer.paragraph("As especificações oficiais acima descrevem características e compatibilidade, mas não substituem benchmarks comparáveis nem a calibração física completa do Perceptrum. Enquanto a cobertura permanecer incompleta, esta máquina continua como referência de planejamento e não está liberada para aquisição.", 9.2);
 }
 
 export async function pdfReport({ scenario, recommendations: input, components = [] }: ReportContext): Promise<Buffer> {
   const recommendations = orderedRecommendations(input);
   const narrative = buildExecutiveNarrative({ scenario, recommendations });
   const document = await PDFDocument.create();
+  document.setTitle(`Qual Hardware - ${PDF_REPORT_OUTLINE.title}`);
+  document.setSubject("Relatório comparativo restaurado, seguido de especificações técnicas oficiais por máquina e componente.");
+  document.setKeywords(["Qual Hardware", "Perceptrum", "recomendações", "especificações técnicas"]);
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
   const writer = createPdfWriter(document, regular, bold);
 
   writer.line("AIQUIMIST - QUAL HARDWARE", 12, true);
-  writer.line("Relatório comparativo de infraestrutura", 22, true);
+  writer.line(PDF_REPORT_OUTLINE.title, 22, true);
   writer.y -= 8;
   writer.line(`${scenario.scenario.projectName} - ${scenario.scenario.totalCameras} câmeras`, 13, true);
   writer.line(`Cliente: ${scenario.scenario.customerName || "não informado"}; mercado: ${scenario.scenario.market}; moeda: ${scenario.scenario.currency}.`);
   writer.line(`Revisão ${scenario.revision}; build ${scenario.scenario.perceptrumBuildHash}; contrato ${recommendations[0]!.contractVersion}.`);
   writer.y -= 10;
-  writer.heading(narrative.title);
+  writer.heading(PDF_REPORT_OUTLINE.executiveNarrative);
   for (const paragraph of narrative.paragraphs) {
     writer.paragraph(paragraph, 10);
+    writer.y -= 4;
   }
-  for (const caution of narrative.cautions) writer.line(`ATENÇÃO: ${caution}`, 9.5, true);
+  const commercialVerdicts = narrative.cautions.filter((caution) => caution.startsWith("VEREDITO COMERCIAL:"));
+  for (const caution of narrative.cautions.filter((item) => !commercialVerdicts.includes(item))) writer.line(`ATENÇÃO: ${caution}`, 9.5, true);
 
-  writer.heading("As três configurações sugeridas");
+  writer.heading(PDF_REPORT_OUTLINE.configurations);
   for (const recommendation of recommendations) {
     const design = recommendation.primary;
     writer.line(`${POLICY_LABELS[recommendation.policy]}: ${design.nodeCount} nó(s), ${design.activeNodeCount} ativo(s), ${design.hardware.name}, ${reportOperatingSystem(operatingSystemFor(design.hardware))}.`, 11, true);
     writer.paragraph(`CPU ${design.hardware.cpuModel}; memória RAM de ${design.hardware.ramGb} GB por nó (${reportLabel(design.hardware.memoryArchitecture)}); GPU ${design.hardware.gpuCount} × ${design.hardware.gpuModel}; ${gpuMemoryDescription(design.hardware)}; folga de ${design.headroomPercent}%; preço ${formatPrice(design)}.`, 9, 10);
   }
 
-  const qualified = qualifiedOptions(recommendations);
-  writer.heading("Máquinas aptas para aquisição em ordem crescente de custo");
-  if (!qualified.length) writer.line("Nenhuma máquina está apta para aquisição: faltam evidências numéricas e calibrações físicas completas para todos os estágios.", 9.5, true);
-  for (const [index, option] of qualified.entries()) {
-    writer.paragraph(`${index + 1}. ${option.hardware.name} — ${option.hardware.cpuModel} — ${option.hardware.gpuModel} — ${formatPrice(option)} — evidência ${reportLabel(option.calibration?.status ?? "estimada")}.`, 9.5);
-  }
-  writer.heading("Referências de planejamento bloqueadas para compra");
-  for (const [index, option] of planningOptions(recommendations).entries()) {
-    writer.paragraph(`${index + 1}. ${option.hardware.name} — ${option.hardware.cpuModel} — ${option.hardware.gpuModel} — ${formatPrice(option)} — ${reportLabel(option.calibration?.status ?? "reference_only")}; não adquirir sem completar as evidências.`, 9.5);
+  writer.newPage();
+  const reportOptions = detailedPdfOptions(recommendations);
+  writer.heading(PDF_REPORT_OUTLINE.qualifiedMachines);
+  for (const [index, option] of reportOptions.entries()) {
+    writer.line(`${index + 1}. ${option.hardware.name} - ${option.hardware.cpuModel} - ${option.hardware.gpuModel} - ${formatPrice(option)} - evidência ${reportLabel(option.calibration?.status ?? "estimada")}.`, 8.7);
   }
 
-  writer.heading("Carga de câmeras e Agents usada no cálculo");
+  writer.heading(PDF_REPORT_OUTLINE.workload);
   for (const group of scenario.scenario.cameraGroups) {
-    writer.line(`${group.count} câmera(s) — ${group.name}: ${group.source.codec.toUpperCase()} ${group.source.width}×${group.source.height}, ${group.source.sourceFps} FPS de leitura RTSP, ${group.source.bitrateMbps} Mbps, decodificação ${reportLabel(group.decodeMode)}.`, 9.5, true);
+    writer.line(`${group.count} câmera(s) — ${reportCameraGroupName(group.name)}: ${group.source.codec.toUpperCase()} ${group.source.width}×${group.source.height}, ${group.source.sourceFps} FPS de leitura RTSP, ${group.source.bitrateMbps} Mbps, decodificação por ${group.decodeMode.toUpperCase()}.`, 9.5, true);
     for (const agent of group.agents) {
       const media = agent.inputType === "video" ? `vídeo, ${agent.packaging}, ${Math.min(5, agent.modelFps)} FPS de inferência AiQ` : "imagem, um quadro por inferência";
-      writer.paragraph(`— ${agent.name}: modelo ${agent.model}; ${media}; execução a cada ${agent.runEverySeconds} segundos; somente com movimento: ${agent.features.onlyCaptureOnMotion ? "sim" : "não"}; regiões: ${agent.features.regions}; recorte: ${agent.features.croppedFrame ? "sim" : "não"}; faces de referência: ${agent.features.faceReferences}; referências negativas: ${agent.features.negativeReferences}; análise temporal: ${agent.features.temporal ? "sim" : "não"}.`, 9, 10);
+      writer.paragraph(`— ${reportAgentName(agent.name)}: modelo ${agent.model}; ${media}; execução a cada ${agent.runEverySeconds} segundos; somente com movimento: ${agent.features.onlyCaptureOnMotion ? "sim" : "não"}; regiões: ${agent.features.regions}; recorte: ${agent.features.croppedFrame ? "sim" : "não"}; faces de referência: ${agent.features.faceReferences}; referências negativas: ${agent.features.negativeReferences}; análise temporal: ${agent.features.temporal ? "sim" : "não"}.`, 9, 10);
     }
   }
 
   recommendations.forEach((recommendation, index) => addConfiguration(writer, recommendation, index + 1));
-  const reportOptions = detailedPdfOptions(recommendations);
+  const mainPageCount = document.getPageCount();
   writer.newPage();
-  writer.line("AIQUIMIST — QUAL HARDWARE", 11, true);
-  writer.line("Caderno técnico, especificações oficiais e auditoria", 20, true);
+  writer.line("AIQUIMIST - QUAL HARDWARE", 11, true);
+  writer.line(PDF_REPORT_OUTLINE.detailedSpecifications, 20, true);
   writer.y -= 8;
-  writer.paragraph(`Este caderno complementa o relatório comparativo sem substituir suas páginas originais. Ele detalha ${reportOptions.length} máquina(s) única(s), em ordem crescente de custo, com a referência comercial, as especificações oficiais conhecidas de cada componente, a cobertura de benchmarks e calibrações e a correspondente especificação técnica não comercial.`, 10);
-  writer.paragraph("Os identificadores comerciais aparecem somente na parte de auditoria interna. A seção técnica não comercial e o anexo neutro separado devem permanecer livres de marca, modelo e código de produto. Nenhuma opção bloqueada pode ser convertida em recomendação de compra apenas porque suas especificações de fabricante estão completas.", 10);
+  for (const verdict of commercialVerdicts) writer.line(verdict, 10, true);
+  writer.paragraph(`Esta segunda parte acrescenta, sem substituir ou reorganizar o relatório comparativo, as especificações oficiais conhecidas dos componentes das ${reportOptions.length} máquinas listadas. A ordem permanece crescente por custo e cada capítulo começa pelo mesmo resumo comercial apresentado na Parte I.`, 10);
+  writer.paragraph("As informações são vinculadas ao componente e à fonte oficial. Campo não publicado, ambíguo ou conflitante permanece declarado como ausente; nenhum valor é inventado. A completude de uma ficha técnica não substitui benchmark elegível nem calibração física do Perceptrum.", 10);
   writer.heading("Como ler a numeração");
-  writer.paragraph("A máquina 1 é o item 1. Seus componentes são numerados como 1.1, 1.2 e assim por diante. A especificação detalhada de cada componente aparece em 1.1.1, e os grupos e campos oficiais seguem em 1.1.1.1, 1.1.1.1.1 e sucessivos. O bloco 1.A registra compatibilidade, benchmarks, calibrações e motivos de bloqueio.", 9.5);
-  writer.heading("Aviso para Termos de Referência");
-  writer.paragraph("Este documento é apoio técnico. Ele não substitui Estudo Técnico Preliminar, pesquisa de preços, análise de competitividade, parecer jurídico nem aprovação da autoridade competente. A especificação neutra somente pode ser usada quando o próprio relatório indicar que as evidências e a concorrência são suficientes.", 9.5);
-  reportOptions.forEach((option, index) => addCommercialAndNeutralOption(writer, option, index + 1, reportOptions.length, components));
+  writer.paragraph("A máquina 1 é o item 1. Seus componentes são 1.1, 1.2 e sucessivos. A especificação detalhada do primeiro componente é 1.1.1; seus grupos e campos oficiais seguem como 1.1.1.1 e 1.1.1.1.1. A mesma regra se repete para todas as máquinas.", 9.5);
+  writer.heading("Uso em Termos de Referência");
+  writer.paragraph("Esta Parte II preserva a identificação comercial para pesquisa e auditoria. Para licitações, use o anexo técnico neutro separado, que remove marca, modelo, código e preço e permanece bloqueado quando faltam evidências ou concorrência. Todo documento exige revisão técnica e jurídica do órgão.", 9.5);
+  reportOptions.forEach((option, index) => addDetailedMachineSpecification(writer, option, index + 1, reportOptions.length, components));
 
   const pages = document.getPages();
+  const detailedPageCount = pages.length - mainPageCount;
   pages.forEach((reportPage, index) => reportPage.drawText(
-    pdfText(`Qual Hardware | página ${index + 1} de ${pages.length}`),
+    pdfText(index < mainPageCount
+      ? `Qual Hardware | página ${index + 1} de ${mainPageCount}`
+      : `Qual Hardware | especificações detalhadas | página ${index - mainPageCount + 1} de ${detailedPageCount}`),
     { x: 48, y: 24, size: 8, font: regular, color: rgb(0.35, 0.4, 0.45) },
   ));
   return Buffer.from(await document.save());
