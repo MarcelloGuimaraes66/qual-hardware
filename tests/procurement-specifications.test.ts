@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import { deriveComponentCatalog } from "../src/engine/componentCatalog.js";
-import { fieldDefinitionsForKind, specificationCoverage, withTechnicalSpecification } from "../src/engine/technicalSpecifications.js";
+import { componentTechnicalSpecificationFromObservations, fieldDefinitionsForKind, specificationCoverage, withTechnicalSpecification } from "../src/engine/technicalSpecifications.js";
 import { createDefaultScenario, componentTechnicalSpecificationSchema, procurementNeutralSpecificationSchema } from "../src/shared/schemas.js";
-import type { HardwareComponent, ScenarioRecord } from "../src/shared/types.js";
+import { MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION } from "../src/shared/types.js";
+import type { HardwareComponent, ManufacturerSpecificationObservation, ScenarioRecord } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
+import { extractManufacturerSpecificationObservations } from "../src/server/manufacturerSpecificationParsers.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
+import { BUNDLED_SOURCE_REGISTRY } from "../src/engine/sourceRegistry.js";
 
-describe("technical component specifications v8", () => {
+describe("technical component specifications v9", () => {
   it("normalizes every derived component without inventing missing manufacturer facts", () => {
     const components = deriveComponentCatalog(HARDWARE_CATALOG).components;
     expect(components.length).toBeGreaterThan(200);
-    expect(components.every((component) => component.technicalSpecification?.schemaVersion === "qual-hardware-component-technical-specification/1.0.0")).toBe(true);
+    expect(components.every((component) => component.technicalSpecification?.schemaVersion === "qual-hardware-component-technical-specification/2.0.0")).toBe(true);
     expect(components.every((component) => component.technicalSpecification!.fields.every((field) => field.value !== 0 || field.status !== "not_published"))).toBe(true);
     const coverage = specificationCoverage(components);
     expect(coverage.componentCount).toBe(components.length);
@@ -44,10 +47,71 @@ describe("technical component specifications v8", () => {
         licensePolicy: "Fixture metadata",
       }],
     };
-    const enriched = withTechnicalSpecification(component, "2026-07-21T00:00:00.000Z");
-    expect(enriched.technicalSpecification?.completeness.complete).toBe(true);
-    expect(enriched.technicalSpecification?.completeness.procurementReady).toBe(true);
-    expect(componentTechnicalSpecificationSchema.parse(enriched.technicalSpecification)).toBeTruthy();
+    const generatedAt = "2026-07-21T00:00:00.000Z";
+    const observations: ManufacturerSpecificationObservation[] = definitions.map((definition, index) => ({
+      schemaVersion: MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION,
+      id: `official-${definition.code}`,
+      componentId: component.id,
+      manufacturer: component.manufacturer,
+      canonicalMpn: component.canonicalMpn!,
+      scope: "sku",
+      subject: component.canonicalMpn!,
+      fieldCode: definition.code,
+      sectionCode: "fixture",
+      sectionLabelPt: "Especificações oficiais",
+      displayOrder: index,
+      valueType: definition.valueType,
+      originalLabel: definition.labelPt,
+      originalValue: specifications[definition.code]!,
+      originalUnit: definition.unit,
+      normalizedValue: specifications[definition.code]!,
+      normalizedUnit: definition.unit,
+      authority: "official_sku",
+      sourceId: "fixture-official",
+      sourceUrl: "https://manufacturer.example/specs/official-64",
+      retrievedAt: generatedAt,
+      evidenceLocator: `fixture:${definition.code}`,
+      rawArtifactSha256: "a".repeat(64),
+      parserId: "fixture-parser",
+      parserVersion: "1.0.0",
+      licensePolicy: "Fixture metadata",
+    }));
+    const specification = componentTechnicalSpecificationFromObservations(component, observations, generatedAt);
+    expect(specification.completeness.complete).toBe(true);
+    expect(specification.completeness.procurementReady).toBe(true);
+    expect(componentTechnicalSpecificationSchema.parse(specification)).toBeTruthy();
+  });
+
+  it("parses official Intel ARK rows deterministically at field level", () => {
+    const source = BUNDLED_SOURCE_REGISTRY.sources.find((item) => item.id === "spec-intel-ark")!;
+    const html = `<div class="row tech-section-row"><div class="col-6 tech-label"><span>Total Cores</span></div><div class="col-6 tech-data"><span>24</span></div></div>
+      <div class="row tech-section-row"><div class="col-6 tech-label"><span>Max Turbo Frequency</span></div><div class="col-6 tech-data"><span>5.70 GHz</span></div></div>
+      <div class="row tech-section-row"><div class="col-6 tech-label"><span>Max Memory Size (dependent on memory type)</span></div><div class="col-6 tech-data"><span>256 GB</span></div></div>`;
+    const observations = extractManufacturerSpecificationObservations(source, source.primaryUrl, "text/html", html, "2026-07-21T00:00:00.000Z");
+    expect(observations.map((item) => [item.payload.fieldCode, item.payload.normalizedValue])).toEqual([
+      ["physical_cores", 24], ["max_clock_ghz", 5.7], ["maximum_memory_gb", 256],
+    ]);
+  });
+
+  it("preserves same-authority disagreements as conflicts instead of choosing a value", () => {
+    const component = deriveComponentCatalog(HARDWARE_CATALOG).components.find((item) => item.canonicalMpn?.includes("285K"))!;
+    const base: ManufacturerSpecificationObservation = {
+      schemaVersion: MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION,
+      id: "memory-a", componentId: component.id, manufacturer: "Intel", canonicalMpn: "Intel Core Ultra 9 285K",
+      scope: "sku", subject: "Intel Core Ultra 9 285K", fieldCode: "maximum_memory_gb", sectionCode: "memory",
+      sectionLabelPt: "Memória", displayOrder: 1, valueType: "number", originalLabel: "Max Memory Size", originalValue: "256 GB",
+      originalUnit: null, normalizedValue: 256, normalizedUnit: "GB", authority: "official_sku", sourceId: "intel-page-a",
+      sourceUrl: "https://intel.example/a", retrievedAt: "2026-07-21T00:00:00.000Z", evidenceLocator: "table:a",
+      rawArtifactSha256: "a".repeat(64), parserId: "fixture", parserVersion: "1", licensePolicy: "fixture",
+    };
+    const specification = componentTechnicalSpecificationFromObservations(component, [base, {
+      ...base, id: "memory-b", sourceId: "intel-page-b", sourceUrl: "https://intel.example/b", normalizedValue: 192,
+      originalValue: "192 GB", rawArtifactSha256: "b".repeat(64),
+    }]);
+    const field = specification.fields.find((item) => item.code === "maximum_memory_gb")!;
+    expect(field.status).toBe("conflicting");
+    expect(field.value).toBeNull();
+    expect(specification.completeness.procurementReady).toBe(false);
   });
 
   it("rejects ambiguous numeric source text instead of concatenating separate values", () => {

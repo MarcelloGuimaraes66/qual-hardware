@@ -30,9 +30,9 @@ export const BUNDLED_SOURCE_REGISTRY: SourceRegistry = {
   schemaVersion: SOURCE_REGISTRY_VERSION,
   generatedAt: GENERATED_AT,
   sources: [
-    source("spec-intel-ark", "Intel", "https://www.intel.com/content/www/us/en/ark.html", "specification", "html_table", ["CPU", "NPU", "iGPU"]),
-    source("spec-amd-products", "AMD", "https://www.amd.com/en/products/specifications.html", "specification", "html_table", ["CPU", "GPU", "APU"], [], [], "unavailable"),
-    source("spec-nvidia-products", "NVIDIA", "https://www.nvidia.com/en-us/geforce/graphics-cards/", "specification", "json_ld", ["GPU", "VRAM", "NVDEC", "NVENC"]),
+    source("spec-intel-ark", "Intel", "https://www.intel.com/content/www/us/en/products/sku/241060/intel-core-ultra-9-processor-285k-36m-cache-up-to-5-70-ghz/specifications.html", "specification", "html_table", ["CPU", "NPU", "iGPU"]),
+    source("spec-amd-products", "AMD", "https://www.amd.com/en/products/processors/desktops/ryzen/9000-series/amd-ryzen-9-9950x.html", "specification", "html_table", ["CPU", "GPU", "APU"]),
+    source("spec-nvidia-products", "NVIDIA", "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/", "specification", "html_table", ["GPU", "VRAM", "NVDEC", "NVENC"]),
     source("spec-apple-mac", "Apple", "https://www.apple.com/mac/", "specification", "json_ld", ["Apple Silicon", "Mac"]),
     source("spec-samsung-memory-storage", "Samsung Semiconductor", "https://semiconductor.samsung.com/consumer-storage/", "specification", "sitemap", ["memory", "SSD", "NVMe"], [], [], "unavailable"),
     source("spec-micron", "Micron", "https://www.micron.com/products", "specification", "sitemap", ["memory", "SSD", "NVMe"], [], [], "unavailable"),

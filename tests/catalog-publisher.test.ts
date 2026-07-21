@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -319,7 +319,7 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     await expect(channel.refresh(new MemoryPlannerStore())).rejects.toThrow("official_catalog_url_rejected");
   });
 
-  it("migrates a v7 database additively to v8 and preserves existing rows", async () => {
+  it("migrates a v7 database additively to v9, creates a consistent backup and preserves existing rows", async () => {
     const directory = await testDirectory("qual-hardware-v7-current-");
     const path = join(directory, "qual-hardware.sqlite");
     const legacy = new DatabaseSync(path);
@@ -336,7 +336,14 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('benchmark_suites','benchmark_profiles','benchmark_systems','benchmark_runs','benchmark_metrics','capacity_prediction_stage_results')").get() as { total: number }).total).toBe(6);
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('component_identities','component_aliases','component_specification_versions','component_compatibility_rules','benchmark_artifacts','benchmark_observation_component_coverage','component_builds','component_build_items','component_build_decisions','evidence_coverage_reports','capacity_cross_validations')").get() as { total: number }).total).toBe(11);
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('technical_specification_field_definitions','manufacturer_specification_artifacts','component_technical_specification_versions','component_technical_specification_values','component_specification_completeness','procurement_specifications','procurement_requirements','procurement_market_matches')").get() as { total: number }).total).toBe(8);
+    expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('manufacturer_specification_observations','component_specification_resolutions','component_specification_conflicts','component_specification_inheritance','component_source_mappings','specification_parser_versions','component_report_sections')").get() as { total: number }).total).toBe(7);
     check.close();
+    const backups = await readdir(join(directory, "schema-backups"));
+    expect(backups).toHaveLength(1);
+    const backup = new DatabaseSync(join(directory, "schema-backups", backups[0]!));
+    expect((backup.prepare("SELECT value FROM legacy_evidence WHERE id='kept'").get() as { value: string }).value).toBe("yes");
+    expect((backup.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(7);
+    backup.close();
   });
 
   it("rolls back the entire activation when one quote violates referential integrity", async () => {

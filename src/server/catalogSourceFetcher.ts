@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { CalibrationStage, CatalogSource, SourceFetchRun, SourceObservation } from "../shared/types.js";
+import { extractManufacturerSpecificationObservations } from "./manufacturerSpecificationParsers.js";
 
 const MAX_SOURCE_BYTES = 5_000_000;
 const MAX_REDIRECTS = 3;
@@ -538,6 +539,7 @@ export async function collectCatalogSource(source: CatalogSource, fetchImpl: typ
     const observations = [
       ...extractStructuredObservations(source, response.url || url.toString(), contentType, text, retrievedAt),
       ...extractBenchmarkObservation(source, response.url || url.toString(), contentType, text, retrievedAt),
+      ...extractManufacturerSpecificationObservations(source, response.url || url.toString(), contentType, text, retrievedAt),
     ];
     const discoveryValues = [...new Set([
       ...source.discoveryUrls,
@@ -558,6 +560,7 @@ export async function collectCatalogSource(source: CatalogSource, fetchImpl: typ
         const discoveryAt = new Date().toISOString();
         observations.push(...extractStructuredObservations(source, discoveryResponse.url || discoveryUrl.toString(), discoveryType, discoveryText, discoveryAt));
         observations.push(...extractBenchmarkObservation(source, discoveryResponse.url || discoveryUrl.toString(), discoveryType, discoveryText, discoveryAt));
+        observations.push(...extractManufacturerSpecificationObservations(source, discoveryResponse.url || discoveryUrl.toString(), discoveryType, discoveryText, discoveryAt));
       } catch { run.rejectedCount += 1; }
     }
     if (source.category === "price") {

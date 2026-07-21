@@ -554,4 +554,99 @@ CREATE TABLE IF NOT EXISTS procurement_market_matches (
   PRIMARY KEY(specification_id, component_id)
 ) STRICT;
 
-PRAGMA user_version = 8;
+-- v9 keeps every v1-v8 table and adds immutable field-level manufacturer
+-- observations, explicit resolution/conflict state, inheritance and report order.
+CREATE TABLE IF NOT EXISTS manufacturer_specification_observations (
+  id TEXT PRIMARY KEY,
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  schema_version TEXT NOT NULL,
+  manufacturer TEXT NOT NULL,
+  canonical_mpn TEXT NOT NULL,
+  scope TEXT NOT NULL CHECK (scope IN ('sku','family','architecture','platform')),
+  subject TEXT NOT NULL,
+  field_code TEXT NOT NULL,
+  section_code TEXT NOT NULL,
+  section_label_pt TEXT NOT NULL,
+  display_order INTEGER NOT NULL CHECK (display_order >= 0),
+  value_type TEXT NOT NULL CHECK (value_type IN ('string','number','boolean')),
+  original_label TEXT NOT NULL,
+  original_value_json TEXT NOT NULL CHECK (json_valid(original_value_json)),
+  original_unit TEXT,
+  normalized_value_json TEXT NOT NULL CHECK (json_valid(normalized_value_json)),
+  normalized_unit TEXT,
+  authority TEXT NOT NULL CHECK (authority IN ('official_sku','official_family','official_matrix','secondary_reference')),
+  source_id TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  evidence_locator TEXT NOT NULL,
+  raw_artifact_sha256 TEXT NOT NULL CHECK (length(raw_artifact_sha256) = 64),
+  parser_id TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  license_policy TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS manufacturer_specification_observation_component_idx
+  ON manufacturer_specification_observations(component_id, field_code, retrieved_at DESC);
+
+CREATE TABLE IF NOT EXISTS component_specification_resolutions (
+  specification_id TEXT NOT NULL REFERENCES component_technical_specification_versions(id),
+  field_code TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('resolved','not_published','ambiguous','conflicting','rejected')),
+  selected_observation_id TEXT REFERENCES manufacturer_specification_observations(id),
+  observation_ids_json TEXT NOT NULL CHECK (json_valid(observation_ids_json)),
+  rationale TEXT NOT NULL,
+  resolved_at TEXT NOT NULL,
+  PRIMARY KEY(specification_id, field_code)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS component_specification_conflicts (
+  id TEXT PRIMARY KEY,
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  field_code TEXT NOT NULL,
+  observation_ids_json TEXT NOT NULL CHECK (json_valid(observation_ids_json)),
+  conflict_json TEXT NOT NULL CHECK (json_valid(conflict_json)),
+  detected_at TEXT NOT NULL,
+  resolved_at TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS component_specification_conflict_component_idx
+  ON component_specification_conflicts(component_id, field_code, detected_at DESC);
+
+CREATE TABLE IF NOT EXISTS component_specification_inheritance (
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  field_code TEXT NOT NULL,
+  source_observation_id TEXT NOT NULL REFERENCES manufacturer_specification_observations(id),
+  source_scope TEXT NOT NULL CHECK (source_scope IN ('family','architecture','platform')),
+  rule_id TEXT NOT NULL,
+  inherited_at TEXT NOT NULL,
+  PRIMARY KEY(component_id, field_code, source_observation_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS component_source_mappings (
+  component_id TEXT NOT NULL REFERENCES component_identities(id),
+  source_id TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  expected_subject TEXT NOT NULL,
+  expected_scope TEXT NOT NULL CHECK (expected_scope IN ('sku','family','architecture','platform')),
+  mapping_version TEXT NOT NULL,
+  verified_at TEXT NOT NULL,
+  PRIMARY KEY(component_id, source_id, source_url)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS specification_parser_versions (
+  parser_id TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  schema_hash TEXT NOT NULL CHECK (length(schema_hash) = 64),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(parser_id, parser_version)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS component_report_sections (
+  component_kind TEXT NOT NULL,
+  section_code TEXT NOT NULL,
+  section_label_pt TEXT NOT NULL,
+  display_order INTEGER NOT NULL CHECK (display_order >= 0),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(component_kind, section_code)
+) STRICT;
+
+PRAGMA user_version = 9;

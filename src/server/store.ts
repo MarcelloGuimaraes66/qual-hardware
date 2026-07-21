@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -338,6 +338,13 @@ export class SqlitePlannerStore implements PlannerStore {
       this.database.close();
       throw new Error(`SQLite schema version ${currentVersion} is newer than supported version ${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}.`);
     }
+    if (currentVersion > 0 && currentVersion < QUAL_HARDWARE_SQLITE_SCHEMA_VERSION) {
+      const backupDirectory = resolve(dirname(dedicatedPath), "schema-backups");
+      mkdirSync(backupDirectory, { recursive: true });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupPath = resolve(backupDirectory, `qual-hardware-pre-v${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}-${timestamp}.sqlite`);
+      this.database.exec(`VACUUM INTO '${backupPath.replaceAll("'", "''")}'`);
+    }
     const resourceRoot = process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
     this.database.exec(readFileSync(schemaPath ?? resolve(resourceRoot, "database", "sqlite-schema.sql"), "utf8"));
     this.seedBundledCatalog();
@@ -464,12 +471,48 @@ export class SqlitePlannerStore implements PlannerStore {
           JSON.stringify({ evidenceLocator: source.evidenceLocator, componentId: component.id, fieldCode: field.code }));
       }
     }
+    const insertObservation = this.database.prepare(
+      "INSERT INTO manufacturer_specification_observations(id,component_id,schema_version,manufacturer,canonical_mpn,scope,subject,field_code,section_code,section_label_pt,display_order,value_type,original_label,original_value_json,original_unit,normalized_value_json,normalized_unit,authority,source_id,source_url,retrieved_at,evidence_locator,raw_artifact_sha256,parser_id,parser_version,license_policy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+    );
+    const insertParser = this.database.prepare(
+      "INSERT INTO specification_parser_versions(parser_id,parser_version,source_id,schema_hash,created_at) VALUES(?,?,?,?,?) ON CONFLICT(parser_id,parser_version) DO NOTHING",
+    );
+    const insertMapping = this.database.prepare(
+      "INSERT INTO component_source_mappings(component_id,source_id,source_url,expected_subject,expected_scope,mapping_version,verified_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(component_id,source_id,source_url) DO UPDATE SET expected_subject=excluded.expected_subject,expected_scope=excluded.expected_scope,mapping_version=excluded.mapping_version,verified_at=excluded.verified_at",
+    );
+    for (const observation of technical.observations ?? []) {
+      insertObservation.run(
+        observation.id, observation.componentId, observation.schemaVersion, observation.manufacturer, observation.canonicalMpn,
+        observation.scope, observation.subject, observation.fieldCode, observation.sectionCode, observation.sectionLabelPt,
+        observation.displayOrder, observation.valueType, observation.originalLabel, JSON.stringify(observation.originalValue),
+        observation.originalUnit, JSON.stringify(observation.normalizedValue), observation.normalizedUnit, observation.authority,
+        observation.sourceId, observation.sourceUrl, observation.retrievedAt, observation.evidenceLocator,
+        observation.rawArtifactSha256, observation.parserId, observation.parserVersion, observation.licensePolicy,
+      );
+      const schemaHash = createHash("sha256").update(JSON.stringify({
+        parserId: observation.parserId, parserVersion: observation.parserVersion, sourceId: observation.sourceId,
+      })).digest("hex");
+      insertParser.run(observation.parserId, observation.parserVersion, observation.sourceId, schemaHash, importedAt);
+      insertMapping.run(component.id, observation.sourceId, observation.sourceUrl, observation.subject, observation.scope, observation.parserVersion, observation.retrievedAt);
+    }
     const specificationId = `technical:${component.id}:${technical.specificationVersion}:${technical.generatedAt}`;
     this.database.prepare(
       "INSERT INTO component_technical_specification_versions(id,component_id,schema_version,specification_version,specification_json,generated_at,imported_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET specification_json=excluded.specification_json,imported_at=excluded.imported_at",
     ).run(specificationId, component.id, technical.schemaVersion, technical.specificationVersion, JSON.stringify(technical), technical.generatedAt, importedAt);
     const insertValue = this.database.prepare(
       "INSERT INTO component_technical_specification_values(specification_id,field_code,status,value_type,text_value,numeric_value,boolean_value,unit,original_label,original_value_json,required,confidence,normalization_rule,evidence_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(specification_id,field_code) DO UPDATE SET status=excluded.status,value_type=excluded.value_type,text_value=excluded.text_value,numeric_value=excluded.numeric_value,boolean_value=excluded.boolean_value,unit=excluded.unit,original_label=excluded.original_label,original_value_json=excluded.original_value_json,required=excluded.required,confidence=excluded.confidence,normalization_rule=excluded.normalization_rule,evidence_json=excluded.evidence_json",
+    );
+    const insertResolution = this.database.prepare(
+      "INSERT INTO component_specification_resolutions(specification_id,field_code,status,selected_observation_id,observation_ids_json,rationale,resolved_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(specification_id,field_code) DO UPDATE SET status=excluded.status,selected_observation_id=excluded.selected_observation_id,observation_ids_json=excluded.observation_ids_json,rationale=excluded.rationale,resolved_at=excluded.resolved_at",
+    );
+    const insertConflict = this.database.prepare(
+      "INSERT INTO component_specification_conflicts(id,component_id,field_code,observation_ids_json,conflict_json,detected_at,resolved_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET conflict_json=excluded.conflict_json,resolved_at=excluded.resolved_at",
+    );
+    const insertInheritance = this.database.prepare(
+      "INSERT INTO component_specification_inheritance(component_id,field_code,source_observation_id,source_scope,rule_id,inherited_at) VALUES(?,?,?,?,?,?) ON CONFLICT(component_id,field_code,source_observation_id) DO NOTHING",
+    );
+    const insertReportSection = this.database.prepare(
+      "INSERT INTO component_report_sections(component_kind,section_code,section_label_pt,display_order,created_at) VALUES(?,?,?,?,?) ON CONFLICT(component_kind,section_code) DO UPDATE SET section_label_pt=excluded.section_label_pt,display_order=excluded.display_order",
     );
     for (const field of technical.fields) {
       insertValue.run(specificationId, field.code, field.status, field.valueType,
@@ -478,6 +521,20 @@ export class SqlitePlannerStore implements PlannerStore {
         typeof field.value === "boolean" ? (field.value ? 1 : 0) : null,
         field.unit, field.originalLabel, JSON.stringify(field.originalValue), field.required ? 1 : 0,
         field.confidence, field.normalizationRule, JSON.stringify(field.sourceEvidence));
+      if (field.sectionCode && field.sectionLabelPt) insertReportSection.run(component.kind, field.sectionCode, field.sectionLabelPt, field.displayOrder ?? 100_000, importedAt);
+      if (field.resolution) {
+        insertResolution.run(specificationId, field.code, field.resolution.status, field.resolution.selectedObservationId,
+          JSON.stringify(field.resolution.observationIds), field.resolution.rationale, field.resolution.resolvedAt);
+        if (field.resolution.status === "conflicting") {
+          const conflictId = `conflict:${component.id}:${field.code}:${createHash("sha256").update(field.resolution.observationIds.join("|")).digest("hex").slice(0, 16)}`;
+          insertConflict.run(conflictId, component.id, field.code, JSON.stringify(field.resolution.observationIds),
+            JSON.stringify({ rationale: field.resolution.rationale, specificationId }), field.resolution.resolvedAt, null);
+        }
+        const selected = (technical.observations ?? []).find((observation) => observation.id === field.resolution?.selectedObservationId);
+        if (selected && selected.scope !== "sku") {
+          insertInheritance.run(component.id, field.code, selected.id, selected.scope, `scope-precedence:${selected.authority}`, field.resolution.resolvedAt);
+        }
+      }
     }
     this.database.prepare(
       "INSERT INTO component_specification_completeness(specification_id,component_id,required_field_count,published_required_field_count,completeness_percent,procurement_ready,completeness_json,assessed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(specification_id) DO UPDATE SET required_field_count=excluded.required_field_count,published_required_field_count=excluded.published_required_field_count,completeness_percent=excluded.completeness_percent,procurement_ready=excluded.procurement_ready,completeness_json=excluded.completeness_json,assessed_at=excluded.assessed_at",

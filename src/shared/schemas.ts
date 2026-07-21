@@ -5,8 +5,10 @@ import {
   CALIBRATION_PLAN_VERSION,
   COMPONENT_TECHNICAL_SPECIFICATION_VERSION,
   EVIDENCE_CATALOG_VERSION,
+  LEGACY_COMPONENT_TECHNICAL_SPECIFICATION_VERSION,
   LEGACY_LOCAL_CALIBRATION_VERSION,
   LOCAL_CALIBRATION_VERSION,
+  MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION,
   PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION,
   TELEMETRY_LOCAL_CALIBRATION_VERSION,
   WORKLOAD_CONTRACT_VERSION,
@@ -424,8 +426,50 @@ export const componentSpecificationEvidenceSchema = z.object({
   licensePolicy: z.string().min(1).max(500),
 });
 
+const specificationScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+export const manufacturerSpecificationObservationSchema = z.object({
+  schemaVersion: z.literal(MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION),
+  id: z.string().min(1).max(500),
+  componentId: z.string().min(1).max(240),
+  manufacturer: z.string().min(1).max(160),
+  canonicalMpn: z.string().min(1).max(240),
+  scope: z.enum(["sku", "family", "architecture", "platform"]),
+  subject: z.string().min(1).max(240),
+  fieldCode: z.string().regex(/^[a-z][a-z0-9_.-]{1,119}$/),
+  sectionCode: z.string().regex(/^[a-z][a-z0-9_.-]{1,119}$/),
+  sectionLabelPt: z.string().min(1).max(240),
+  displayOrder: z.number().int().nonnegative().max(100_000),
+  valueType: z.enum(["string", "number", "boolean"]),
+  originalLabel: z.string().min(1).max(240),
+  originalValue: specificationScalarSchema,
+  originalUnit: z.string().min(1).max(80).nullable(),
+  normalizedValue: specificationScalarSchema,
+  normalizedUnit: z.string().min(1).max(80).nullable(),
+  authority: z.enum(["official_sku", "official_family", "official_matrix", "secondary_reference"]),
+  sourceId: z.string().min(1).max(160),
+  sourceUrl: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+  retrievedAt: z.iso.datetime(),
+  evidenceLocator: z.string().min(1).max(1_000),
+  rawArtifactSha256: z.string().regex(/^[0-9a-f]{64}$/i),
+  parserId: z.string().min(1).max(160),
+  parserVersion: z.string().min(1).max(80),
+  licensePolicy: z.string().min(1).max(500),
+});
+
+const technicalSpecificationResolutionSchema = z.object({
+  status: z.enum(["resolved", "not_published", "ambiguous", "conflicting", "rejected"]),
+  selectedObservationId: z.string().min(1).max(500).nullable(),
+  observationIds: z.array(z.string().min(1).max(500)).max(100),
+  rationale: z.string().min(1).max(1_000),
+  resolvedAt: z.iso.datetime(),
+});
+
 export const componentTechnicalSpecificationSchema = z.object({
-  schemaVersion: z.literal(COMPONENT_TECHNICAL_SPECIFICATION_VERSION),
+  schemaVersion: z.union([
+    z.literal(COMPONENT_TECHNICAL_SPECIFICATION_VERSION),
+    z.literal(LEGACY_COMPONENT_TECHNICAL_SPECIFICATION_VERSION),
+  ]),
   componentId: z.string().min(1).max(240),
   specificationVersion: z.string().min(1).max(120),
   generatedAt: z.iso.datetime(),
@@ -443,6 +487,10 @@ export const componentTechnicalSpecificationSchema = z.object({
     sourceEvidence: z.array(componentSpecificationEvidenceSchema).max(30),
     confidence: z.enum(["official", "derived_legacy", "unverified"]),
     normalizationRule: z.string().max(500).nullable(),
+    sectionCode: z.string().regex(/^[a-z][a-z0-9_.-]{1,119}$/).optional(),
+    sectionLabelPt: z.string().min(1).max(240).optional(),
+    displayOrder: z.number().int().nonnegative().max(100_000).optional(),
+    resolution: technicalSpecificationResolutionSchema.optional(),
   })).max(500),
   completeness: z.object({
     requiredFieldCount: z.number().int().nonnegative(),
@@ -454,6 +502,7 @@ export const componentTechnicalSpecificationSchema = z.object({
     procurementReady: z.boolean(),
     reasons: z.array(z.string().max(500)).max(500),
   }),
+  observations: z.array(manufacturerSpecificationObservationSchema).max(20_000).optional(),
 });
 
 export const hardwareComponentSchema = z.object({

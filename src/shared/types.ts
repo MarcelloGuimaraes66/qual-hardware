@@ -12,15 +12,19 @@ export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0"
 export const CALIBRATION_HANDOFF_VERSION = "qual-hardware-calibration-handoff/1.0.0" as const;
 export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
 export const BENCHMARK_SUITE_VERSION = "qual-hardware-benchmark-suite/1.0.0" as const;
-export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/2.0.0" as const;
-export const COMPONENT_TECHNICAL_SPECIFICATION_VERSION = "qual-hardware-component-technical-specification/1.0.0" as const;
+export const LEGACY_COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/2.0.0" as const;
+export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/3.0.0" as const;
+export const LEGACY_COMPONENT_TECHNICAL_SPECIFICATION_VERSION = "qual-hardware-component-technical-specification/1.0.0" as const;
+export const COMPONENT_TECHNICAL_SPECIFICATION_VERSION = "qual-hardware-component-technical-specification/2.0.0" as const;
+export const MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION = "qual-hardware-manufacturer-specification-observation/1.0.0" as const;
+export const DETAILED_COMMERCIAL_REPORT_VERSION = "qual-hardware-detailed-commercial-report/1.0.0" as const;
 export const PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION = "qual-hardware-procurement-neutral-specification/1.0.0" as const;
 export const TR_TECHNICAL_ANNEX_VERSION = "qual-hardware-tr-technical-annex/1.0.0" as const;
 export const BENCHMARK_OBSERVATION_VERSION = "qual-hardware-benchmark-observation/2.0.0" as const;
 export const COMPONENT_BUILD_VERSION = "qual-hardware-component-build/1.0.0" as const;
 export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/4.0.0" as const;
 export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/3.0.0" as const;
-export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/5.0.0" as const;
+export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/6.0.0" as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
 export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
 
@@ -855,6 +859,47 @@ export interface ComponentSpecificationEvidence {
   licensePolicy: string;
 }
 
+export type ManufacturerSpecificationScope = "sku" | "family" | "architecture" | "platform";
+export type ManufacturerSpecificationAuthority = "official_sku" | "official_family" | "official_matrix" | "secondary_reference";
+export type SpecificationResolutionStatus = "resolved" | "not_published" | "ambiguous" | "conflicting" | "rejected";
+
+export interface ManufacturerSpecificationObservation {
+  schemaVersion: typeof MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION;
+  id: string;
+  componentId: string;
+  manufacturer: string;
+  canonicalMpn: string;
+  scope: ManufacturerSpecificationScope;
+  subject: string;
+  fieldCode: string;
+  sectionCode: string;
+  sectionLabelPt: string;
+  displayOrder: number;
+  valueType: TechnicalSpecificationValueType;
+  originalLabel: string;
+  originalValue: string | number | boolean | null;
+  originalUnit: string | null;
+  normalizedValue: string | number | boolean | null;
+  normalizedUnit: string | null;
+  authority: ManufacturerSpecificationAuthority;
+  sourceId: string;
+  sourceUrl: string;
+  retrievedAt: string;
+  evidenceLocator: string;
+  rawArtifactSha256: string;
+  parserId: string;
+  parserVersion: string;
+  licensePolicy: string;
+}
+
+export interface TechnicalSpecificationResolution {
+  status: SpecificationResolutionStatus;
+  selectedObservationId: string | null;
+  observationIds: string[];
+  rationale: string;
+  resolvedAt: string;
+}
+
 export type TechnicalSpecificationFieldStatus =
   | "published"
   | "not_published"
@@ -879,6 +924,10 @@ export interface TechnicalSpecificationField {
   sourceEvidence: ComponentSpecificationEvidence[];
   confidence: "official" | "derived_legacy" | "unverified";
   normalizationRule: string | null;
+  sectionCode?: string;
+  sectionLabelPt?: string;
+  displayOrder?: number;
+  resolution?: TechnicalSpecificationResolution;
 }
 
 export interface ComponentSpecificationCompleteness {
@@ -893,12 +942,13 @@ export interface ComponentSpecificationCompleteness {
 }
 
 export interface ComponentTechnicalSpecification {
-  schemaVersion: typeof COMPONENT_TECHNICAL_SPECIFICATION_VERSION;
+  schemaVersion: typeof COMPONENT_TECHNICAL_SPECIFICATION_VERSION | typeof LEGACY_COMPONENT_TECHNICAL_SPECIFICATION_VERSION;
   componentId: string;
   specificationVersion: string;
   generatedAt: string;
   fields: TechnicalSpecificationField[];
   completeness: ComponentSpecificationCompleteness;
+  observations?: ManufacturerSpecificationObservation[];
 }
 
 export interface ComponentCompatibility {

@@ -52,7 +52,7 @@ describe("Qual Hardware API and reports", () => {
     expect(json.headers.get("content-type")).toContain("application/json");
     expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-relatorio-comercial-e-neutro.json"');
     const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[]; executiveNarrative: { paragraphs: string[]; cautions: string[] }; qualifiedOptions: unknown[]; planningOptions: unknown[]; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string; requirements: unknown[] } }> };
-    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/5.0.0");
+    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/6.0.0");
     expect(jsonReport.recommendations.map((item) => item.policy)).toEqual(["minimum", "recommended", "n_plus_one"]);
     expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("FPS de leitura RTSP");
     expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("AiQ/Qwen local");

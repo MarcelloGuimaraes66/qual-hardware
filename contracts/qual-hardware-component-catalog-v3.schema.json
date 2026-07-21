@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/contracts/qual-hardware-component-catalog-v3.schema.json",
+  "title": "Qual Hardware component catalog 3.0",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "components"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-component-catalog/3.0.0" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "manufacturer", "canonicalMpn", "specifications", "sourceUrls"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "manufacturer": { "type": "string", "minLength": 1 },
+          "canonicalMpn": { "type": "string", "minLength": 1 },
+          "specifications": { "type": "object" },
+          "technicalSpecification": { "$ref": "qual-hardware-component-technical-specification-v2.schema.json" },
+          "sourceUrls": { "type": "array", "items": { "type": "string", "format": "uri" } }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

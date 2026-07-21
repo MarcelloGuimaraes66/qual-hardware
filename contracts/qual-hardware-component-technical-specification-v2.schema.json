@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/contracts/qual-hardware-component-technical-specification-v2.schema.json",
+  "title": "Especificação técnica normalizada do componente 2.0",
+  "type": "object",
+  "required": ["schemaVersion", "componentId", "specificationVersion", "generatedAt", "fields", "completeness", "observations"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-component-technical-specification/2.0.0" },
+    "componentId": { "type": "string", "minLength": 1 },
+    "specificationVersion": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "labelPt", "valueType", "value", "unit", "originalLabel", "originalValue", "status", "required", "roles", "sourceEvidence", "confidence", "normalizationRule", "sectionCode", "sectionLabelPt", "displayOrder", "resolution"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]+$" },
+          "labelPt": { "type": "string", "minLength": 1 },
+          "valueType": { "enum": ["string", "number", "boolean"] },
+          "value": { "type": ["string", "number", "boolean", "null"] },
+          "unit": { "type": ["string", "null"] },
+          "originalLabel": { "type": ["string", "null"] },
+          "originalValue": { "type": ["string", "number", "boolean", "null"] },
+          "status": { "enum": ["published", "not_published", "not_applicable", "ambiguous", "conflicting", "rejected"] },
+          "required": { "type": "boolean" },
+          "roles": { "type": "array", "items": { "enum": ["compatibility", "dimensioning", "procurement", "informational"] }, "minItems": 1 },
+          "sourceEvidence": { "type": "array", "items": { "type": "object" } },
+          "confidence": { "enum": ["official", "derived_legacy", "unverified"] },
+          "normalizationRule": { "type": ["string", "null"] },
+          "sectionCode": { "type": "string" },
+          "sectionLabelPt": { "type": "string" },
+          "displayOrder": { "type": "integer", "minimum": 0 },
+          "resolution": {
+            "type": "object",
+            "required": ["status", "selectedObservationId", "observationIds", "rationale", "resolvedAt"],
+            "properties": {
+              "status": { "enum": ["resolved", "not_published", "ambiguous", "conflicting", "rejected"] },
+              "selectedObservationId": { "type": ["string", "null"] },
+              "observationIds": { "type": "array", "items": { "type": "string" } },
+              "rationale": { "type": "string" },
+              "resolvedAt": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "completeness": { "type": "object" },
+    "observations": {
+      "type": "array",
+      "items": { "$ref": "qual-hardware-manufacturer-specification-observation-v1.schema.json" }
+    }
+  },
+  "additionalProperties": false
+}

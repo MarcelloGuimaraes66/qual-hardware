@@ -5,15 +5,15 @@ import { HARDWARE_CATALOG, SEED_PRICE_QUOTES } from "../src/engine/catalog.js";
 import { BUNDLED_SOURCE_REGISTRY } from "../src/engine/sourceRegistry.js";
 import { sourceRegistrySchema, catalogBundleSchema, signedCatalogBundleSchema } from "../src/shared/catalogSchemas.js";
 import { OFFICIAL_CATALOG_CHANNEL, QWEN_CATALOG_MODEL_SHA256, QWEN_CATALOG_PROMPT_VERSION } from "../src/shared/catalogChannel.js";
-import type { CalibrationStage, CatalogBundle, CatalogSource, HardwareComponent, HardwareNodeTemplate, PriceQuote, PublicBenchmarkObservation, SignedCatalogBundle, SourceObservation } from "../src/shared/types.js";
+import type { CalibrationStage, CatalogBundle, CatalogSource, HardwareComponent, HardwareNodeTemplate, ManufacturerSpecificationObservation, PriceQuote, PublicBenchmarkObservation, SignedCatalogBundle, SourceObservation } from "../src/shared/types.js";
 import { collectCatalogSource, type SourceCollectionResult } from "../src/server/catalogSourceFetcher.js";
 import { buildCatalogBundle, isPublicationDue, rejectUnconfirmedPriceOutliers, sha256, signCatalogBundle, verifyCatalogBundle } from "../src/server/catalogPublication.js";
 import { classifyCatalogCandidate, createLlamaCppServerRunner, QWEN_CATALOG_METADATA, type QwenCatalogMetadata } from "../src/server/qwenCatalog.js";
 import { discoverBestQwenTextModel, discoverLlamaCppServer } from "../src/server/qwenModelSelection.js";
 import { canonicalComponentId, deriveComponentCatalog } from "../src/engine/componentCatalog.js";
 import { componentStages, isPublicObservationEligible } from "../src/engine/evidence.js";
-import { specificationCoverage, withTechnicalSpecification } from "../src/engine/technicalSpecifications.js";
-import { BENCHMARK_OBSERVATION_VERSION } from "../src/shared/types.js";
+import { componentTechnicalSpecificationFromObservations, specificationCoverage, withTechnicalSpecification } from "../src/engine/technicalSpecifications.js";
+import { BENCHMARK_OBSERVATION_VERSION, MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION } from "../src/shared/types.js";
 
 interface CollectionArtifact {
   schemaVersion: "qual-hardware-catalog-collection/1.0.0";
@@ -131,6 +131,7 @@ function firstOffer(value: unknown): Record<string, unknown> | null {
 }
 
 function observedComponentIdentity(observation: SourceObservation): { id: string; manufacturer: string; sku: string; kind: HardwareComponent["kind"] } | null {
+  if (observation.payload.kind === "manufacturer_specification_field") return null;
   const offer = firstOffer(observation.payload.offers);
   const sku = normalized(observation.payload.mpn) ?? normalized(observation.payload.sku) ?? normalized(offer?.sku);
   const manufacturer = brandName(observation.payload.brand) ?? brandName(observation.payload.manufacturer) ?? BUNDLED_SOURCE_REGISTRY.sources.find((source) => source.id === observation.sourceId)?.organization ?? null;
@@ -146,6 +147,45 @@ function observedComponentIdentity(observation: SourceObservation): { id: string
                 : /chassis|case|gabinete/.test(name) ? "chassis" : "oem_system";
   const id = `observed:${observation.sourceId}:${sku}`.toLowerCase().replace(/[^a-z0-9:]+/g, "-");
   return { id, manufacturer, sku, kind };
+}
+
+function manufacturerSpecificationObservation(observation: SourceObservation): ManufacturerSpecificationObservation | null {
+  const payload = observation.payload;
+  if (payload.kind !== "manufacturer_specification_field") return null;
+  const requiredStrings = ["componentId", "manufacturer", "canonicalMpn", "scope", "subject", "authority", "fieldCode", "sectionCode", "sectionLabelPt", "valueType", "originalLabel", "parserId", "parserVersion", "licensePolicy"] as const;
+  if (requiredStrings.some((key) => typeof payload[key] !== "string" || !String(payload[key]).trim())) return null;
+  if (!Number.isInteger(payload.displayOrder)) return null;
+  if (!(["string", "number", "boolean"] as const).includes(payload.valueType as "string" | "number" | "boolean")) return null;
+  if (!(["sku", "family", "architecture", "platform"] as const).includes(payload.scope as "sku" | "family" | "architecture" | "platform")) return null;
+  if (!(["official_sku", "official_family", "official_matrix", "secondary_reference"] as const).includes(payload.authority as "official_sku" | "official_family" | "official_matrix" | "secondary_reference")) return null;
+  return {
+    schemaVersion: MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION,
+    id: observation.id,
+    componentId: String(payload.componentId),
+    manufacturer: String(payload.manufacturer),
+    canonicalMpn: String(payload.canonicalMpn),
+    scope: payload.scope as ManufacturerSpecificationObservation["scope"],
+    subject: String(payload.subject),
+    fieldCode: String(payload.fieldCode),
+    sectionCode: String(payload.sectionCode),
+    sectionLabelPt: String(payload.sectionLabelPt),
+    displayOrder: Number(payload.displayOrder),
+    valueType: payload.valueType as ManufacturerSpecificationObservation["valueType"],
+    originalLabel: String(payload.originalLabel),
+    originalValue: (payload.originalValue ?? null) as ManufacturerSpecificationObservation["originalValue"],
+    originalUnit: typeof payload.originalUnit === "string" ? payload.originalUnit : null,
+    normalizedValue: (payload.normalizedValue ?? null) as ManufacturerSpecificationObservation["normalizedValue"],
+    normalizedUnit: typeof payload.normalizedUnit === "string" ? payload.normalizedUnit : null,
+    authority: payload.authority as ManufacturerSpecificationObservation["authority"],
+    sourceId: observation.sourceId,
+    sourceUrl: observation.url,
+    retrievedAt: observation.retrievedAt,
+    evidenceLocator: observation.evidenceLocator,
+    rawArtifactSha256: observation.contentHash,
+    parserId: String(payload.parserId),
+    parserVersion: String(payload.parserVersion),
+    licensePolicy: String(payload.licensePolicy),
+  };
 }
 
 function componentsFromHardware(observations: SourceObservation[]): HardwareComponent[] {
@@ -187,6 +227,21 @@ function componentsFromHardware(observations: SourceObservation[]): HardwareComp
       discoveredAt: observation.retrievedAt, updatedAt: observation.retrievedAt,
     };
     components.set(identity.id, withTechnicalSpecification(candidate, observation.retrievedAt));
+  }
+  const specificationObservations = observations
+    .map(manufacturerSpecificationObservation)
+    .filter((item): item is ManufacturerSpecificationObservation => Boolean(item));
+  const generatedAt = specificationObservations.map((item) => item.retrievedAt).sort().at(-1) ?? new Date().toISOString();
+  for (const [id, component] of components) {
+    const relevant = specificationObservations.filter((item) => item.componentId === id);
+    if (!relevant.length) continue;
+    components.set(id, {
+      ...component,
+      specificationVersion: `manufacturer-observations-${generatedAt}`,
+      updatedAt: generatedAt,
+      sourceUrls: [...new Set([...component.sourceUrls, ...relevant.map((item) => item.sourceUrl)])],
+      technicalSpecification: componentTechnicalSpecificationFromObservations(component, relevant, generatedAt),
+    });
   }
   return [...components.values()];
 }
