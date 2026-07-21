@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { createDefaultScenario } from "../src/shared/schemas.js";
 import type { CapacityPrediction, CapacityRecommendation, HardwareNodeTemplate, LocalCalibrationRun, ScenarioRecord } from "../src/shared/types.js";
 
@@ -227,7 +228,12 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
     "/contracts/perceptrum-workload-v3.json",
     "/contracts/qual-hardware-source-registry-v1.schema.json",
     "/contracts/qual-hardware-catalog-bundle-v1.schema.json",
+    "/contracts/qual-hardware-component-catalog-v2.schema.json",
+    "/contracts/qual-hardware-component-technical-specification-v1.schema.json",
+    "/contracts/qual-hardware-procurement-neutral-specification-v1.schema.json",
+    "/contracts/qual-hardware-tr-technical-annex-v1.schema.json",
     "/database/sqlite-schema.sql",
+    "/node_modules/docx/dist/index.mjs",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
   for (const forbidden of [
     "/dist/server/server/index.js",
@@ -328,6 +334,14 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   assert.equal(hardware.filter((item) => item.operatingSystemFamily === "macos").length, 5);
   assert.ok(hardware.some((item) => item.id === "apple-macbook-pro-m4max-14c-32gpu-36gb"));
   assert(hardware.some((item) => item.id === "laptop-vivobook-s16-285h-32gb-user"));
+  const components = await api<Array<{ id: string; technicalSpecification?: { schemaVersion: string; completeness: { procurementReady: boolean } } }>>(application.origin, "/api/catalog/components");
+  assert(components.length > 200);
+  assert(components.every((item) => item.technicalSpecification?.schemaVersion === "qual-hardware-component-technical-specification/1.0.0"));
+  const specificationCoverage = await api<{ componentCount: number; procurementReadyCount: number }>(application.origin, "/api/catalog/specifications/coverage");
+  assert.equal(specificationCoverage.componentCount, components.length);
+  assert.equal(specificationCoverage.procurementReadyCount, 0, "legacy facts must not be promoted to official manufacturer specifications");
+  const specificationHistory = await api<unknown[]>(application.origin, `/api/catalog/components/${encodeURIComponent(components[0]!.id)}/specifications/history`);
+  assert(specificationHistory.length >= 1);
   const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();
   assert(html.includes("Qual Hardware"));
   assert(html.includes("Content-Security-Policy"));
@@ -355,8 +369,30 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
-    if (format === "json") assert.equal(JSON.parse(new TextDecoder().decode(bytes)).schemaVersion, "capacity-recommendation-export/4.0.0");
+    if (format === "json") {
+      const report = JSON.parse(new TextDecoder().decode(bytes)) as { schemaVersion: string; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string } }> };
+      assert.equal(report.schemaVersion, "capacity-recommendation-export/5.0.0");
+      assert(report.commercialAndNeutralOptions.length >= 6);
+      assert(report.commercialAndNeutralOptions.every((item) => item.commercialReference && item.procurementNeutralSpecification.status === "blocked"));
+    }
   }
+  for (const format of ["tr-json", "tr-pdf", "tr-docx"] as const) {
+    const response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(30_000) });
+    assert(response.ok, `${format} report returned ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (format === "tr-pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
+    if (format === "tr-docx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
+    if (format === "tr-json") {
+      const annex = JSON.parse(new TextDecoder().decode(bytes)) as { schemaVersion: string; specifications: Array<{ status: string; requirements: Array<{ matchingComponentIds: string[] }>; marketCompetitionAssessment: { matchingComponentIds: string[]; manufacturerNames: string[] } }> };
+      assert.equal(annex.schemaVersion, "qual-hardware-tr-technical-annex/1.0.0");
+      assert(annex.specifications.length >= 6);
+      assert(annex.specifications.every((item) => item.status === "blocked" && item.requirements.every((requirement) => requirement.matchingComponentIds.length === 0)));
+      assert(annex.specifications.every((item) => item.marketCompetitionAssessment.matchingComponentIds.length === 0 && item.marketCompetitionAssessment.manufacturerNames.length === 0));
+      assert(!/\b(?:intel|nvidia|asus|dell|lenovo|supermicro)\b/i.test(new TextDecoder().decode(bytes)), "neutral annex contains a commercial identifier");
+    }
+  }
+  const competition = await api<{ options: Array<{ neutralSpecificationStatus: string; assessment: { status: string } | null }> }>(application.origin, `/api/recommendations/${recommendation.id}/procurement-competition`);
+  assert(competition.options.every((option) => option.neutralSpecificationStatus === "blocked" && option.assessment?.status === "no_coverage"));
 
   const macScenario = createDefaultScenario(4);
   macScenario.projectName = "Packaged Apple Silicon smoke test";
@@ -410,8 +446,13 @@ async function main(): Promise<void> {
     await stopDesktop(running);
     running = null;
 
-    const database = await readFile(join(userData, "qual-hardware.sqlite"));
+    const databasePath = join(userData, "qual-hardware.sqlite");
+    const database = await readFile(databasePath);
     assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
+    const sqlite = new DatabaseSync(databasePath, { readOnly: true });
+    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 8);
+    assert((sqlite.prepare("SELECT count(*) AS total FROM component_technical_specification_versions").get() as { total: number }).total > 200);
+    sqlite.close();
     console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}`);
   } finally {
     if (running) await stopDesktop(running);

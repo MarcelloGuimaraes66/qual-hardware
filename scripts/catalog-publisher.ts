@@ -12,6 +12,7 @@ import { classifyCatalogCandidate, createLlamaCppServerRunner, QWEN_CATALOG_META
 import { discoverBestQwenTextModel, discoverLlamaCppServer } from "../src/server/qwenModelSelection.js";
 import { canonicalComponentId, deriveComponentCatalog } from "../src/engine/componentCatalog.js";
 import { componentStages, isPublicObservationEligible } from "../src/engine/evidence.js";
+import { specificationCoverage, withTechnicalSpecification } from "../src/engine/technicalSpecifications.js";
 import { BENCHMARK_OBSERVATION_VERSION } from "../src/shared/types.js";
 
 interface CollectionArtifact {
@@ -152,13 +153,40 @@ function componentsFromHardware(observations: SourceObservation[]): HardwareComp
   for (const observation of observations) {
     const identity = observedComponentIdentity(observation);
     if (!identity) continue;
-    components.set(identity.id, {
+    const source = BUNDLED_SOURCE_REGISTRY.sources.find((item) => item.id === observation.sourceId);
+    const authoritative = source?.category === "specification" || source?.category === "oem";
+    const specifications: HardwareComponent["specifications"] = {};
+    const ignored = new Set(["@context", "@type", "brand", "manufacturer", "offers", "url", "image", "description", "sku", "mpn", "gtin", "gtin13"]);
+    for (const [label, value] of Object.entries(observation.payload)) {
+      if (ignored.has(label) || value === null || !["string", "number", "boolean"].includes(typeof value)) continue;
+      specifications[label] = value as string | number | boolean;
+    }
+    const additional = observation.payload.additionalProperty;
+    if (Array.isArray(additional)) {
+      for (const property of additional) {
+        if (!property || typeof property !== "object") continue;
+        const record = property as Record<string, unknown>;
+        const label = normalized(record.name) ?? normalized(record.propertyID);
+        const value = record.value;
+        if (label && value !== null && ["string", "number", "boolean"].includes(typeof value)) specifications[label] = value as string | number | boolean;
+      }
+    }
+    const candidate: HardwareComponent = {
       id: identity.id, kind: identity.kind, manufacturer: identity.manufacturer, sku: identity.sku,
-      canonicalMpn: identity.sku, aliases: [identity.sku], architecture: "reference_only",
-      marketState: "reference_only", inventoryState: "discovered_inventory", specificationVersion: "observed-v1",
-      specifications: { name: normalized(observation.payload.name), evidenceLocator: observation.evidenceLocator }, sourceUrls: [observation.url],
+      canonicalMpn: identity.sku, aliases: [identity.sku], architecture: normalized(observation.payload.architecture) ?? "not_published",
+      marketState: "reference_only", inventoryState: "discovered_inventory", specificationVersion: `official-observation-${observation.contentHash.slice(0, 12)}`,
+      specifications: { ...specifications, name: normalized(observation.payload.name), evidenceLocator: observation.evidenceLocator }, sourceUrls: [observation.url],
+      evidence: authoritative ? [{
+        sourceId: observation.sourceId,
+        url: observation.url,
+        retrievedAt: observation.retrievedAt,
+        evidenceLocator: observation.evidenceLocator,
+        rawArtifactSha256: observation.contentHash,
+        licensePolicy: "Normalized public manufacturer facts with attribution; source document is not redistributed unless its license permits it.",
+      }] : undefined,
       discoveredAt: observation.retrievedAt, updatedAt: observation.retrievedAt,
-    });
+    };
+    components.set(identity.id, withTechnicalSpecification(candidate, observation.retrievedAt));
   }
   return [...components.values()];
 }
@@ -357,6 +385,9 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
   const newlyQualifiedWithoutEvidence = components.filter((component) => component.inventoryState === "qualified_recommendation_universe" &&
     !benchmarks.some((benchmark) => (benchmark.componentId === component.id || benchmark.componentIds?.includes(component.id)) && isPublicObservationEligible(benchmark)));
   if (newlyQualifiedWithoutEvidence.length) throw new Error(`publication_unproven_component_qualification_gate:${newlyQualifiedWithoutEvidence.map((item) => item.id).join(",")}`);
+  const newlyQualifiedWithoutSpecifications = components.filter((component) => component.inventoryState === "qualified_recommendation_universe" &&
+    !component.technicalSpecification?.completeness.procurementReady);
+  if (newlyQualifiedWithoutSpecifications.length) throw new Error(`publication_incomplete_component_specification_gate:${newlyQualifiedWithoutSpecifications.map((item) => item.id).join(",")}`);
   if (previousBundle) {
     const previousEligible = previousBundle.benchmarks.filter(isPublicObservationEligible);
     const currentEligible = benchmarks.filter(isPublicObservationEligible);
@@ -367,6 +398,9 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
       const previousUnit = previousMetricUnits.get(key);
       if (previousUnit && previousUnit !== observation.unit) throw new Error(`publication_benchmark_unit_drift:${key}:${previousUnit}:${observation.unit}`);
     }
+    const previousSpecificationReady = previousBundle.components.filter((component) => component.technicalSpecification?.completeness.procurementReady).length;
+    const currentSpecificationReady = components.filter((component) => component.technicalSpecification?.completeness.procurementReady).length;
+    if (currentSpecificationReady < previousSpecificationReady) throw new Error("publication_component_specification_coverage_regression");
   }
   const priceGate = rejectUnconfirmedPriceOutliers(priceQuotesFromObservations(collection.observations, collection.collectedAt));
   const prices = priceGate.accepted;
@@ -394,6 +428,7 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
     summary: { added, updated, unchanged, rejected: priceGate.rejected.length, checkedWithoutChanges: added === 0 && updated === 0 },
   });
   const failed = collection.results.filter((result) => result.run.status === "failed");
+  const technicalSpecificationCoverage = specificationCoverage(components, payload.generatedAt);
   const report = {
     schemaVersion: "qual-hardware-publication-report/1.0.0", publicationId: payload.publicationId,
     sequence: payload.sequence, generatedAt: payload.generatedAt, checkedSources: collection.results.length,
@@ -402,6 +437,7 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
     failedSources: failed.map((result) => ({ sourceId: result.source.id, error: result.run.error })),
     observations: collection.observations.length,
     componentInventory: { discovered: components.length, qualified: components.filter((item) => item.inventoryState === "qualified_recommendation_universe").length },
+    technicalSpecificationCoverage,
     benchmarkCoverage: { total: benchmarks.length, eligible: benchmarks.filter(isPublicObservationEligible).length, referenceOnly: benchmarks.filter((item) => !isPublicObservationEligible(item)).length, orphans: orphanBenchmarks.length },
     qwenUsed: qwen.used, qwen: {
       metadata: qwen.metadata ?? QWEN_CATALOG_METADATA,

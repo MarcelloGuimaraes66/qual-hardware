@@ -10,6 +10,7 @@ import type {
 } from "../shared/types.js";
 import { COMPONENT_BUILD_VERSION } from "../shared/types.js";
 import { buildEvidenceCoverage, buildProcurementGate } from "./evidence.js";
+import { withTechnicalSpecification } from "./technicalSpecifications.js";
 
 function slug(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -42,7 +43,7 @@ function component(
   compatibility: HardwareComponent["compatibility"] = {},
 ): HardwareComponent {
   const sourceUrls = [...new Set(template.sources.map((source) => source.url))];
-  return {
+  const derived: HardwareComponent = {
     id: canonicalComponentId(kind, manufacturer, mpn),
     kind,
     manufacturer,
@@ -58,6 +59,7 @@ function component(
     compatibility,
     sourceUrls,
   };
+  return withTechnicalSpecification(derived, template.sources[0]?.observedAt ?? "2026-07-19T00:00:00.000Z");
 }
 
 export interface CatalogDerivation {

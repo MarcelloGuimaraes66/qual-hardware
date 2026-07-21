@@ -1,9 +1,9 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import { BUNDLED_SOURCE_REGISTRY } from "../src/engine/sourceRegistry.js";
 import { collectCatalogSource, robotsAllows } from "../src/server/catalogSourceFetcher.js";
@@ -18,6 +18,17 @@ const source = (): CatalogSource => ({
   ...BUNDLED_SOURCE_REGISTRY.sources[0]!, id: "test-source", primaryUrl: "https://vendor.example/products",
   allowedHosts: ["vendor.example"], allowedRedirectHosts: ["vendor.example"], parser: "json_ld", robotsRequired: true,
 });
+
+const cleanupDirectories: string[] = [];
+afterEach(async () => {
+  await Promise.all(cleanupDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
+
+async function testDirectory(prefix: string): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), prefix));
+  cleanupDirectories.push(directory);
+  return directory;
+}
 
 const quote = (id: string, seller: string, amount: number, observedAt = "2026-07-18T12:00:00.000Z"): PriceQuote => ({
   id, hardwareTemplateId: HARDWARE_CATALOG[0]!.id, mpn: "EXACT-MPN", seller, market: "BR", currency: "BRL",
@@ -308,11 +319,11 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     await expect(channel.refresh(new MemoryPlannerStore())).rejects.toThrow("official_catalog_url_rejected");
   });
 
-  it("migrates a v6 database additively to v7 and preserves existing rows", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-v6-current-"));
+  it("migrates a v7 database additively to v8 and preserves existing rows", async () => {
+    const directory = await testDirectory("qual-hardware-v7-current-");
     const path = join(directory, "qual-hardware.sqlite");
     const legacy = new DatabaseSync(path);
-    legacy.exec("CREATE TABLE legacy_evidence(id TEXT PRIMARY KEY, value TEXT) STRICT; INSERT INTO legacy_evidence VALUES('kept','yes'); PRAGMA user_version=6;");
+    legacy.exec("CREATE TABLE legacy_evidence(id TEXT PRIMARY KEY, value TEXT) STRICT; INSERT INTO legacy_evidence VALUES('kept','yes'); PRAGMA user_version=7;");
     legacy.close();
     const store = new SqlitePlannerStore(path);
     const publications = await store.listCatalogPublications();
@@ -324,11 +335,12 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(QUAL_HARDWARE_SQLITE_SCHEMA_VERSION);
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('benchmark_suites','benchmark_profiles','benchmark_systems','benchmark_runs','benchmark_metrics','capacity_prediction_stage_results')").get() as { total: number }).total).toBe(6);
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('component_identities','component_aliases','component_specification_versions','component_compatibility_rules','benchmark_artifacts','benchmark_observation_component_coverage','component_builds','component_build_items','component_build_decisions','evidence_coverage_reports','capacity_cross_validations')").get() as { total: number }).total).toBe(11);
+    expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('technical_specification_field_definitions','manufacturer_specification_artifacts','component_technical_specification_versions','component_technical_specification_values','component_specification_completeness','procurement_specifications','procurement_requirements','procurement_market_matches')").get() as { total: number }).total).toBe(8);
     check.close();
   });
 
   it("rolls back the entire activation when one quote violates referential integrity", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-atomic-"));
+    const directory = await testDirectory("qual-hardware-atomic-");
     const store = new SqlitePlannerStore(join(directory, "qual-hardware.sqlite"));
     const keys = generateKeyPairSync("ed25519");
     const payload = bundle(1, null, new Date("2026-07-18T12:00:00.000Z"));
@@ -341,7 +353,7 @@ describe("signed bundle, chain and additive SQLite migration", () => {
   });
 
   it("persists component quotations separately without exposing them as a system total", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-component-price-"));
+    const directory = await testDirectory("qual-hardware-component-price-");
     const store = new SqlitePlannerStore(join(directory, "qual-hardware.sqlite"));
     const keys = generateKeyPairSync("ed25519");
     const payload = bundle(1, null, new Date("2026-07-18T12:00:00.000Z"));
@@ -357,7 +369,7 @@ describe("signed bundle, chain and additive SQLite migration", () => {
   });
 
   it("keeps the official publication, components and benchmarks active after reopening", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-reopen-publication-"));
+    const directory = await testDirectory("qual-hardware-reopen-publication-");
     const path = join(directory, "qual-hardware.sqlite");
     const keys = generateKeyPairSync("ed25519");
     const payload = bundle(1, null, new Date("2026-07-18T12:00:00.000Z"));

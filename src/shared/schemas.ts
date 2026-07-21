@@ -3,9 +3,11 @@ import type { CapacityScenario } from "./types.js";
 import {
   CALIBRATION_HANDOFF_VERSION,
   CALIBRATION_PLAN_VERSION,
+  COMPONENT_TECHNICAL_SPECIFICATION_VERSION,
   EVIDENCE_CATALOG_VERSION,
   LEGACY_LOCAL_CALIBRATION_VERSION,
   LOCAL_CALIBRATION_VERSION,
+  PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION,
   TELEMETRY_LOCAL_CALIBRATION_VERSION,
   WORKLOAD_CONTRACT_VERSION,
 } from "./types.js";
@@ -408,12 +410,55 @@ export const calibrationSessionRequestSchema = z.object({
   advancedTelemetry: z.boolean().default(false),
 });
 
+export const hardwareComponentKindSchema = z.enum([
+  "cpu", "gpu", "motherboard", "memory_kit", "storage_os", "storage_retention", "nic", "psu", "cooling",
+  "chassis", "oem_system", "rack_configuration", "memory", "storage", "network", "system",
+]);
+
+export const componentSpecificationEvidenceSchema = z.object({
+  sourceId: z.string().min(1).max(160),
+  url: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+  retrievedAt: z.iso.datetime(),
+  evidenceLocator: z.string().min(1).max(1_000),
+  rawArtifactSha256: z.string().regex(/^[0-9a-f]{64}$/i),
+  licensePolicy: z.string().min(1).max(500),
+});
+
+export const componentTechnicalSpecificationSchema = z.object({
+  schemaVersion: z.literal(COMPONENT_TECHNICAL_SPECIFICATION_VERSION),
+  componentId: z.string().min(1).max(240),
+  specificationVersion: z.string().min(1).max(120),
+  generatedAt: z.iso.datetime(),
+  fields: z.array(z.object({
+    code: z.string().regex(/^[a-z][a-z0-9_.-]{1,119}$/),
+    labelPt: z.string().min(1).max(240),
+    valueType: z.enum(["string", "number", "boolean"]),
+    value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    unit: z.string().min(1).max(60).nullable(),
+    originalLabel: z.string().min(1).max(240).nullable(),
+    originalValue: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    status: z.enum(["published", "not_published", "not_applicable", "ambiguous", "conflicting", "rejected"]),
+    required: z.boolean(),
+    roles: z.array(z.enum(["compatibility", "dimensioning", "procurement", "informational"])).min(1).max(4),
+    sourceEvidence: z.array(componentSpecificationEvidenceSchema).max(30),
+    confidence: z.enum(["official", "derived_legacy", "unverified"]),
+    normalizationRule: z.string().max(500).nullable(),
+  })).max(500),
+  completeness: z.object({
+    requiredFieldCount: z.number().int().nonnegative(),
+    publishedRequiredFieldCount: z.number().int().nonnegative(),
+    missingRequiredFieldCodes: z.array(z.string()).max(500),
+    conflictingFieldCodes: z.array(z.string()).max(500),
+    percent: z.number().min(0).max(100),
+    complete: z.boolean(),
+    procurementReady: z.boolean(),
+    reasons: z.array(z.string().max(500)).max(500),
+  }),
+});
+
 export const hardwareComponentSchema = z.object({
   id: z.string().min(1).max(240),
-  kind: z.enum([
-    "cpu", "gpu", "motherboard", "memory_kit", "storage_os", "storage_retention", "nic", "psu", "cooling",
-    "chassis", "oem_system", "rack_configuration", "memory", "storage", "network", "system",
-  ]),
+  kind: hardwareComponentKindSchema,
   manufacturer: z.string().min(1).max(160),
   sku: z.string().min(1).max(240),
   architecture: z.string().min(1).max(160),
@@ -450,16 +495,57 @@ export const hardwareComponentSchema = z.object({
       "chassis", "oem_system", "rack_configuration", "memory", "storage", "network", "system",
     ])).max(30).optional(),
   }).optional(),
-  evidence: z.array(z.object({
-    sourceId: z.string().min(1).max(160),
-    url: z.string().url().refine((value) => new URL(value).protocol === "https:"),
-    retrievedAt: z.iso.datetime(),
-    evidenceLocator: z.string().min(1).max(1_000),
-    rawArtifactSha256: z.string().regex(/^[0-9a-f]{64}$/i),
-    licensePolicy: z.string().min(1).max(500),
-  })).max(100).optional(),
+  evidence: z.array(componentSpecificationEvidenceSchema).max(100).optional(),
+  technicalSpecification: componentTechnicalSpecificationSchema.optional(),
   discoveredAt: z.iso.datetime().optional(),
   updatedAt: z.iso.datetime().optional(),
+});
+
+const componentBuildRoleSchema = z.enum([
+  "compute", "acceleration", "platform", "memory", "operating_storage", "retention_storage", "network", "power", "cooling", "chassis", "oem_system",
+]);
+
+export const marketCompetitionAssessmentSchema = z.object({
+  status: z.enum(["adequate", "limited", "restricted", "no_coverage"]),
+  matchingProductCount: z.number().int().nonnegative(),
+  distinctManufacturerCount: z.number().int().nonnegative(),
+  matchingComponentIds: z.array(z.string().min(1).max(240)).max(100_000),
+  manufacturerNames: z.array(z.string().min(1).max(160)).max(10_000),
+  safeForPublication: z.boolean(),
+  reasons: z.array(z.string().min(1).max(500)).max(100),
+});
+
+export const procurementNeutralSpecificationSchema = z.object({
+  schemaVersion: z.literal(PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION),
+  id: z.string().min(1).max(280),
+  recommendationAlternativeId: z.string().min(1).max(240),
+  generatedAt: z.iso.datetime(),
+  nodeCount: z.number().int().positive(),
+  activeNodeCount: z.number().int().positive(),
+  status: z.enum(["apt", "review_required", "blocked"]),
+  procurementEligibility: z.enum(["eligible", "planning_only", "blocked"]),
+  requirements: z.array(z.object({
+    id: z.string().min(1).max(280),
+    componentKind: hardwareComponentKindSchema,
+    componentRole: componentBuildRoleSchema,
+    characteristicCode: z.string().regex(/^[a-z][a-z0-9_.-]{1,119}$/),
+    characteristic: z.string().min(1).max(240),
+    comparator: z.enum(["minimum", "maximum", "range", "equals", "supports", "prohibited"]),
+    value: z.union([z.string(), z.number(), z.boolean()]),
+    maximumValue: z.number().optional(),
+    unit: z.string().min(1).max(60).nullable(),
+    mandatory: z.boolean(),
+    rationale: z.string().min(1).max(1_000),
+    proofMethod: z.enum(["official_datasheet", "independent_benchmark", "technical_proposal", "sample_or_poc"]),
+    acceptanceCriterion: z.string().min(1).max(1_000),
+    sourceStage: z.union([calibrationStageSchema, z.enum(["compatibility", "capacity", "lifecycle"])]),
+    quantityPerNode: z.number().int().positive(),
+    projectQuantity: z.number().int().positive(),
+    matchingComponentIds: z.array(z.string().min(1).max(240)).max(100_000),
+  })).max(1_000),
+  marketCompetitionAssessment: marketCompetitionAssessmentSchema,
+  forbiddenIdentifierFindings: z.array(z.string().min(1).max(500)).max(1_000),
+  disclaimers: z.array(z.string().min(1).max(1_000)).max(100),
 });
 
 export const publicBenchmarkObservationSchema = z.object({

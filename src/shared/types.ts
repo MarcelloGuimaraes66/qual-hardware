@@ -12,12 +12,15 @@ export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0"
 export const CALIBRATION_HANDOFF_VERSION = "qual-hardware-calibration-handoff/1.0.0" as const;
 export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
 export const BENCHMARK_SUITE_VERSION = "qual-hardware-benchmark-suite/1.0.0" as const;
-export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/1.0.0" as const;
+export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/2.0.0" as const;
+export const COMPONENT_TECHNICAL_SPECIFICATION_VERSION = "qual-hardware-component-technical-specification/1.0.0" as const;
+export const PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION = "qual-hardware-procurement-neutral-specification/1.0.0" as const;
+export const TR_TECHNICAL_ANNEX_VERSION = "qual-hardware-tr-technical-annex/1.0.0" as const;
 export const BENCHMARK_OBSERVATION_VERSION = "qual-hardware-benchmark-observation/2.0.0" as const;
 export const COMPONENT_BUILD_VERSION = "qual-hardware-component-build/1.0.0" as const;
 export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/4.0.0" as const;
 export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/3.0.0" as const;
-export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/4.0.0" as const;
+export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/5.0.0" as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
 export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
 
@@ -488,6 +491,10 @@ export interface RecommendationAlternative {
   stagePredictions?: StagePrediction[];
   coverage?: EvidenceCoverageSummary;
   procurementGate?: ProcurementGate;
+  /** Additive v5 reporting and procurement fields. */
+  commercialReference?: CommercialRecommendationReference;
+  procurementNeutralSpecification?: ProcurementNeutralSpecification;
+  marketCompetitionAssessment?: MarketCompetitionAssessment;
 }
 
 export interface CapacityRecommendation {
@@ -848,6 +855,52 @@ export interface ComponentSpecificationEvidence {
   licensePolicy: string;
 }
 
+export type TechnicalSpecificationFieldStatus =
+  | "published"
+  | "not_published"
+  | "not_applicable"
+  | "ambiguous"
+  | "conflicting"
+  | "rejected";
+export type TechnicalSpecificationValueType = "string" | "number" | "boolean";
+export type TechnicalSpecificationRole = "compatibility" | "dimensioning" | "procurement" | "informational";
+
+export interface TechnicalSpecificationField {
+  code: string;
+  labelPt: string;
+  valueType: TechnicalSpecificationValueType;
+  value: string | number | boolean | null;
+  unit: string | null;
+  originalLabel: string | null;
+  originalValue: string | number | boolean | null;
+  status: TechnicalSpecificationFieldStatus;
+  required: boolean;
+  roles: TechnicalSpecificationRole[];
+  sourceEvidence: ComponentSpecificationEvidence[];
+  confidence: "official" | "derived_legacy" | "unverified";
+  normalizationRule: string | null;
+}
+
+export interface ComponentSpecificationCompleteness {
+  requiredFieldCount: number;
+  publishedRequiredFieldCount: number;
+  missingRequiredFieldCodes: string[];
+  conflictingFieldCodes: string[];
+  percent: number;
+  complete: boolean;
+  procurementReady: boolean;
+  reasons: string[];
+}
+
+export interface ComponentTechnicalSpecification {
+  schemaVersion: typeof COMPONENT_TECHNICAL_SPECIFICATION_VERSION;
+  componentId: string;
+  specificationVersion: string;
+  generatedAt: string;
+  fields: TechnicalSpecificationField[];
+  completeness: ComponentSpecificationCompleteness;
+}
+
 export interface ComponentCompatibility {
   socket?: string | null;
   chipsets?: string[];
@@ -887,15 +940,98 @@ export interface HardwareComponent {
   specificationVersion?: string;
   compatibility?: ComponentCompatibility;
   evidence?: ComponentSpecificationEvidence[];
+  /** Additive v8 normalized specification. Legacy components may omit it. */
+  technicalSpecification?: ComponentTechnicalSpecification;
   discoveredAt?: string;
   updatedAt?: string;
 }
 
 export interface ComponentCatalog {
-  schemaVersion: typeof COMPONENT_CATALOG_VERSION;
+  schemaVersion: typeof COMPONENT_CATALOG_VERSION | "qual-hardware-component-catalog/1.0.0";
   catalogVersion: string;
   generatedAt: string;
   components: HardwareComponent[];
+}
+
+export type NeutralRequirementComparator = "minimum" | "maximum" | "range" | "equals" | "supports" | "prohibited";
+
+export interface CommercialComponentReference {
+  componentId: string;
+  kind: HardwareComponentKind;
+  role: ComponentBuildItem["role"];
+  quantityPerNode: number;
+  manufacturer: string;
+  model: string;
+  canonicalMpn: string;
+  specificationCompletenessPercent: number;
+  sourceUrls: string[];
+}
+
+export interface CommercialRecommendationReference {
+  hardwareTemplateId: string;
+  hardwareName: string;
+  nodeCount: number;
+  activeNodeCount: number;
+  operatingSystem: OperatingSystemFamily;
+  currency: Currency;
+  projectPrice: number | null;
+  priceBasis: PriceSummary["basis"];
+  components: CommercialComponentReference[];
+}
+
+export interface NeutralProcurementRequirement {
+  id: string;
+  componentKind: HardwareComponentKind;
+  componentRole: ComponentBuildItem["role"];
+  characteristicCode: string;
+  characteristic: string;
+  comparator: NeutralRequirementComparator;
+  value: string | number | boolean;
+  maximumValue?: number;
+  unit: string | null;
+  mandatory: boolean;
+  rationale: string;
+  proofMethod: "official_datasheet" | "independent_benchmark" | "technical_proposal" | "sample_or_poc";
+  acceptanceCriterion: string;
+  sourceStage: CalibrationStage | "compatibility" | "capacity" | "lifecycle";
+  quantityPerNode: number;
+  projectQuantity: number;
+  matchingComponentIds: string[];
+}
+
+export interface MarketCompetitionAssessment {
+  status: "adequate" | "limited" | "restricted" | "no_coverage";
+  matchingProductCount: number;
+  distinctManufacturerCount: number;
+  matchingComponentIds: string[];
+  manufacturerNames: string[];
+  safeForPublication: boolean;
+  reasons: string[];
+}
+
+export interface ProcurementNeutralSpecification {
+  schemaVersion: typeof PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION;
+  id: string;
+  recommendationAlternativeId: string;
+  generatedAt: string;
+  nodeCount: number;
+  activeNodeCount: number;
+  status: "apt" | "review_required" | "blocked";
+  procurementEligibility: ProcurementEligibility;
+  requirements: NeutralProcurementRequirement[];
+  marketCompetitionAssessment: MarketCompetitionAssessment;
+  forbiddenIdentifierFindings: string[];
+  disclaimers: string[];
+}
+
+export interface TrTechnicalAnnex {
+  schemaVersion: typeof TR_TECHNICAL_ANNEX_VERSION;
+  generatedAt: string;
+  scenarioId: string;
+  projectName: string;
+  totalCameras: number;
+  specifications: ProcurementNeutralSpecification[];
+  legalNotice: string;
 }
 
 export interface ComponentBuildItem {

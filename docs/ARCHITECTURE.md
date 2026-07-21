@@ -19,6 +19,8 @@
 8. Persistent data exists only in the local file `qual-hardware.sqlite`. Any other database filename is rejected before use; no Perceptrum database is opened or modified.
 9. Public catalog releases are append-only, signed with Ed25519 and linked by sequence and previous-bundle SHA-256. A failed or malicious publication never replaces the active snapshot.
 10. Store discovery and Qwen classification run only in the central publisher. No project, camera, credential, calibration or other user datum leaves the desktop.
+11. Manufacturer specifications and independent benchmarks are different evidence classes: a datasheet may prove compatibility or a procurement requirement, but never substitutes sustained performance evidence.
+12. The separated neutral annex cannot contain manufacturer, brand, model, MPN, SKU, seller, price, URL or product-revealing internal code. A blocked recommendation remains blocked in every export.
 
 ## Blast radius and change budget
 
@@ -46,7 +48,8 @@
 6. Qual Hardware creates an expiring authenticated session and opens `perceptrum://calibration/run`. Perceptrum downloads one exact plan over loopback, uses synthetic RTSP plus the real local AiQ/Qwen/Intelligence pipeline, saves `.qhcal.json` append-only in Documents and returns aggregate evidence and progress. Manual plan/result files remain recovery paths.
 7. Signed public stage observations scale physical anchors by a per-stage rule of three; the most conservative anchor and bottleneck win, followed by 20/30/40% margins and leave-one-out error checks.
 8. GitHub Actions checks the approved source registry every 15 days, validates structured observations, signs one immutable catalog bundle and publishes it as a `catalog-*` Release plus an append-only `catalog-data` history.
-9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically. SQLite v7 preserves all v1-v6 data and adds canonical component identities, aliases, versioned specifications, compatibility rules, BOMs, benchmark artifacts, coverage reports and cross-validations.
+9. At startup and every 24 hours, all three desktop packages inspect that same public channel with ETag, verify every bundle checksum/signature/sequence link, then activate hardware, components, benchmarks, prices and sources atomically. SQLite v8 preserves all v1-v7 data and adds normalized manufacturer fields, artifact hashes, specification history, completeness, neutral requirements and market-competition evidence.
+10. Every option is exported twice in the combined report: an internal commercial reference followed by a workload-derived neutral specification. The separated DOCX/PDF/JSON annex removes all commercial identifiers and is blocked when the benchmark gate, component-completeness gate or competition gate fails.
 
 ## Security model
 

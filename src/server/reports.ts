@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 import ExcelJS from "exceljs";
 import type {
   CapacityRecommendation,
+  HardwareComponent,
   HardwareNodeTemplate,
   OperatingSystemFamily,
   RecommendationAlternative,
@@ -9,10 +10,12 @@ import type {
   ScenarioRecord,
 } from "../shared/types.js";
 import { CAPACITY_RECOMMENDATION_EXPORT_VERSION } from "../shared/types.js";
+import { procurementReportOptions, uniqueRecommendationOptions } from "../engine/procurementSpecifications.js";
 
 export interface ReportContext {
   scenario: ScenarioRecord;
   recommendations: CapacityRecommendation[];
+  components?: HardwareComponent[];
 }
 
 const POLICY_ORDER: RecommendationPolicy[] = ["minimum", "recommended", "n_plus_one"];
@@ -109,6 +112,7 @@ function planningOptions(recommendations: CapacityRecommendation[]): Recommendat
 
 export function jsonReport(context: ReportContext): Buffer {
   const recommendations = orderedRecommendations(context.recommendations);
+  const commercialAndNeutralOptions = procurementReportOptions(recommendations);
   return Buffer.from(JSON.stringify({
     schemaVersion: CAPACITY_RECOMMENDATION_EXPORT_VERSION,
     generatedAt: new Date().toISOString(),
@@ -116,6 +120,7 @@ export function jsonReport(context: ReportContext): Buffer {
     executiveNarrative: buildExecutiveNarrative(context),
     qualifiedOptions: qualifiedOptions(recommendations),
     planningOptions: planningOptions(recommendations),
+    commercialAndNeutralOptions,
     recommendations,
   }, null, 2));
 }
@@ -279,6 +284,79 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
     medianProjectCost: priceValue(design.price.median),
   })));
 
+  const reportOptions = uniqueRecommendationOptions(recommendations);
+  appendSheet(workbook, "Commercial Reference", reportOptions.flatMap((design, optionIndex): ReportRow[] => {
+    const reference = design.commercialReference;
+    if (!reference) return [{ option: optionIndex + 1, status: "Commercial reference unavailable in legacy recommendation" }];
+    return reference.components.map((component) => ({
+      option: optionIndex + 1,
+      hardware: reference.hardwareName,
+      nodes: reference.nodeCount,
+      activeNodes: reference.activeNodeCount,
+      operatingSystem: reference.operatingSystem,
+      componentKind: component.kind,
+      componentRole: component.role,
+      quantityPerNode: component.quantityPerNode,
+      manufacturer: component.manufacturer,
+      model: component.model,
+      canonicalMpn: component.canonicalMpn,
+      specificationCompletenessPercent: component.specificationCompletenessPercent,
+      projectPrice: priceValue(reference.projectPrice),
+      currency: reference.currency,
+      priceBasis: reference.priceBasis,
+      sourceUrls: component.sourceUrls.join("; "),
+    }));
+  }));
+
+  appendSheet(workbook, "Neutral TR Specification", reportOptions.flatMap((design, optionIndex): ReportRow[] => {
+    const specification = design.procurementNeutralSpecification;
+    if (!specification) return [{ option: optionIndex + 1, status: "Neutral specification unavailable in legacy recommendation" }];
+    return specification.requirements.map((item) => ({
+      option: optionIndex + 1,
+      specificationStatus: specification.status,
+      componentKind: item.componentKind,
+      componentRole: item.componentRole,
+      characteristic: item.characteristic,
+      comparator: item.comparator,
+      value: item.value,
+      maximumValue: item.maximumValue ?? null,
+      unit: item.unit,
+      mandatory: item.mandatory,
+      quantityPerNode: item.quantityPerNode,
+      projectQuantity: item.projectQuantity,
+      rationale: item.rationale,
+      acceptanceCriterion: item.acceptanceCriterion,
+    }));
+  }));
+
+  appendSheet(workbook, "TR Compliance Matrix", reportOptions.flatMap((design, optionIndex): ReportRow[] =>
+    (design.procurementNeutralSpecification?.requirements ?? []).map((item) => ({
+      option: optionIndex + 1,
+      requirementId: item.id,
+      characteristic: item.characteristic,
+      mandatory: item.mandatory,
+      sourceStage: item.sourceStage,
+      proofMethod: item.proofMethod,
+      acceptanceCriterion: item.acceptanceCriterion,
+      matchingProducts: item.matchingComponentIds.length,
+      evidenceGate: design.procurementEligibility,
+    })),
+  ));
+
+  appendSheet(workbook, "Market Competition", reportOptions.map((design, optionIndex) => {
+    const assessment = design.marketCompetitionAssessment;
+    return {
+      option: optionIndex + 1,
+      neutralSpecificationStatus: design.procurementNeutralSpecification?.status ?? "unavailable",
+      assessment: assessment?.status ?? "no_coverage",
+      matchingProductsAtLimitingRequirement: assessment?.matchingProductCount ?? 0,
+      distinctManufacturers: assessment?.distinctManufacturerCount ?? 0,
+      safeForPublication: assessment?.safeForPublication ?? false,
+      reasons: assessment?.reasons.join("; ") ?? "No assessment",
+      forbiddenIdentifierFindings: design.procurementNeutralSpecification?.forbiddenIdentifierFindings.join("; ") ?? "",
+    };
+  }));
+
   appendSheet(workbook, "BOM", recommendations.flatMap((recommendation) => {
     const design = recommendation.primary;
     const hardware = design.hardware;
@@ -307,6 +385,34 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
       { ...base, component: "Assembly / integration", specification: "Hardware assembly, firmware baseline and burn-in allowance", details: "Planning allowance; excludes licenses and support", ...priced("integration") },
     ];
   }));
+  const bomSheet = workbook.getWorksheet("BOM")!;
+  const bomHeaders = (bomSheet.getRow(1).values as unknown[]).map((value) => String(value ?? ""));
+  const column = (name: string): number => bomHeaders.indexOf(name);
+  const componentRows = Array.from({ length: bomSheet.rowCount - 1 }, (_unused, index) => index + 2);
+  const systemRows = componentRows.filter((row) => bomSheet.getRow(row).getCell(column("component")).value === "SYSTEM TOTAL");
+  for (const row of componentRows) {
+    if (systemRows.includes(row)) continue;
+    const quantity = bomSheet.getRow(row).getCell(column("quantityPerNode")).value;
+    const unitCost = bomSheet.getRow(row).getCell(column("unitCost")).value;
+    if (typeof quantity !== "number" || typeof unitCost !== "number") continue;
+    const perNodeCell = bomSheet.getRow(row).getCell(column("perNodeCost"));
+    const projectCell = bomSheet.getRow(row).getCell(column("projectCost"));
+    const perNodeResult = typeof perNodeCell.value === "number" ? perNodeCell.value : quantity * unitCost;
+    const projectResult = typeof projectCell.value === "number" ? projectCell.value : perNodeResult * Number(bomSheet.getRow(row).getCell(column("nodes")).value ?? 0);
+    perNodeCell.value = { formula: `${bomSheet.getRow(row).getCell(column("quantityPerNode")).address}*${bomSheet.getRow(row).getCell(column("unitCost")).address}`, result: perNodeResult };
+    projectCell.value = { formula: `${perNodeCell.address}*${bomSheet.getRow(row).getCell(column("nodes")).address}`, result: projectResult };
+  }
+  for (const [index, row] of systemRows.entries()) {
+    const lastRow = (systemRows[index + 1] ?? bomSheet.rowCount + 1) - 1;
+    const projectCell = bomSheet.getRow(row).getCell(column("projectCost"));
+    const projectResult = typeof projectCell.value === "number" ? projectCell.value : 0;
+    projectCell.value = { formula: `SUM(${bomSheet.getRow(row + 1).getCell(column("projectCost")).address}:${bomSheet.getRow(lastRow).getCell(column("projectCost")).address})`, result: projectResult };
+    const perNodeCell = bomSheet.getRow(row).getCell(column("perNodeCost"));
+    const perNodeResult = typeof perNodeCell.value === "number" ? perNodeCell.value : projectResult / Number(bomSheet.getRow(row).getCell(column("nodes")).value ?? 1);
+    perNodeCell.value = { formula: `${projectCell.address}/${bomSheet.getRow(row).getCell(column("nodes")).address}`, result: perNodeResult };
+    const unitCell = bomSheet.getRow(row).getCell(column("unitCost"));
+    unitCell.value = { formula: perNodeCell.address, result: perNodeResult };
+  }
 
   appendSheet(workbook, "Component Evidence", recommendations.flatMap((recommendation): ReportRow[] => {
     const design = recommendation.primary;
@@ -596,6 +702,44 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   for (const evidence of recommendation.evidence) writer.line(`Evidencia: ${evidence}`);
 }
 
+function addCommercialAndNeutralOption(writer: PdfWriter, design: RecommendationAlternative, index: number, total: number): void {
+  writer.newPage();
+  writer.page.drawRectangle({ x: 0, y: 744, width: 595, height: 98, color: rgb(0.04, 0.09, 0.11) });
+  writer.page.drawText(pdfSafe(`OPCAO ${index} DE ${total} - REFERENCIA E REQUISITOS`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
+  writer.page.drawText(pdfSafe(design.hardware.name), { x: 48, y: 774, size: 18, font: writer.bold, color: rgb(0.94, 0.97, 0.98) });
+  writer.page.drawText(pdfSafe(`${design.nodeCount} no(s) - ${formatPrice(design)}`), { x: 48, y: 754, size: 9, font: writer.regular, color: rgb(0.65, 0.73, 0.76) });
+  writer.y = 720;
+
+  writer.heading("A. Referencia comercial interna");
+  writer.line("Esta secao identifica a configuracao usada na analise interna. Nao deve ser copiada para o edital ou para o anexo tecnico neutro.", 9.5, true);
+  const commercial = design.commercialReference;
+  if (!commercial) writer.line("Referencia comercial indisponivel nesta recomendacao legada.");
+  else {
+    writer.line(`Sistema: ${commercial.hardwareName}; ${commercial.nodeCount} no(s), ${commercial.activeNodeCount} ativo(s); plataforma ${commercial.operatingSystem}; preco do projeto ${commercial.currency} ${formatMoney(commercial.projectPrice)} (${commercial.priceBasis}).`);
+    for (const component of commercial.components) {
+      writer.line(`${component.role}: ${component.quantityPerNode} x ${component.manufacturer} ${component.model}; MPN ${component.canonicalMpn}; completude oficial ${component.specificationCompletenessPercent}%.`);
+    }
+  }
+
+  writer.heading("B. Especificacao tecnica nao comercial");
+  const neutral = design.procurementNeutralSpecification;
+  if (!neutral) writer.line("Especificacao neutra indisponivel nesta recomendacao legada.", 9.5, true);
+  else {
+    writer.line(`Estado: ${neutral.status.toUpperCase()}; gate tecnico: ${neutral.procurementEligibility}; concorrencia: ${neutral.marketCompetitionAssessment.status}.`, 10, true);
+    if (neutral.status === "blocked") writer.line("NAO UTILIZAR COMO ESPECIFICACAO DE AQUISICAO. Evidencias, completude ou concorrencia ainda sao insuficientes.", 10, true);
+    for (const item of neutral.requirements) {
+      const comparison = item.comparator === "minimum" ? "no minimo" : item.comparator === "maximum" ? "no maximo" : item.comparator;
+      writer.line(`${item.componentRole} - ${item.characteristic}: ${comparison} ${String(item.value)}${item.unit ? ` ${item.unit}` : ""}; quantidade ${item.quantityPerNode} por no / ${item.projectQuantity} no projeto.`, 9.5, item.mandatory);
+      writer.line(`Justificativa: ${item.rationale} Comprovacao: ${item.proofMethod}. Aceite: ${item.acceptanceCriterion}`, 8.5, false, 10);
+    }
+    writer.heading("Competitividade e controle de direcionamento");
+    writer.line(`Produtos no requisito limitante: ${neutral.marketCompetitionAssessment.matchingProductCount}; fabricantes distintos: ${neutral.marketCompetitionAssessment.distinctManufacturerCount}; publicacao automatica: ${neutral.marketCompetitionAssessment.safeForPublication ? "permitida" : "bloqueada ou sujeita a revisao"}.`);
+    for (const reason of neutral.marketCompetitionAssessment.reasons) writer.line(reason);
+    for (const finding of neutral.forbiddenIdentifierFindings) writer.line(`IDENTIFICADOR COMERCIAL DETECTADO: ${finding}.`);
+    for (const disclaimer of neutral.disclaimers) writer.line(`Nota: ${disclaimer}`);
+  }
+}
+
 export async function pdfReport({ scenario, recommendations: input }: ReportContext): Promise<Buffer> {
   const recommendations = orderedRecommendations(input);
   const narrative = buildExecutiveNarrative({ scenario, recommendations });
@@ -646,6 +790,8 @@ export async function pdfReport({ scenario, recommendations: input }: ReportCont
   }
 
   recommendations.forEach((recommendation, index) => addConfiguration(writer, recommendation, index + 1));
+  const reportOptions = uniqueRecommendationOptions(recommendations);
+  reportOptions.forEach((option, index) => addCommercialAndNeutralOption(writer, option, index + 1, reportOptions.length));
 
   const pages = document.getPages();
   pages.forEach((reportPage, index) => reportPage.drawText(

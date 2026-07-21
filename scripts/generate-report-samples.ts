@@ -1,33 +1,38 @@
-import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
-import { buildRecommendations } from "../src/engine/capacity.js";
 import { createDefaultScenario } from "../src/shared/schemas.js";
-import type { ScenarioRecord } from "../src/shared/types.js";
-import { jsonReport, pdfReport, xlsxReport } from "../src/server/reports.js";
+import { createApp } from "../src/server/app.js";
+import { MemoryPlannerStore } from "../src/server/store.js";
 
 const scenario = createDefaultScenario(24);
 scenario.projectName = "Validação - 24 câmeras AiQ";
 scenario.customerName = "Aiquimist QA";
 scenario.cameraGroups[0]!.agents[0]!.model = "aiq-3.7";
-const timestamp = new Date().toISOString();
-const record: ScenarioRecord = {
-  id: randomUUID(),
-  revision: 1,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-  scenario,
-};
-const recommendations = buildRecommendations(record.id, record.revision, scenario, HARDWARE_CATALOG, []);
-const context = { scenario: record, recommendations };
+const app = createApp(new MemoryPlannerStore());
+const scenarioResponse = await app.request("/api/scenarios", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario }) });
+if (!scenarioResponse.ok) throw new Error(`scenario_failed:${scenarioResponse.status}`);
+const record = await scenarioResponse.json() as { id: string };
+const recommendationResponse = await app.request(`/api/scenarios/${record.id}/recommendations`, { method: "POST" });
+if (!recommendationResponse.ok) throw new Error(`recommendation_failed:${recommendationResponse.status}`);
+const recommendations = await recommendationResponse.json() as Array<{ id: string; policy: string }>;
+const recommendationId = recommendations.find((item) => item.policy === "recommended")?.id ?? recommendations[0]?.id;
+if (!recommendationId) throw new Error("recommendation_missing");
 const pdfDirectory = resolve("output", "pdf");
 const workbookDirectory = resolve("outputs", "report-validation");
+const documentDirectory = resolve("output", "documents");
 const jsonDirectory = resolve("output", "json");
-await Promise.all([mkdir(pdfDirectory, { recursive: true }), mkdir(workbookDirectory, { recursive: true }), mkdir(jsonDirectory, { recursive: true })]);
-await Promise.all([
-  writeFile(resolve(pdfDirectory, "qual-hardware-three-configurations.pdf"), await pdfReport(context)),
-  writeFile(resolve(workbookDirectory, "qual-hardware-three-configurations.xlsx"), await xlsxReport(context)),
-  writeFile(resolve(jsonDirectory, "qual-hardware-three-configurations.json"), jsonReport(context)),
-]);
-console.log(JSON.stringify({ policies: recommendations.map((item) => item.policy), pdfDirectory, workbookDirectory, jsonDirectory }));
+await Promise.all([mkdir(pdfDirectory, { recursive: true }), mkdir(workbookDirectory, { recursive: true }), mkdir(documentDirectory, { recursive: true }), mkdir(jsonDirectory, { recursive: true })]);
+const targets = [
+  { format: "pdf", path: resolve(pdfDirectory, "qual-hardware-commercial-and-neutral.pdf") },
+  { format: "xlsx", path: resolve(workbookDirectory, "qual-hardware-commercial-and-neutral.xlsx") },
+  { format: "json", path: resolve(jsonDirectory, "qual-hardware-commercial-and-neutral.json") },
+  { format: "tr-pdf", path: resolve(pdfDirectory, "qual-hardware-neutral-annex.pdf") },
+  { format: "tr-docx", path: resolve(documentDirectory, "qual-hardware-neutral-annex.docx") },
+  { format: "tr-json", path: resolve(jsonDirectory, "qual-hardware-neutral-annex.json") },
+];
+await Promise.all(targets.map(async (target) => {
+  const response = await app.request(`/api/recommendations/${recommendationId}/export/${target.format}`);
+  if (!response.ok) throw new Error(`export_${target.format}_failed:${response.status}`);
+  await writeFile(target.path, Buffer.from(await response.arrayBuffer()));
+}));
+console.log(JSON.stringify({ policies: recommendations.map((item) => item.policy), files: targets.map((target) => target.path) }));

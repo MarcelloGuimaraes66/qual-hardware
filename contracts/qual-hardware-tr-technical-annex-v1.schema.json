@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/contracts/qual-hardware-tr-technical-annex-v1.schema.json",
+  "title": "Qual Hardware TR technical annex 1.0",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "scenarioId", "projectName", "totalCameras", "specifications", "legalNotice"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-tr-technical-annex/1.0.0" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "scenarioId": { "type": "string", "minLength": 1 },
+    "projectName": { "type": "string" },
+    "totalCameras": { "type": "integer", "minimum": 1 },
+    "specifications": {
+      "type": "array",
+      "items": { "$ref": "qual-hardware-procurement-neutral-specification-v1.schema.json" }
+    },
+    "legalNotice": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

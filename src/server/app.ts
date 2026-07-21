@@ -7,6 +7,8 @@ import { buildRecommendations, CapacityError } from "../engine/capacity.js";
 import { buildCapacityPredictions, createCalibrationPlan } from "../engine/calibration.js";
 import { buildHistoricalComponentBuilds, deriveComponentCatalog, validateBuildCompatibility } from "../engine/componentCatalog.js";
 import { buildProcurementGate, componentStages, isPublicObservationEligible } from "../engine/evidence.js";
+import { withProcurementSpecifications } from "../engine/procurementSpecifications.js";
+import { specificationCoverage, withTechnicalSpecification } from "../engine/technicalSpecifications.js";
 import {
   benchmarkMetricsSchema,
   calibrationPlanRequestSchema,
@@ -20,6 +22,7 @@ import type { HardwareNodeTemplate } from "../shared/types.js";
 import { createBenchmarkManifest, evidenceValidatesRecommendation, nonceMatches, validateBenchmark } from "./benchmark.js";
 import { CatalogUpdateService } from "./catalogUpdates.js";
 import { jsonReport, pdfReport, xlsxReport } from "./reports.js";
+import { procurementAnnexDocx, procurementAnnexJson, procurementAnnexPdf } from "./procurementAnnex.js";
 import { findForbiddenBenchmarkData, findForbiddenCalibrationData, safeError } from "./security.js";
 import { RevisionConflictError, type PlannerStore } from "./store.js";
 import {
@@ -233,7 +236,7 @@ export function createApp(
       const recommendations = stored.length ? stored : withComponentBuilds(buildRecommendations(
         id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
         catalogUpdates.status.catalogVersion, await refreshPredictions(store)), await store.listComponentBuilds());
-      comparisons.push({ scenario, recommendations });
+      comparisons.push({ scenario, recommendations: withProcurementSpecifications(scenario.scenario, recommendations, await store.listCatalogComponents(), await store.listBenchmarkObservations()) });
     }
     return context.json({ schemaVersion: "capacity-scenario-comparison/1.0.0", comparisons });
   });
@@ -260,12 +263,35 @@ export function createApp(
       scenario.id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
       catalogUpdates.status.catalogVersion, await refreshPredictions(store)), await store.listComponentBuilds());
     const withEvidence = currentEvidence(recommendations, await store.listBenchmarkEvidence(scenario.id, scenario.revision));
-    await store.saveRecommendations(withEvidence);
-    return context.json(withEvidence, 201);
+    const withProcurement = withProcurementSpecifications(scenario.scenario, withEvidence, await store.listCatalogComponents(), await store.listBenchmarkObservations());
+    await store.saveRecommendations(withProcurement);
+    return context.json(withProcurement, 201);
   });
   app.get("/api/scenarios/:id/recommendations", async (context) => context.json(await store.listRecommendations(context.req.param("id"))));
   app.get("/api/catalog/hardware", async (context) => context.json(await store.getCatalog()));
   app.get("/api/catalog/components", async (context) => context.json(await store.listCatalogComponents()));
+  app.get("/api/catalog/components/:id/specifications", async (context) => {
+    const component = (await store.listCatalogComponents()).find((item) => item.id === context.req.param("id"));
+    return component ? context.json(withTechnicalSpecification(component).technicalSpecification) : context.json({ error: "component_not_found" }, 404);
+  });
+  app.get("/api/catalog/components/:id/specifications/history", async (context) => {
+    const component = (await store.listCatalogComponents()).find((item) => item.id === context.req.param("id"));
+    return component ? context.json(await store.listComponentSpecificationHistory(component.id)) : context.json({ error: "component_not_found" }, 404);
+  });
+  app.get("/api/catalog/specifications/coverage", async (context) => context.json(specificationCoverage(await store.listCatalogComponents())));
+  app.get("/api/recommendations/:id/procurement-competition", async (context) => {
+    const recommendation = await store.getRecommendation(context.req.param("id"));
+    if (!recommendation) return context.json({ error: "recommendation_not_found" }, 404);
+    return context.json({
+      recommendationId: recommendation.id,
+      options: [recommendation.primary, ...recommendation.alternatives].map((option) => ({
+        optionId: option.id,
+        procurementEligibility: option.procurementEligibility,
+        neutralSpecificationStatus: option.procurementNeutralSpecification?.status ?? "unavailable",
+        assessment: option.marketCompetitionAssessment ?? null,
+      })),
+    });
+  });
   app.get("/api/catalog/builds", async (context) => context.json(await store.listComponentBuilds()));
   app.get("/api/catalog/builds/:id", async (context) => {
     const build = await store.getComponentBuild(context.req.param("id"));
@@ -560,20 +586,25 @@ export function createApp(
     const recommendations = reportRecommendationSet(recommendation, await store.listRecommendations(recommendation.scenarioId));
     if (recommendations.length !== reportPolicies.length) return context.json({ error: "recommendation_set_incomplete" }, 409);
     const format = context.req.param("format");
-    const reportContext = { scenario, recommendations };
+    const components = await store.listCatalogComponents();
+    const reportContext = { scenario, recommendations: withProcurementSpecifications(scenario.scenario, recommendations, components, await store.listBenchmarkObservations()), components };
     let body: Buffer;
     let contentType: string;
-    if (format === "json") { body = jsonReport(reportContext); contentType = "application/json; charset=utf-8"; }
-    else if (format === "xlsx") { body = await xlsxReport(reportContext); contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; }
-    else if (format === "pdf") { body = await pdfReport(reportContext); contentType = "application/pdf"; }
+    let filename: string;
+    if (format === "json") { body = jsonReport(reportContext); contentType = "application/json; charset=utf-8"; filename = "qual-hardware-relatorio-comercial-e-neutro.json"; }
+    else if (format === "xlsx") { body = await xlsxReport(reportContext); contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; filename = "qual-hardware-relatorio-comercial-e-neutro.xlsx"; }
+    else if (format === "pdf") { body = await pdfReport(reportContext); contentType = "application/pdf"; filename = "qual-hardware-relatorio-comercial-e-neutro.pdf"; }
+    else if (format === "tr-json") { body = procurementAnnexJson(reportContext); contentType = "application/json; charset=utf-8"; filename = "qual-hardware-anexo-tecnico-neutro.json"; }
+    else if (format === "tr-pdf") { body = await procurementAnnexPdf(reportContext); contentType = "application/pdf"; filename = "qual-hardware-anexo-tecnico-neutro.pdf"; }
+    else if (format === "tr-docx") { body = await procurementAnnexDocx(reportContext); contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; filename = "qual-hardware-anexo-tecnico-neutro.docx"; }
     else return context.json({ error: "unsupported_export_format" }, 404);
     context.header("Content-Type", contentType);
-    context.header("Content-Disposition", `attachment; filename="qual-hardware-3-configuracoes.${format}"`);
+    context.header("Content-Disposition", `attachment; filename="${filename}"`);
     context.header("Content-Length", String(body.byteLength));
     if (process.env.REPORT_STORAGE_DIR) {
       const reportDirectory = resolve(process.env.REPORT_STORAGE_DIR);
       await mkdir(reportDirectory, { recursive: true });
-      await writeFile(resolve(reportDirectory, `${recommendation.id}.${format}`), body);
+      await writeFile(resolve(reportDirectory, `${recommendation.id}-${filename}`), body);
     }
     return context.body(Uint8Array.from(body));
   });

@@ -50,15 +50,17 @@ describe("Qual Hardware API and reports", () => {
     const json = await app.request(`/api/recommendations/${recommendation.id}/export/json`);
     expect(json.status).toBe(200);
     expect(json.headers.get("content-type")).toContain("application/json");
-    expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-3-configuracoes.json"');
-    const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[]; executiveNarrative: { paragraphs: string[]; cautions: string[] }; qualifiedOptions: unknown[]; planningOptions: unknown[] };
-    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/4.0.0");
+    expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-relatorio-comercial-e-neutro.json"');
+    const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[]; executiveNarrative: { paragraphs: string[]; cautions: string[] }; qualifiedOptions: unknown[]; planningOptions: unknown[]; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string; requirements: unknown[] } }> };
+    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/5.0.0");
     expect(jsonReport.recommendations.map((item) => item.policy)).toEqual(["minimum", "recommended", "n_plus_one"]);
     expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("FPS de leitura RTSP");
     expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("AiQ/Qwen local");
     expect(jsonReport.qualifiedOptions).toHaveLength(0);
     expect(jsonReport.planningOptions.length).toBeGreaterThanOrEqual(6);
     expect(jsonReport.executiveNarrative.cautions.join(" ")).toContain("não apto para compra");
+    expect(jsonReport.commercialAndNeutralOptions.length).toBeGreaterThanOrEqual(6);
+    expect(jsonReport.commercialAndNeutralOptions.every((item) => item.procurementNeutralSpecification.status === "blocked" && item.procurementNeutralSpecification.requirements.length >= 10)).toBe(true);
 
     const pdf = await app.request(`/api/recommendations/${recommendation.id}/export/pdf`);
     const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
@@ -74,7 +76,7 @@ describe("Qual Hardware API and reports", () => {
     expect(Array.from(spreadsheetBytes.slice(0, 2))).toEqual([0x50, 0x4b]);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(spreadsheetBytes.buffer);
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Qualified Options", "Planning Only", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Qualified Options", "Planning Only", "Commercial Reference", "Neutral TR Specification", "TR Compliance Matrix", "Market Competition", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
     expect(workbook.getWorksheet("Executive Summary")!.getCell("B2").value).toContain("RTSP");
     const configurations = workbook.getWorksheet("3 Configurations")!;
     expect(configurations.rowCount).toBe(4);
@@ -84,9 +86,29 @@ describe("Qual Hardware API and reports", () => {
     expect(new Set(bom.getColumn(1).values.slice(2).map(String))).toEqual(new Set(["minimum", "recommended", "n_plus_one"]));
     const bomHeaders = (bom.getRow(1).values as unknown[]).map(String);
     expect(bomHeaders).toEqual(expect.arrayContaining(["currency", "unitCost", "perNodeCost", "projectCost", "priceBasis"]));
-    expect(bom.getColumn(bomHeaders.indexOf("projectCost")).values.slice(2).some((value) => typeof value === "number" && value > 0)).toBe(true);
+    const projectValues = bom.getColumn(bomHeaders.indexOf("projectCost")).values.slice(2).map((value) =>
+      typeof value === "object" && value && "result" in value ? (value as { result?: number }).result : value);
+    expect(projectValues.some((value) => typeof value === "number" && value > 0)).toBe(true);
+    expect(bom.getColumn(bomHeaders.indexOf("projectCost")).values.slice(2).some((value) => typeof value === "object" && value && "formula" in value)).toBe(true);
     const nodePolicies = new Set(workbook.getWorksheet("Nodes")!.getColumn(1).values.slice(2).map(String));
     expect(nodePolicies).toEqual(new Set(["minimum", "recommended", "n_plus_one"]));
+
+    const annexJson = await app.request(`/api/recommendations/${recommendation.id}/export/tr-json`);
+    expect(annexJson.status).toBe(200);
+    expect(annexJson.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-anexo-tecnico-neutro.json"');
+    const annex = await annexJson.json() as { schemaVersion: string; specifications: Array<{ status: string; requirements: Array<{ matchingComponentIds: string[] }>; marketCompetitionAssessment: { matchingComponentIds: string[]; manufacturerNames: string[] } }> };
+    expect(annex.schemaVersion).toBe("qual-hardware-tr-technical-annex/1.0.0");
+    expect(annex.specifications.length).toBeGreaterThanOrEqual(6);
+    expect(annex.specifications.every((item) => item.status === "blocked" && item.requirements.length >= 10)).toBe(true);
+    expect(annex.specifications.every((item) => item.requirements.every((requirement) => requirement.matchingComponentIds.length === 0))).toBe(true);
+    expect(annex.specifications.every((item) => item.marketCompetitionAssessment.matchingComponentIds.length === 0 && item.marketCompetitionAssessment.manufacturerNames.length === 0)).toBe(true);
+
+    const annexPdf = await app.request(`/api/recommendations/${recommendation.id}/export/tr-pdf`);
+    expect(annexPdf.status).toBe(200);
+    expect(new TextDecoder().decode(new Uint8Array((await annexPdf.arrayBuffer()).slice(0, 5)))).toBe("%PDF-");
+    const annexDocx = await app.request(`/api/recommendations/${recommendation.id}/export/tr-docx`);
+    expect(annexDocx.status).toBe(200);
+    expect(Array.from(new Uint8Array((await annexDocx.arrayBuffer()).slice(0, 2)))).toEqual([0x50, 0x4b]);
 
     const manifestResponse = await app.request("/api/benchmarks/manifests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recommendationId: recommendation.id, gpuDriver: "test-driver", slaInferenceLatencyMs: 10000 }) });
     const manifest = await manifestResponse.json() as BenchmarkManifest;

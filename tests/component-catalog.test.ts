@@ -33,7 +33,7 @@ function observation(name: string, stage: PublicBenchmarkObservation["stage"]): 
   };
 }
 
-describe("component catalog v7", () => {
+describe("component catalog and procurement evidence", () => {
   it("derives a complete BOM inventory from every preserved historical machine", () => {
     const derived = deriveComponentCatalog(HARDWARE_CATALOG);
     expect(derived.components.length).toBeGreaterThan(100);

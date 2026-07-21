@@ -7,6 +7,7 @@ import { buildHistoricalComponentBuilds, deriveComponentCatalog, validateBuildCo
 import { BUNDLED_SOURCE_REGISTRY } from "../engine/sourceRegistry.js";
 import { assertDedicatedSqlitePath, QUAL_HARDWARE_SQLITE_SCHEMA_VERSION } from "./database.js";
 import { isPublicObservationEligible } from "../engine/evidence.js";
+import { fieldDefinitionsForKind, withTechnicalSpecification } from "../engine/technicalSpecifications.js";
 import type {
   BenchmarkManifest,
   BenchmarkResultRecord,
@@ -21,6 +22,7 @@ import type {
   CatalogUpdateRun,
   EvidenceCatalogSnapshot,
   HardwareComponent,
+  ComponentTechnicalSpecification,
   HardwareNodeTemplate,
   LocalCalibrationRun,
   PriceQuote,
@@ -75,6 +77,7 @@ export interface PlannerStore {
   getActiveEvidenceSnapshot(): Promise<EvidenceCatalogSnapshot | null>;
   listHardwareComponents(): Promise<HardwareComponent[]>;
   listCatalogComponents(): Promise<HardwareComponent[]>;
+  listComponentSpecificationHistory(componentId: string): Promise<ComponentTechnicalSpecification[]>;
   saveComponentBuilds(builds: ComponentBuild[]): Promise<void>;
   listComponentBuilds(): Promise<ComponentBuild[]>;
   getComponentBuild(id: string): Promise<ComponentBuild | null>;
@@ -212,6 +215,11 @@ export class MemoryPlannerStore implements PlannerStore {
   }
   async listCatalogComponents(): Promise<HardwareComponent[]> {
     return [...this.components.values()].map((item) => structuredClone(item)).sort((left, right) => left.id.localeCompare(right.id));
+  }
+  async listComponentSpecificationHistory(componentId: string): Promise<ComponentTechnicalSpecification[]> {
+    const component = this.components.get(componentId);
+    if (!component) return [];
+    return [structuredClone(withTechnicalSpecification(component).technicalSpecification!)];
   }
   async saveComponentBuilds(builds: ComponentBuild[]): Promise<void> {
     for (const build of builds) this.builds.set(build.id, structuredClone(build));
@@ -411,6 +419,7 @@ export class SqlitePlannerStore implements PlannerStore {
   }
 
   private upsertComponentIdentity(component: HardwareComponent, importedAt: string): void {
+    component = withTechnicalSpecification(component, component.updatedAt ?? importedAt);
     const canonicalMpn = component.canonicalMpn ?? component.sku;
     const marketState = component.marketState ?? "reference_only";
     const inventoryState = component.inventoryState ?? "discovered_inventory";
@@ -438,6 +447,42 @@ export class SqlitePlannerStore implements PlannerStore {
         "INSERT INTO component_compatibility_rules(id,component_id,rule_type,rule_json,evidence_json,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET rule_json=excluded.rule_json,evidence_json=excluded.evidence_json",
       ).run(`compat:${component.id}:${version}`, component.id, "declared_capabilities", JSON.stringify(component.compatibility), JSON.stringify(evidence), importedAt);
     }
+    const technical = component.technicalSpecification;
+    if (!technical) return;
+    const insertDefinition = this.database.prepare(
+      "INSERT INTO technical_specification_field_definitions(component_kind,field_code,label_pt,value_type,canonical_unit,required,roles_json,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(component_kind,field_code) DO UPDATE SET label_pt=excluded.label_pt,value_type=excluded.value_type,canonical_unit=excluded.canonical_unit,required=excluded.required,roles_json=excluded.roles_json",
+    );
+    const profileDefinitions = new Map(fieldDefinitionsForKind(component.kind).map((definition) => [definition.code, definition]));
+    for (const field of technical.fields) {
+      const definition = profileDefinitions.get(field.code);
+      insertDefinition.run(component.kind, field.code, definition?.labelPt ?? field.labelPt, definition?.valueType ?? field.valueType,
+        definition?.unit ?? field.unit, (definition?.required ?? field.required) ? 1 : 0, JSON.stringify(definition?.roles ?? field.roles), importedAt);
+      for (const source of field.sourceEvidence) {
+        this.database.prepare(
+          "INSERT INTO manufacturer_specification_artifacts(sha256,source_id,source_url,content_type,license_policy,retrieved_at,metadata_json) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sha256) DO UPDATE SET source_id=excluded.source_id,source_url=excluded.source_url,license_policy=excluded.license_policy,retrieved_at=excluded.retrieved_at,metadata_json=excluded.metadata_json",
+        ).run(source.rawArtifactSha256, source.sourceId, source.url, null, source.licensePolicy, source.retrievedAt,
+          JSON.stringify({ evidenceLocator: source.evidenceLocator, componentId: component.id, fieldCode: field.code }));
+      }
+    }
+    const specificationId = `technical:${component.id}:${technical.specificationVersion}:${technical.generatedAt}`;
+    this.database.prepare(
+      "INSERT INTO component_technical_specification_versions(id,component_id,schema_version,specification_version,specification_json,generated_at,imported_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET specification_json=excluded.specification_json,imported_at=excluded.imported_at",
+    ).run(specificationId, component.id, technical.schemaVersion, technical.specificationVersion, JSON.stringify(technical), technical.generatedAt, importedAt);
+    const insertValue = this.database.prepare(
+      "INSERT INTO component_technical_specification_values(specification_id,field_code,status,value_type,text_value,numeric_value,boolean_value,unit,original_label,original_value_json,required,confidence,normalization_rule,evidence_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(specification_id,field_code) DO UPDATE SET status=excluded.status,value_type=excluded.value_type,text_value=excluded.text_value,numeric_value=excluded.numeric_value,boolean_value=excluded.boolean_value,unit=excluded.unit,original_label=excluded.original_label,original_value_json=excluded.original_value_json,required=excluded.required,confidence=excluded.confidence,normalization_rule=excluded.normalization_rule,evidence_json=excluded.evidence_json",
+    );
+    for (const field of technical.fields) {
+      insertValue.run(specificationId, field.code, field.status, field.valueType,
+        typeof field.value === "string" ? field.value : null,
+        typeof field.value === "number" ? field.value : null,
+        typeof field.value === "boolean" ? (field.value ? 1 : 0) : null,
+        field.unit, field.originalLabel, JSON.stringify(field.originalValue), field.required ? 1 : 0,
+        field.confidence, field.normalizationRule, JSON.stringify(field.sourceEvidence));
+    }
+    this.database.prepare(
+      "INSERT INTO component_specification_completeness(specification_id,component_id,required_field_count,published_required_field_count,completeness_percent,procurement_ready,completeness_json,assessed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(specification_id) DO UPDATE SET required_field_count=excluded.required_field_count,published_required_field_count=excluded.published_required_field_count,completeness_percent=excluded.completeness_percent,procurement_ready=excluded.procurement_ready,completeness_json=excluded.completeness_json,assessed_at=excluded.assessed_at",
+    ).run(specificationId, component.id, technical.completeness.requiredFieldCount, technical.completeness.publishedRequiredFieldCount,
+      technical.completeness.percent, technical.completeness.procurementReady ? 1 : 0, JSON.stringify(technical.completeness), importedAt);
   }
 
   private upsertComponentBuild(build: ComponentBuild, timestamp: string): void {
@@ -570,9 +615,32 @@ export class SqlitePlannerStore implements PlannerStore {
     const statement = this.database.prepare(
       "INSERT INTO recommendations(id,scenario_id,scenario_revision,recommendation_json,generated_at) VALUES(?,?,?,?,?)",
     );
+    const insertSpecification = this.database.prepare(
+      "INSERT INTO procurement_specifications(id,recommendation_alternative_id,schema_version,status,procurement_eligibility,specification_json,generated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,procurement_eligibility=excluded.procurement_eligibility,specification_json=excluded.specification_json",
+    );
+    const insertRequirement = this.database.prepare(
+      "INSERT INTO procurement_requirements(id,specification_id,component_kind,component_role,characteristic_code,comparator,requirement_json) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET requirement_json=excluded.requirement_json",
+    );
+    const insertMatch = this.database.prepare(
+      "INSERT INTO procurement_market_matches(specification_id,component_id,manufacturer,assessment_status) VALUES(?,?,?,?) ON CONFLICT(specification_id,component_id) DO UPDATE SET manufacturer=excluded.manufacturer,assessment_status=excluded.assessment_status",
+    );
     this.inTransaction(() => {
       for (const item of items) {
         statement.run(item.id, item.scenarioId, item.scenarioRevision, JSON.stringify(item), item.generatedAt);
+        for (const alternative of [item.primary, ...item.alternatives]) {
+          const specification = alternative.procurementNeutralSpecification;
+          if (!specification) continue;
+          insertSpecification.run(specification.id, alternative.id, specification.schemaVersion, specification.status,
+            specification.procurementEligibility, JSON.stringify(specification), specification.generatedAt);
+          for (const requirement of specification.requirements) {
+            insertRequirement.run(requirement.id, specification.id, requirement.componentKind, requirement.componentRole,
+              requirement.characteristicCode, requirement.comparator, JSON.stringify(requirement));
+          }
+          for (const componentId of specification.marketCompetitionAssessment.matchingComponentIds) {
+            const row = this.database.prepare("SELECT manufacturer FROM component_identities WHERE id=?").get(componentId) as { manufacturer?: string } | undefined;
+            if (row?.manufacturer) insertMatch.run(specification.id, componentId, row.manufacturer, specification.marketCompetitionAssessment.status);
+          }
+        }
       }
     });
   }
@@ -702,6 +770,11 @@ export class SqlitePlannerStore implements PlannerStore {
   async listCatalogComponents(): Promise<HardwareComponent[]> {
     const result = rows(this.database.prepare("SELECT component_json FROM component_identities ORDER BY kind,manufacturer,canonical_mpn").all());
     return result.map((row) => parseJson<HardwareComponent>(row.component_json));
+  }
+  async listComponentSpecificationHistory(componentId: string): Promise<ComponentTechnicalSpecification[]> {
+    return rows(this.database.prepare(
+      "SELECT specification_json FROM component_technical_specification_versions WHERE component_id=? ORDER BY generated_at DESC, imported_at DESC",
+    ).all(componentId)).map((row) => parseJson<ComponentTechnicalSpecification>(row.specification_json));
   }
   async saveComponentBuilds(builds: ComponentBuild[]): Promise<void> {
     this.inTransaction(() => {

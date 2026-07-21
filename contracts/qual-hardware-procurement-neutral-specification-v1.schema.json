@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/contracts/qual-hardware-procurement-neutral-specification-v1.schema.json",
+  "title": "Qual Hardware neutral procurement specification 1.0",
+  "type": "object",
+  "required": ["schemaVersion", "id", "recommendationAlternativeId", "generatedAt", "nodeCount", "activeNodeCount", "status", "procurementEligibility", "requirements", "marketCompetitionAssessment", "forbiddenIdentifierFindings", "disclaimers"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-procurement-neutral-specification/1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "recommendationAlternativeId": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "nodeCount": { "type": "integer", "minimum": 1 },
+    "activeNodeCount": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["apt", "review_required", "blocked"] },
+    "procurementEligibility": { "enum": ["eligible", "planning_only", "blocked"] },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "componentKind", "componentRole", "characteristicCode", "characteristic", "comparator", "value", "mandatory", "rationale", "proofMethod", "acceptanceCriterion", "sourceStage", "quantityPerNode", "projectQuantity", "matchingComponentIds"],
+        "properties": {
+          "id": { "type": "string" },
+          "componentKind": { "type": "string" },
+          "componentRole": { "type": "string" },
+          "characteristicCode": { "type": "string" },
+          "characteristic": { "type": "string" },
+          "comparator": { "enum": ["minimum", "maximum", "range", "equals", "supports", "prohibited"] },
+          "value": { "type": ["string", "number", "boolean"] },
+          "maximumValue": { "type": ["number", "null"] },
+          "unit": { "type": ["string", "null"] },
+          "mandatory": { "type": "boolean" },
+          "rationale": { "type": "string" },
+          "proofMethod": { "enum": ["official_datasheet", "independent_benchmark", "sample_or_poc", "technical_proposal"] },
+          "acceptanceCriterion": { "type": "string" },
+          "sourceStage": { "type": "string" },
+          "quantityPerNode": { "type": "integer", "minimum": 1 },
+          "projectQuantity": { "type": "integer", "minimum": 1 },
+          "matchingComponentIds": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "marketCompetitionAssessment": {
+      "type": "object",
+      "required": ["status", "matchingProductCount", "distinctManufacturerCount", "matchingComponentIds", "manufacturerNames", "safeForPublication", "reasons"],
+      "properties": {
+        "status": { "enum": ["adequate", "limited", "restricted", "no_coverage"] },
+        "matchingProductCount": { "type": "integer", "minimum": 0 },
+        "distinctManufacturerCount": { "type": "integer", "minimum": 0 },
+        "matchingComponentIds": { "type": "array", "items": { "type": "string" } },
+        "manufacturerNames": { "type": "array", "items": { "type": "string" } },
+        "safeForPublication": { "type": "boolean" },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "forbiddenIdentifierFindings": { "type": "array", "items": { "type": "string" } },
+    "disclaimers": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

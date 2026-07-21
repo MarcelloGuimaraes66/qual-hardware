@@ -19,6 +19,8 @@ A coleta, a chave privada e o Qwen existem apenas nos runners. O operador não i
 O contrato `qual-hardware-source-registry/1.0.0` registra as fontes iniciais e é espelhado no SQLite. Abrange:
 
 - especificações oficiais Intel, AMD, NVIDIA e Apple;
+- componentes de memória e armazenamento Samsung, Micron/Crucial, Kingston, Kioxia, Solidigm, Western Digital e Seagate;
+- plataformas ASUS, ASRock Rack, Gigabyte, MSI e Supermicro; NICs Intel, Broadcom e NVIDIA; fontes, refrigeração e chassis usados nas BOMs qualificadas;
 - OEMs ASUS/ROG, Dell/Alienware/Precision/PowerEdge, HP/HPE, Lenovo/Legion/ThinkStation/ThinkSystem, Acer/Predator, MSI, Gigabyte/Aorus e Supermicro;
 - benchmarks MLCommons, SPEC CPU, OpenBenchmarking/Phoronix para FFmpeg, OpenCV, STREAM e fio, Blender Open Data como indicador secundário e matrizes oficiais de codec NVIDIA, Intel, AMD e Apple;
 - preços públicos no Brasil, Estados Unidos e Alemanha;
@@ -66,5 +68,7 @@ Cada recomendação registra a versão do catálogo. Projetos e relatórios anti
 Ao abrir e a cada 24 horas, Windows, macOS e Ubuntu consultam o mesmo repositório público, usam ETag e localizam a maior sequência. Antes da ativação, o aplicativo valida HTTPS/host, tamanho, SHA-256, schema, `keyId`, assinatura Ed25519, data, anti-rollback e toda a cadeia desde a primeira publicação. Hardware, componentes, benchmarks, preços, fontes, publicação e ponteiro ativo entram em uma transação única; SQLite v7 preserva integralmente as tabelas v1-v6 e acrescenta identidades canônicas, compatibilidade, BOMs e cobertura por estágio.
 
 Qualquer falha preserva o snapshot ativo. Um computador offline continua com o último bundle válido ou com o catálogo embarcado. O botão **Atualizar hardware** mostra versão, inventário, preços, mercados, última/ próxima coleta, fontes saudáveis/degradadas/indisponíveis, diferenças e eventual erro. **Verificar agora** apenas antecipa a consulta segura; não é necessário para manter o sistema atualizado. A importação manual de bundle oficial permanece escondida em **Recuperação avançada**.
+
+No SQLite v8, cada especificação autoritativa é armazenada por campo: rótulo e valor originais, valor tipado normalizado, unidade, estado, confiança, URL, data, localização da evidência e SHA-256 do artefato. Campos não publicados não viram zero nem estimativa. Uma atualização com queda de completude, alteração silenciosa de unidade ou novo conflito não pode ativar o catálogo. Lojas continuam autorizadas somente para preço e disponibilidade; apenas fonte oficial define característica técnica.
 
 Observações públicas de capacidade continuam específicas por estágio, SKU, perfil, versão, unidade, sistema e configuração. Um score de CPU ou Blender nunca substitui inferência AiQ, decode, disco, rede ou sustentação térmica.

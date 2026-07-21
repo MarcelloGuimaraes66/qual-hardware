@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, 80+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v7, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 4.0 exports, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, 90+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v8, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 5.0 exports, neutral DOCX/PDF/JSON annexes, single-instance behavior and persistence after restart.
 
 ```sh
 npm ci
@@ -50,3 +50,6 @@ Run `PERCEPTRUM_SOURCE_ROOT=/path/to/perceptrum npm run audit:source` whenever P
 - Hardware catalog imports require a configured Ed25519 public key and never replace the active catalog when signature verification fails.
 - Automatic catalog tests cover day 0/14/15/retry scheduling, concurrent-publication protection, HTTPS/host/redirect/robots/CAPTCHA limits, deterministic Qwen evidence, price freshness/outliers, SHA-256, Ed25519, full-chain anti-rollback and additive migration without row loss.
 - The smoke accepts the bundled fallback when no public Release exists and requires a persisted publication as soon as the official channel has activated one.
+- A manufacturer datasheet never counts as a performance benchmark. Procurement-ready components require all critical official fields, while purchase-ready recommendations independently require benchmark/calibration eligibility.
+- The neutral annex must contain no manufacturer, brand, model, MPN, SKU, seller, price, commercial URL or identifying component ID. Competition is adequate only with at least three matching products and two manufacturers; a restricted/no-coverage result is blocked.
+- PDF, XLSX, JSON, DOCX and neutral PDF/JSON are generated from the same decorated recommendation set. Every format preserves quantities, proof method, acceptance criteria, status and market gate.
