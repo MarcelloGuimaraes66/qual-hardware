@@ -55,4 +55,8 @@ BOM exata, expansão, potência, dimensões e suporte são críticos; redundânc
 
 ## Completude
 
-`completeness.percent` é a proporção de campos críticos publicados oficialmente. `procurementReady` somente é verdadeiro com 100% dos campos críticos, ausência de conflito e SKU/MPN exato. Esse gate não aprova desempenho: os benchmarks e as calibrações físicas continuam sendo um gate independente.
+`completeness.percent` é a proporção de campos críticos publicados oficialmente e resolvidos no nível do campo. `procurementReady` somente é verdadeiro com 100% dos campos críticos, ausência de conflito e SKU/MPN exato. Um link oficial anexado genericamente ao componente não promove valores legados. Esse gate não aprova desempenho: os benchmarks e as calibrações físicas continuam sendo um gate independente.
+
+## Proveniência v9
+
+Cada campo publicado aponta para uma ou mais `ManufacturerSpecificationObservation`. A observação informa escopo (`sku`, família, arquitetura ou plataforma), autoridade, rótulo e valor originais, normalização, parser, fonte, data, localização e hash. A resolução registra todas as observações consideradas e a justificativa. Herança de família ou plataforma precisa ser explícita e nunca tem a mesma precedência do SKU exato.

@@ -32,4 +32,4 @@ O fornecedor deve comprovar especificações por ficha oficial vinculada ao cód
 
 ## Documentos antigos
 
-Relatórios anteriores continuam legíveis. Por não possuírem o contrato 5.0 e os campos v8, eles aparecem como históricos e não herdam automaticamente aptidão para contratação.
+Relatórios anteriores continuam legíveis. Por não possuírem o contrato 6.0 e as observações por campo do SQLite v9, eles aparecem como históricos e não herdam automaticamente aptidão para contratação.

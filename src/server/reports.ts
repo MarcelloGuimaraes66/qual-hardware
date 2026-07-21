@@ -110,9 +110,32 @@ function planningOptions(recommendations: CapacityRecommendation[]): Recommendat
     left.hardware.name.localeCompare(right.hardware.name));
 }
 
+function detailedPdfOptions(recommendations: CapacityRecommendation[]): RecommendationAlternative[] {
+  const selected = new Map<string, RecommendationAlternative>();
+  for (const recommendation of recommendations) {
+    const option = recommendation.primary;
+    selected.set(`${option.hardware.id}:${option.nodeCount}:${option.activeNodeCount}`, option);
+  }
+  for (const option of qualifiedOptions(recommendations)) {
+    selected.set(`${option.hardware.id}:${option.nodeCount}:${option.activeNodeCount}`, option);
+  }
+  return [...selected.values()].sort((left, right) =>
+    (left.price.median ?? Number.POSITIVE_INFINITY) - (right.price.median ?? Number.POSITIVE_INFINITY) ||
+    left.hardware.name.localeCompare(right.hardware.name));
+}
+
 export function jsonReport(context: ReportContext): Buffer {
   const recommendations = orderedRecommendations(context.recommendations);
   const commercialAndNeutralOptions = procurementReportOptions(recommendations);
+  const usedComponentIds = new Set(uniqueRecommendationOptions(recommendations).flatMap((option) => option.bom?.items.map((item) => item.componentId) ?? []));
+  const componentTechnicalSpecifications = (context.components ?? [])
+    .filter((component) => usedComponentIds.has(component.id))
+    .map((component) => ({
+      componentId: component.id,
+      manufacturer: component.manufacturer,
+      canonicalMpn: component.canonicalMpn ?? component.sku,
+      technicalSpecification: component.technicalSpecification ?? null,
+    }));
   return Buffer.from(JSON.stringify({
     schemaVersion: CAPACITY_RECOMMENDATION_EXPORT_VERSION,
     generatedAt: new Date().toISOString(),
@@ -121,6 +144,7 @@ export function jsonReport(context: ReportContext): Buffer {
     qualifiedOptions: qualifiedOptions(recommendations),
     planningOptions: planningOptions(recommendations),
     commercialAndNeutralOptions,
+    componentTechnicalSpecifications,
     recommendations,
   }, null, 2));
 }
@@ -184,9 +208,9 @@ function priceBasisLabel(design: RecommendationAlternative): string {
 }
 
 function priceBasisPt(design: RecommendationAlternative): string {
-  if (design.price.basis === "market_quotes") return "cotacoes de mercado";
-  if (design.price.basis === "reference_estimate") return "estimativa de referencia datada";
-  return "cotacao necessaria";
+  if (design.price.basis === "market_quotes") return "cotações de mercado";
+  if (design.price.basis === "reference_estimate") return "estimativa de referência datada";
+  return "cotação necessária";
 }
 
 function operatingSystemFor(hardware: HardwareNodeTemplate): OperatingSystemFamily {
@@ -196,16 +220,16 @@ function operatingSystemFor(hardware: HardwareNodeTemplate): OperatingSystemFami
 }
 
 function gpuMemoryDescription(hardware: HardwareNodeTemplate): string {
-  if (hardware.memoryArchitecture === "unified") return `${hardware.ramGb} GB unified memory shared by CPU/GPU; no dedicated VRAM`;
-  if (hardware.memoryArchitecture === "shared") return "Uses shared system memory; no dedicated VRAM";
-  return `${hardware.gpuVramGbTotal} GB dedicated VRAM total per node`;
+  if (hardware.memoryArchitecture === "unified") return `${hardware.ramGb} GB de memória unificada compartilhada entre CPU e GPU; sem VRAM dedicada`;
+  if (hardware.memoryArchitecture === "shared") return "usa memória do sistema compartilhada; sem VRAM dedicada";
+  return `${hardware.gpuVramGbTotal} GB de VRAM dedicada por nó`;
 }
 
 function componentCost(design: RecommendationAlternative, componentId: string) {
   return design.price.componentEstimates?.find((component) => component.componentId === componentId);
 }
 
-export async function xlsxReport({ scenario, recommendations: input }: ReportContext): Promise<Buffer> {
+export async function xlsxReport({ scenario, recommendations: input, components = [] }: ReportContext): Promise<Buffer> {
   const recommendations = orderedRecommendations(input);
   const narrative = buildExecutiveNarrative({ scenario, recommendations });
   const workbook = new ExcelJS.Workbook();
@@ -307,6 +331,40 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
       sourceUrls: component.sourceUrls.join("; "),
     }));
   }));
+
+  const componentById = new Map(components.map((component) => [component.id, component]));
+  appendSheet(workbook, "Detailed Specifications", reportOptions.flatMap((design, optionIndex): ReportRow[] =>
+    (design.commercialReference?.components ?? []).flatMap((reference) => {
+      const specification = componentById.get(reference.componentId)?.technicalSpecification;
+      if (!specification?.fields.length) return [{
+        option: optionIndex + 1, hardware: design.hardware.name, componentKind: reference.kind,
+        manufacturer: reference.manufacturer, model: reference.model, fieldStatus: "not_published",
+        field: "Especificação oficial por campo indisponível",
+      }];
+      return specification.fields.map((field) => ({
+        option: optionIndex + 1,
+        hardware: design.hardware.name,
+        componentKind: reference.kind,
+        componentRole: reference.role,
+        quantityPerNode: reference.quantityPerNode,
+        manufacturer: reference.manufacturer,
+        model: reference.model,
+        canonicalMpn: reference.canonicalMpn,
+        section: field.sectionLabelPt ?? null,
+        field: field.labelPt,
+        normalizedValue: field.value,
+        unit: field.unit,
+        originalLabel: field.originalLabel,
+        originalValue: field.originalValue,
+        fieldStatus: field.status,
+        confidence: field.confidence,
+        sourceIds: field.sourceEvidence.map((item) => item.sourceId).join("; "),
+        sourceUrls: field.sourceEvidence.map((item) => item.url).join("; "),
+        evidenceLocations: field.sourceEvidence.map((item) => item.evidenceLocator).join("; "),
+        resolution: field.resolution?.rationale ?? null,
+      }));
+    }),
+  ));
 
   appendSheet(workbook, "Neutral TR Specification", reportOptions.flatMap((design, optionIndex): ReportRow[] => {
     const specification = design.procurementNeutralSpecification;
@@ -529,40 +587,6 @@ export async function xlsxReport({ scenario, recommendations: input }: ReportCon
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-function wrap(text: string, width = 92): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const originalWord of words) {
-    let word = originalWord;
-    if (word.length > width) {
-      if (line) { lines.push(line); line = ""; }
-      while (word.length > width) {
-        lines.push(word.slice(0, width));
-        word = word.slice(width);
-      }
-      if (!word) continue;
-    }
-    if (`${line} ${word}`.trim().length > width) {
-      if (line) lines.push(line);
-      line = word;
-    } else line = `${line} ${word}`.trim();
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
-function pdfSafe(text: string): string {
-  return text
-    .replaceAll("→", "->")
-    .replaceAll("×", "x")
-    .replaceAll("·", "-")
-    .replaceAll("•", "-")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u2013\u2014]/g, "-")
-    .replace(/[^\u0020-\u007E\u00A0-\u00FF]/g, "?");
-}
-
 interface PdfWriter {
   page: PDFPage;
   y: number;
@@ -571,7 +595,55 @@ interface PdfWriter {
   newPage: () => void;
   ensureSpace: (height: number) => void;
   line: (text: string, size?: number, isBold?: boolean, indent?: number) => void;
+  paragraph: (text: string, size?: number, indent?: number) => void;
   heading: (text: string) => void;
+  subheading: (text: string) => void;
+}
+
+function wrappedLines(text: string, font: PDFFont, size: number, width: number): string[] {
+  const words = pdfText(text).trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (!current || font.widthOfTextAtSize(candidate, size) <= width) {
+      current = candidate;
+      continue;
+    }
+    lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
+function pdfText(value: string): string {
+  const normalized = value.normalize("NFC")
+    .replaceAll("→", " para ")
+    .replaceAll("≥", ">=")
+    .replaceAll("≤", "<=")
+    .replaceAll("−", "-")
+    .replace(/[\u2000-\u200B\u202F\u205F\u3000]/g, " ");
+  const winAnsiExtras = new Set([0x0152, 0x0153, 0x0160, 0x0161, 0x0178, 0x017D, 0x017E, 0x0192, 0x02C6, 0x02DC, 0x2013, 0x2014, 0x2018, 0x2019, 0x201A, 0x201C, 0x201D, 0x201E, 0x2020, 0x2021, 0x2022, 0x2026, 0x2030, 0x2039, 0x203A, 0x20AC, 0x2122]);
+  return [...normalized].map((character) => {
+    const code = character.codePointAt(0)!;
+    return (code >= 0x20 && code <= 0xFF) || winAnsiExtras.has(code) ? character : "?";
+  }).join("");
+}
+
+function drawJustifiedLine(page: PDFPage, line: string, x: number, y: number, width: number, size: number, font: PDFFont, justify: boolean): void {
+  const words = line.split(/\s+/).filter(Boolean);
+  if (!justify || words.length < 2) {
+    page.drawText(line, { x, y, size, font, color: rgb(0.08, 0.12, 0.18) });
+    return;
+  }
+  const wordsWidth = words.reduce((sum, word) => sum + font.widthOfTextAtSize(word, size), 0);
+  const gap = (width - wordsWidth) / (words.length - 1);
+  let cursor = x;
+  for (const word of words) {
+    page.drawText(word, { x: cursor, y, size, font, color: rgb(0.08, 0.12, 0.18) });
+    cursor += font.widthOfTextAtSize(word, size) + gap;
+  }
 }
 
 function createPdfWriter(document: PDFDocument, regular: PDFFont, bold: PDFFont): PdfWriter {
@@ -588,18 +660,19 @@ function createPdfWriter(document: PDFDocument, regular: PDFFont, bold: PDFFont)
     if (writer.y < height) writer.newPage();
   };
   writer.line = (text: string, size = 9.5, isBold = false, indent = 0): void => {
-    const width = size >= 18 ? 52 : Math.max(50, 92 - indent * 2);
-    for (const line of wrap(pdfSafe(text), width)) {
+    const font = isBold ? bold : regular;
+    const x = 48 + indent;
+    const width = 499 - indent;
+    const lines = wrappedLines(text, font, size, width);
+    for (const [lineIndex, line] of lines.entries()) {
       if (writer.y < 55) writer.newPage();
-      writer.page.drawText(line, {
-        x: 48 + indent,
-        y: writer.y,
-        size,
-        font: isBold ? bold : regular,
-        color: rgb(0.08, 0.12, 0.18),
-      });
+      drawJustifiedLine(writer.page, line, x, writer.y, width, size, font, !isBold && lineIndex < lines.length - 1);
       writer.y -= size + 4.5;
     }
+  };
+  writer.paragraph = (text: string, size = 9.5, indent = 0): void => {
+    writer.line(text, size, false, indent);
+    writer.y -= 4;
   };
   writer.heading = (text: string): void => {
     writer.ensureSpace(95);
@@ -607,6 +680,12 @@ function createPdfWriter(document: PDFDocument, regular: PDFFont, bold: PDFFont)
     writer.page.drawRectangle({ x: 48, y: writer.y - 4, width: 4, height: 17, color: rgb(0.56, 0.75, 0.12) });
     writer.line(text, 14, true, 12);
     writer.y -= 5;
+  };
+  writer.subheading = (text: string): void => {
+    writer.ensureSpace(55);
+    writer.y -= 2;
+    writer.line(text, 11, true, 4);
+    writer.y -= 2;
   };
   return writer;
 }
@@ -629,62 +708,62 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   const design = recommendation.primary;
   const hardware = design.hardware;
   writer.page.drawRectangle({ x: 0, y: 744, width: 595, height: 98, color: rgb(0.04, 0.09, 0.11) });
-  writer.page.drawText(pdfSafe(`PROPOSTA ${index} DE 3`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
-  writer.page.drawText(pdfSafe(POLICY_LABELS[recommendation.policy]), { x: 48, y: 774, size: 22, font: writer.bold, color: rgb(0.94, 0.97, 0.98) });
-  writer.page.drawText(pdfSafe(`${recommendation.confidence.toUpperCase()} - ${design.nodeCount} no(s) - ${hardware.name}`), {
+  writer.page.drawText(pdfText(`PROPOSTA ${index} DE 3`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
+  writer.page.drawText(pdfText(POLICY_LABELS[recommendation.policy]), { x: 48, y: 774, size: 22, font: writer.bold, color: rgb(0.94, 0.97, 0.98) });
+  writer.page.drawText(pdfText(`${recommendation.confidence.toUpperCase()} — ${design.nodeCount} nó(s) — ${hardware.name}`), {
     x: 48, y: 754, size: 9, font: writer.regular, color: rgb(0.65, 0.73, 0.76),
   });
   writer.y = 720;
 
   writer.heading("Resumo de capacidade");
-  writer.line(`Nos: ${design.nodeCount}; ativos: ${design.activeNodeCount}; reserva: ${design.nodeCount - design.activeNodeCount}.`);
-  writer.line(`Folga-alvo: ${design.headroomPercent}%; gargalo dominante: ${design.bottleneck}; capacidade estimada neste perfil: ${recommendation.primary.maximumAdditionalCameras + recommendation.primary.allocations.filter((node) => node.role === "active").reduce((sum, node) => sum + node.cameraGroups.reduce((cameraSum, group) => cameraSum + group.cameras, 0), 0)} cameras (${design.maximumAdditionalCameras} adicionais).`);
-  writer.line(`Preco do projeto: ${formatPrice(design)}`);
+  writer.line(`Nós: ${design.nodeCount}; ativos: ${design.activeNodeCount}; reserva: ${design.nodeCount - design.activeNodeCount}.`);
+  writer.line(`Folga-alvo: ${design.headroomPercent}%; gargalo dominante: ${design.bottleneck}; capacidade estimada neste perfil: ${recommendation.primary.maximumAdditionalCameras + recommendation.primary.allocations.filter((node) => node.role === "active").reduce((sum, node) => sum + node.cameraGroups.reduce((cameraSum, group) => cameraSum + group.cameras, 0), 0)} câmeras (${design.maximumAdditionalCameras} adicionais).`);
+  writer.line(`Preço do projeto: ${formatPrice(design)}`);
 
-  writer.heading("Especificacao tecnica por no");
-  writer.line(`Sistema: ${hardware.name}; formato: ${hardware.kind}; plataforma: ${operatingSystemFor(hardware)}; geracao: ${hardware.generation}.`, 10, true);
-  writer.line(`CPU: ${hardware.cpuModel}; fabricante ${hardware.cpuVendor}; ${hardware.physicalCores} nucleos fisicos; fator conservador sustentado ${Math.round((hardware.sustainedComputeFactor ?? 1) * 100)}%.`);
-  writer.line(`Placa-mae/plataforma: ${hardware.motherboard}.`);
-  writer.line(`RAM: ${hardware.ramGb} GB por no; ECC: ${hardware.ecc ? "sim" : "nao"}; arquitetura: ${hardware.memoryArchitecture}.`);
-  writer.line(`GPU: ${hardware.gpuCount} x ${hardware.gpuModel} (${hardware.gpuVendor}); ${gpuMemoryDescription(hardware)}.`);
-  writer.line(`AiQ local: ${hardware.localAiqSlots} instancia(s) por no; decode Perceptrum GPU: ${hardware.supportsPerceptrumGpuDecode ? "compativel" : "nao compativel"}; capacidade de referencia: ${hardware.gpuDecode1080p30Streams} streams 1080p30.`);
-  writer.line(`NVMe operacional: ${hardware.storageModel}; ${hardware.usableStorageTb} TB uteis; escrita, clips temporarios, retencao e RAID participam do dimensionamento.`);
+  writer.heading("Especificação técnica resumida por nó");
+  writer.line(`Sistema: ${hardware.name}; formato: ${hardware.kind}; plataforma: ${operatingSystemFor(hardware)}; geração: ${hardware.generation}.`, 10, true);
+  writer.line(`CPU: ${hardware.cpuModel}; fabricante ${hardware.cpuVendor}; ${hardware.physicalCores} núcleos físicos; fator conservador sustentado ${Math.round((hardware.sustainedComputeFactor ?? 1) * 100)}%.`);
+  writer.line(`Placa-mãe/plataforma: ${hardware.motherboard}.`);
+  writer.line(`RAM: ${hardware.ramGb} GB por nó; ECC: ${hardware.ecc ? "sim" : "não"}; arquitetura: ${hardware.memoryArchitecture}.`);
+  writer.line(`GPU: ${hardware.gpuCount} × ${hardware.gpuModel} (${hardware.gpuVendor}); ${gpuMemoryDescription(hardware)}.`);
+  writer.line(`AiQ local: ${hardware.localAiqSlots} instância(s) por nó; decodificação Perceptrum por GPU: ${hardware.supportsPerceptrumGpuDecode ? "compatível" : "não compatível"}; capacidade de referência: ${hardware.gpuDecode1080p30Streams} streams 1080p30.`);
+  writer.line(`NVMe operacional: ${hardware.storageModel}; ${hardware.usableStorageTb} TB úteis; escrita, clipes temporários, retenção e RAID participam do dimensionamento.`);
   if (design.calibration) {
     const calibration = design.calibration;
-    writer.line(`Evidencia de capacidade: ${calibration.status}; confianca ${calibration.confidenceClass}; intervalo seguro ${calibration.safeCameraMinimum ?? "n/d"}-${calibration.safeCameraMaximum ?? "n/d"} cameras; reserva ${calibration.reservePercent}%; gargalo ${calibration.bottleneck ?? "sem cobertura"}.`);
+    writer.line(`Evidência de capacidade: ${calibration.status}; confiança ${calibration.confidenceClass}; intervalo seguro ${calibration.safeCameraMinimum ?? "n/d"}-${calibration.safeCameraMaximum ?? "n/d"} câmeras; reserva ${calibration.reservePercent}%; gargalo ${calibration.bottleneck ?? "sem cobertura"}.`);
     for (const stage of calibration.stagePredictions) {
-      writer.line(`Extrapolacao ${stage.stage}: ${stage.safeCameraCapacity} cameras seguras, ${stage.reservePercent}% de reserva, ancoras ${stage.anchorHardwareIds.join(", ") || "nenhuma"}.`);
+      writer.line(`Extrapolação ${stage.stage}: ${stage.safeCameraCapacity} câmeras seguras, ${stage.reservePercent}% de reserva, âncoras ${stage.anchorHardwareIds.join(", ") || "nenhuma"}.`);
     }
   }
-  writer.line(`Rede: ${hardware.nicGbps} GbE; fonte: ${hardware.powerSupply}; refrigeracao: ${hardware.cooling}.`);
-  writer.line(`Chassi: ${hardware.chassis}; sistema operacional: ${hardware.windowsEdition}; indice de expansao: ${hardware.expansionScore}.`);
+  writer.line(`Rede: ${hardware.nicGbps} GbE; fonte: ${hardware.powerSupply}; refrigeração: ${hardware.cooling}.`);
+  writer.line(`Chassi: ${hardware.chassis}; sistema operacional: ${hardware.windowsEdition}; índice de expansão: ${hardware.expansionScore}.`);
 
   if (design.bom) {
-    writer.heading("BOM auditavel, compatibilidade e cobertura");
-    writer.line(`Build ${design.bom.id}; classe ${design.bom.kind}; gate ${design.bom.procurementGate.status}; cobertura ${design.bom.coverage.coveredStageCount}/${design.bom.coverage.requiredStageCount} estagios (${design.bom.coverage.percent}%); ancoras fisicas ${design.bom.coverage.physicalAnchorCount}/3.`, 9.5, true);
-    for (const item of design.bom.items) writer.line(`${item.role}: ${item.quantity} x ${item.componentId} (${item.kind})${item.required ? " - obrigatorio" : ""}.`);
-    for (const decision of design.bom.compatibility) writer.line(`${decision.compatible ? "COMPATIVEL" : "INCOMPATIVEL"} ${decision.code}: ${decision.message}`);
+    writer.heading("BOM auditável, compatibilidade e cobertura");
+    writer.line(`Build ${design.bom.id}; classe ${design.bom.kind}; gate ${design.bom.procurementGate.status}; cobertura ${design.bom.coverage.coveredStageCount}/${design.bom.coverage.requiredStageCount} estágios (${design.bom.coverage.percent}%); âncoras físicas ${design.bom.coverage.physicalAnchorCount}/3.`, 9.5, true);
+    for (const item of design.bom.items) writer.line(`${item.role}: ${item.quantity} × ${item.componentId} (${item.kind})${item.required ? " — obrigatório" : ""}.`);
+    for (const decision of design.bom.compatibility) writer.line(`${decision.compatible ? "COMPATÍVEL" : "INCOMPATÍVEL"} ${decision.code}: ${decision.message}`);
     for (const stage of design.bom.coverage.stages) {
-      writer.line(`${stage.covered ? "COBERTO" : "BLOQUEADO"} ${stage.stage}: benchmarks ${stage.eligibleObservationIds.length}; ancoras ${stage.physicalAnchorRunIds.length}; ${stage.reasons.join(" ") || "evidencia completa"}.`);
+      writer.line(`${stage.covered ? "COBERTO" : "BLOQUEADO"} ${stage.stage}: benchmarks ${stage.eligibleObservationIds.length}; âncoras ${stage.physicalAnchorRunIds.length}; ${stage.reasons.join(" ") || "evidência completa"}.`);
     }
   }
 
   writer.heading("Custo por componente e total do projeto");
   if (design.price.componentEstimates?.length) {
     for (const component of design.price.componentEstimates) {
-      writer.line(`${component.component}: ${component.quantityPerNode} por no; ${design.price.currency} ${formatMoney(component.perNodeAmount)} por no; ${design.price.currency} ${formatMoney(component.projectAmount)} no projeto.`);
+      writer.line(`${component.component}: ${component.quantityPerNode} por nó; ${design.price.currency} ${formatMoney(component.perNodeAmount)} por nó; ${design.price.currency} ${formatMoney(component.projectAmount)} no projeto.`);
     }
     const perNodeTotal = design.price.median === null ? null : design.price.median / design.nodeCount;
-    writer.line(`TOTAL POR NO: ${design.price.currency} ${formatMoney(perNodeTotal)}.`, 10, true);
-    writer.line(`QUANTIDADE DE NOS: ${design.nodeCount}. TOTAL DO PROJETO: ${design.price.currency} ${formatMoney(design.price.median)}.`, 10, true);
+    writer.line(`TOTAL POR NÓ: ${design.price.currency} ${formatMoney(perNodeTotal)}.`, 10, true);
+    writer.line(`QUANTIDADE DE NÓS: ${design.nodeCount}. TOTAL DO PROJETO: ${design.price.currency} ${formatMoney(design.price.median)}.`, 10, true);
     writer.line(`Faixa do projeto: ${formatPrice(design)}.`);
-    writer.line(`Base: ${priceBasisPt(design)}; referencia: ${design.price.observedAt ?? "nao disponivel"}; exclui ${(design.price.exclusions ?? []).join(", ")}.`);
-  } else writer.line("Sem estimativa compativel; obter cotacao itemizada antes da proposta comercial.");
+    writer.line(`Base: ${priceBasisPt(design)}; referência: ${design.price.observedAt ?? "não disponível"}; exclui ${(design.price.exclusions ?? []).join(", ")}.`);
+  } else writer.line("Sem estimativa compatível; obter cotação itemizada antes da proposta comercial.");
 
-  writer.heading("Distribuicao das cameras e utilizacao");
+  writer.heading("Distribuição das câmeras e utilização");
   for (const node of design.allocations) {
     const cameraCount = node.cameraGroups.reduce((sum, group) => sum + group.cameras, 0);
-    writer.line(`No ${node.nodeIndex} - ${node.role} - ${cameraCount} camera(s) - ${node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(", ") || "reserva sem cameras"}.`, 9.5, true);
+    writer.line(`Nó ${node.nodeIndex} — ${node.role} — ${cameraCount} câmera(s) — ${node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(", ") || "reserva sem câmeras"}.`, 9.5, true);
     writer.line(`CPU ${Math.round(node.utilization.cpuCores * 100)}%; RAM ${Math.round(node.utilization.ramGb * 100)}%; VRAM ${Math.round(node.utilization.gpuVramGb * 100)}%; NVDEC ${Math.round(node.utilization.gpuDecode1080p30Streams * 100)}%; LAN ${Math.round(node.utilization.lanGbps * 100)}%; Internet ${Math.round(node.utilization.internetUploadMbps * 100)}%.`, 9, false, 10);
   }
 
@@ -695,52 +774,107 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   }
 
   writer.heading("Fontes, premissas e avisos");
-  for (const source of hardware.sources) writer.line(`Fonte tecnica: ${source.title} - ${source.url}`);
-  for (const source of design.price.sourceUrls) writer.line(`Fonte de preco: ${source}`);
+  for (const source of hardware.sources) writer.line(`Fonte técnica: ${source.title} — ${source.url}`);
+  for (const source of design.price.sourceUrls) writer.line(`Fonte de preço: ${source}`);
   for (const warning of design.warnings) writer.line(`AVISO: ${warning}`);
   for (const assumption of recommendation.assumptions) writer.line(`Premissa: ${assumption}`);
-  for (const evidence of recommendation.evidence) writer.line(`Evidencia: ${evidence}`);
+  for (const evidence of recommendation.evidence) writer.line(`Evidência: ${evidence}`);
 }
 
-function addCommercialAndNeutralOption(writer: PdfWriter, design: RecommendationAlternative, index: number, total: number): void {
+const COMPONENT_LABELS: Partial<Record<HardwareComponent["kind"], string>> = {
+  cpu: "Processador (CPU)", gpu: "Acelerador gráfico (GPU)", motherboard: "Placa-mãe / plataforma",
+  memory_kit: "Memória RAM", storage_os: "Armazenamento operacional", storage_retention: "Armazenamento de retenção",
+  nic: "Interface de rede", psu: "Fonte de alimentação", cooling: "Sistema de refrigeração", chassis: "Chassi",
+  oem_system: "Sistema OEM", rack_configuration: "Configuração de rack",
+};
+
+function specificationValue(value: string | number | boolean | null, unit: string | null): string {
+  if (value === null) return "não publicado";
+  const formatted = typeof value === "boolean" ? (value ? "sim" : "não") : String(value);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function displayManufacturer(value: string): string {
+  const known: Record<string, string> = { amd: "AMD", intel: "Intel", nvidia: "NVIDIA", apple: "Apple" };
+  return known[value.toLowerCase()] ?? value;
+}
+
+function addDetailedCommercialComponents(writer: PdfWriter, design: RecommendationAlternative, components: HardwareComponent[], machineIndex: number): void {
+  const byId = new Map(components.map((component) => [component.id, component]));
+  const commercial = design.commercialReference;
+  if (!commercial?.components.length) {
+    writer.paragraph("A recomendação é legada e não possui uma BOM vinculada a componentes normalizados. A referência comercial foi preservada, mas o detalhamento oficial permanece indisponível.", 9.5);
+    return;
+  }
+  for (const [componentIndex, reference] of commercial.components.entries()) {
+    const number = `${machineIndex}.${componentIndex + 1}`;
+    const label = COMPONENT_LABELS[reference.kind] ?? reference.kind;
+    writer.subheading(`${number}. ${label} — especificação resumida`);
+    writer.paragraph(`${reference.quantityPerNode} unidade(s) por nó; referência comercial ${displayManufacturer(reference.manufacturer)} ${reference.model}; código canônico ${reference.canonicalMpn}; completude de especificações oficiais ${reference.specificationCompletenessPercent}%.`, 9.5);
+    const component = byId.get(reference.componentId);
+    writer.subheading(`${number}.1. Especificação técnica detalhada do fabricante`);
+    const published = component?.technicalSpecification?.fields.filter((field) => field.status === "published" && field.confidence === "official") ?? [];
+    if (!published.length) {
+      writer.paragraph("O coletor ainda não localizou campos oficiais vinculados ao SKU exato. O componente permanece como referência de planejamento e não pode ser tratado como especificação comprovada para aquisição.", 9.5);
+    } else {
+      const groups = new Map<string, typeof published>();
+      for (const field of published) {
+        const key = field.sectionLabelPt ?? "Informações adicionais do fabricante";
+        groups.set(key, [...(groups.get(key) ?? []), field]);
+      }
+      let sectionIndex = 0;
+      for (const [section, fields] of groups) {
+        sectionIndex += 1;
+        writer.line(`${number}.1.${sectionIndex}. ${section}`, 9.5, true, 8);
+        for (const field of fields) {
+          writer.paragraph(`${field.labelPt}: ${specificationValue(field.value, field.unit)}. Valor publicado: ${specificationValue(field.originalValue, null)}. Evidência: ${field.sourceEvidence.map((evidence) => `${evidence.sourceId}, ${evidence.evidenceLocator}`).join("; ")}.`, 8.8, 16);
+        }
+      }
+    }
+    const missing = component?.technicalSpecification?.completeness.missingRequiredFieldCodes ?? [];
+    if (missing.length) writer.paragraph(`Campos oficiais obrigatórios ainda ausentes: ${missing.join(", ")}. Enquanto houver ausência, conflito ou ambiguidade, o componente permanece bloqueado para aquisição.`, 8.8, 8);
+    const urls = [...new Set(component?.technicalSpecification?.fields.flatMap((field) => field.sourceEvidence.map((evidence) => evidence.url)) ?? reference.sourceUrls)];
+    for (const url of urls) writer.line(`Fonte oficial: ${url}`, 8, false, 8);
+  }
+}
+
+function addCommercialAndNeutralOption(writer: PdfWriter, design: RecommendationAlternative, index: number, total: number, components: HardwareComponent[]): void {
   writer.newPage();
   writer.page.drawRectangle({ x: 0, y: 744, width: 595, height: 98, color: rgb(0.04, 0.09, 0.11) });
-  writer.page.drawText(pdfSafe(`OPCAO ${index} DE ${total} - REFERENCIA E REQUISITOS`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
-  writer.page.drawText(pdfSafe(design.hardware.name), { x: 48, y: 774, size: 18, font: writer.bold, color: rgb(0.94, 0.97, 0.98) });
-  writer.page.drawText(pdfSafe(`${design.nodeCount} no(s) - ${formatPrice(design)}`), { x: 48, y: 754, size: 9, font: writer.regular, color: rgb(0.65, 0.73, 0.76) });
+  writer.page.drawText(pdfText(`MÁQUINA ${index} DE ${total} — REFERÊNCIA E REQUISITOS`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
+  writer.page.drawText(pdfText(design.hardware.name), { x: 48, y: 774, size: 18, font: writer.bold, color: rgb(0.94, 0.97, 0.98) });
+  writer.page.drawText(pdfText(`${design.nodeCount} nó(s) — ${formatPrice(design)}`), { x: 48, y: 754, size: 9, font: writer.regular, color: rgb(0.65, 0.73, 0.76) });
   writer.y = 720;
 
-  writer.heading("A. Referencia comercial interna");
-  writer.line("Esta secao identifica a configuracao usada na analise interna. Nao deve ser copiada para o edital ou para o anexo tecnico neutro.", 9.5, true);
+  writer.heading(`${index}. Referência comercial interna`);
+  writer.paragraph("Esta seção identifica a configuração usada na análise interna. Ela preserva fabricante, modelo e código para pesquisa de preços, conferência de compatibilidade e auditoria, mas não deve ser copiada para o edital ou para o anexo técnico neutro.", 9.5);
   const commercial = design.commercialReference;
-  if (!commercial) writer.line("Referencia comercial indisponivel nesta recomendacao legada.");
+  if (!commercial) writer.line("Referência comercial indisponível nesta recomendação legada.");
   else {
-    writer.line(`Sistema: ${commercial.hardwareName}; ${commercial.nodeCount} no(s), ${commercial.activeNodeCount} ativo(s); plataforma ${commercial.operatingSystem}; preco do projeto ${commercial.currency} ${formatMoney(commercial.projectPrice)} (${commercial.priceBasis}).`);
-    for (const component of commercial.components) {
-      writer.line(`${component.role}: ${component.quantityPerNode} x ${component.manufacturer} ${component.model}; MPN ${component.canonicalMpn}; completude oficial ${component.specificationCompletenessPercent}%.`);
-    }
+    writer.line(`${commercial.hardwareName}; ${commercial.nodeCount} nó(s), ${commercial.activeNodeCount} ativo(s); plataforma ${commercial.operatingSystem}; preço do projeto ${commercial.currency} ${formatMoney(commercial.projectPrice)} (${commercial.priceBasis}).`, 10, true);
+    addDetailedCommercialComponents(writer, design, components, index);
   }
 
-  writer.heading("B. Especificacao tecnica nao comercial");
+  writer.heading(`${index}.${(commercial?.components.length ?? 0) + 1}. Especificação técnica não comercial`);
   const neutral = design.procurementNeutralSpecification;
-  if (!neutral) writer.line("Especificacao neutra indisponivel nesta recomendacao legada.", 9.5, true);
+  if (!neutral) writer.line("Especificação neutra indisponível nesta recomendação legada.", 9.5, true);
   else {
-    writer.line(`Estado: ${neutral.status.toUpperCase()}; gate tecnico: ${neutral.procurementEligibility}; concorrencia: ${neutral.marketCompetitionAssessment.status}.`, 10, true);
-    if (neutral.status === "blocked") writer.line("NAO UTILIZAR COMO ESPECIFICACAO DE AQUISICAO. Evidencias, completude ou concorrencia ainda sao insuficientes.", 10, true);
+    writer.line(`Estado: ${neutral.status.toUpperCase()}; gate técnico: ${neutral.procurementEligibility}; concorrência: ${neutral.marketCompetitionAssessment.status}.`, 10, true);
+    if (neutral.status === "blocked") writer.line("NÃO UTILIZAR COMO ESPECIFICAÇÃO DE AQUISIÇÃO. Evidências, completude ou concorrência ainda são insuficientes.", 10, true);
     for (const item of neutral.requirements) {
-      const comparison = item.comparator === "minimum" ? "no minimo" : item.comparator === "maximum" ? "no maximo" : item.comparator;
-      writer.line(`${item.componentRole} - ${item.characteristic}: ${comparison} ${String(item.value)}${item.unit ? ` ${item.unit}` : ""}; quantidade ${item.quantityPerNode} por no / ${item.projectQuantity} no projeto.`, 9.5, item.mandatory);
-      writer.line(`Justificativa: ${item.rationale} Comprovacao: ${item.proofMethod}. Aceite: ${item.acceptanceCriterion}`, 8.5, false, 10);
+      const comparison = item.comparator === "minimum" ? "no mínimo" : item.comparator === "maximum" ? "no máximo" : item.comparator;
+      writer.line(`${item.componentRole} — ${item.characteristic}: ${comparison} ${String(item.value)}${item.unit ? ` ${item.unit}` : ""}; quantidade ${item.quantityPerNode} por nó / ${item.projectQuantity} no projeto.`, 9.5, item.mandatory);
+      writer.paragraph(`Justificativa: ${item.rationale} Comprovação: ${item.proofMethod}. Critério de aceite: ${item.acceptanceCriterion}`, 8.5, 10);
     }
     writer.heading("Competitividade e controle de direcionamento");
-    writer.line(`Produtos no requisito limitante: ${neutral.marketCompetitionAssessment.matchingProductCount}; fabricantes distintos: ${neutral.marketCompetitionAssessment.distinctManufacturerCount}; publicacao automatica: ${neutral.marketCompetitionAssessment.safeForPublication ? "permitida" : "bloqueada ou sujeita a revisao"}.`);
+    writer.paragraph(`Produtos no requisito limitante: ${neutral.marketCompetitionAssessment.matchingProductCount}; fabricantes distintos: ${neutral.marketCompetitionAssessment.distinctManufacturerCount}; publicação automática: ${neutral.marketCompetitionAssessment.safeForPublication ? "permitida" : "bloqueada ou sujeita a revisão"}.`);
     for (const reason of neutral.marketCompetitionAssessment.reasons) writer.line(reason);
     for (const finding of neutral.forbiddenIdentifierFindings) writer.line(`IDENTIFICADOR COMERCIAL DETECTADO: ${finding}.`);
     for (const disclaimer of neutral.disclaimers) writer.line(`Nota: ${disclaimer}`);
   }
 }
 
-export async function pdfReport({ scenario, recommendations: input }: ReportContext): Promise<Buffer> {
+export async function pdfReport({ scenario, recommendations: input, components = [] }: ReportContext): Promise<Buffer> {
   const recommendations = orderedRecommendations(input);
   const narrative = buildExecutiveNarrative({ scenario, recommendations });
   const document = await PDFDocument.create();
@@ -770,19 +904,19 @@ export async function pdfReport({ scenario, recommendations: input }: ReportCont
   }
 
   const qualified = qualifiedOptions(recommendations);
-  writer.heading("Maquinas aptas para aquisicao em ordem crescente de custo");
-  if (!qualified.length) writer.line("Nenhuma maquina esta apta para aquisicao: faltam evidencias numericas e calibracoes fisicas completas para todos os estagios.", 9.5, true);
+  writer.heading("Máquinas aptas para aquisição em ordem crescente de custo");
+  if (!qualified.length) writer.line("Nenhuma máquina está apta para aquisição: faltam evidências numéricas e calibrações físicas completas para todos os estágios.", 9.5, true);
   for (const [index, option] of qualified.entries()) {
     writer.line(`${index + 1}. ${option.hardware.name} - ${option.hardware.cpuModel} - ${option.hardware.gpuModel} - ${formatPrice(option)} - evidencia ${option.calibration?.status ?? "estimada"}.`, 9.5);
   }
-  writer.heading("Referencias de planejamento bloqueadas para compra");
+  writer.heading("Referências de planejamento bloqueadas para compra");
   for (const [index, option] of planningOptions(recommendations).entries()) {
-    writer.line(`${index + 1}. ${option.hardware.name} - ${formatPrice(option)} - ${option.calibration?.status ?? "reference_only"}; nao comprar sem completar as evidencias.`, 9.5);
+    writer.line(`${index + 1}. ${option.hardware.name} — ${formatPrice(option)} — ${option.calibration?.status ?? "reference_only"}; não comprar sem completar as evidências.`, 9.5);
   }
 
-  writer.heading("Carga de cameras e Agents usada no calculo");
+  writer.heading("Carga de câmeras e Agents usada no cálculo");
   for (const group of scenario.scenario.cameraGroups) {
-    writer.line(`${group.count} camera(s) - ${group.name}: ${group.source.codec.toUpperCase()} ${group.source.width}x${group.source.height}, ${group.source.sourceFps} FPS RTSP, ${group.source.bitrateMbps} Mbps, decode ${group.decodeMode}.`, 9.5, true);
+    writer.line(`${group.count} câmera(s) — ${group.name}: ${group.source.codec.toUpperCase()} ${group.source.width}×${group.source.height}, ${group.source.sourceFps} FPS RTSP, ${group.source.bitrateMbps} Mbps, decodificação ${group.decodeMode}.`, 9.5, true);
     for (const agent of group.agents) {
       const media = agent.inputType === "video" ? `video, ${agent.packaging}, ${agent.modelFps} FPS` : "imagem, 1 frame";
       writer.line(`- ${agent.name}: ${agent.model}, ${media}, a cada ${agent.runEverySeconds}s, movimento=${agent.features.onlyCaptureOnMotion}, regioes=${agent.features.regions}, recorte=${agent.features.croppedFrame}, faces=${agent.features.faceReferences}, negativas=${agent.features.negativeReferences}, temporal=${agent.features.temporal}.`, 9, false, 10);
@@ -790,12 +924,12 @@ export async function pdfReport({ scenario, recommendations: input }: ReportCont
   }
 
   recommendations.forEach((recommendation, index) => addConfiguration(writer, recommendation, index + 1));
-  const reportOptions = uniqueRecommendationOptions(recommendations);
-  reportOptions.forEach((option, index) => addCommercialAndNeutralOption(writer, option, index + 1, reportOptions.length));
+  const reportOptions = detailedPdfOptions(recommendations);
+  reportOptions.forEach((option, index) => addCommercialAndNeutralOption(writer, option, index + 1, reportOptions.length, components));
 
   const pages = document.getPages();
   pages.forEach((reportPage, index) => reportPage.drawText(
-    pdfSafe(`Qual Hardware | pagina ${index + 1} de ${pages.length}`),
+    pdfText(`Qual Hardware | página ${index + 1} de ${pages.length}`),
     { x: 48, y: 24, size: 8, font: regular, color: rgb(0.35, 0.4, 0.45) },
   ));
   return Buffer.from(await document.save());

@@ -10,7 +10,8 @@ import type {
 } from "../shared/types.js";
 import { COMPONENT_BUILD_VERSION } from "../shared/types.js";
 import { buildEvidenceCoverage, buildProcurementGate } from "./evidence.js";
-import { withTechnicalSpecification } from "./technicalSpecifications.js";
+import { componentTechnicalSpecificationFromObservations, withTechnicalSpecification } from "./technicalSpecifications.js";
+import { BUNDLED_MANUFACTURER_SPECIFICATION_OBSERVATIONS } from "./bundledManufacturerSpecifications.js";
 
 function slug(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -59,7 +60,16 @@ function component(
     compatibility,
     sourceUrls,
   };
-  return withTechnicalSpecification(derived, template.sources[0]?.observedAt ?? "2026-07-19T00:00:00.000Z");
+  const observations = BUNDLED_MANUFACTURER_SPECIFICATION_OBSERVATIONS.filter((observation) => observation.componentId === derived.id);
+  if (!observations.length) return withTechnicalSpecification(derived, template.sources[0]?.observedAt ?? "2026-07-19T00:00:00.000Z");
+  const generatedAt = observations.map((observation) => observation.retrievedAt).sort().at(-1)!;
+  return {
+    ...derived,
+    specificationVersion: `bundled-official-${generatedAt}`,
+    updatedAt: generatedAt,
+    sourceUrls: [...new Set([...derived.sourceUrls, ...observations.map((observation) => observation.sourceUrl)])],
+    technicalSpecification: componentTechnicalSpecificationFromObservations(derived, [...observations], generatedAt),
+  };
 }
 
 export interface CatalogDerivation {

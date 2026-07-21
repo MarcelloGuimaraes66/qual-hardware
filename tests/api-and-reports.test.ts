@@ -76,7 +76,7 @@ describe("Qual Hardware API and reports", () => {
     expect(Array.from(spreadsheetBytes.slice(0, 2))).toEqual([0x50, 0x4b]);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(spreadsheetBytes.buffer);
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Qualified Options", "Planning Only", "Commercial Reference", "Neutral TR Specification", "TR Compliance Matrix", "Market Competition", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Qualified Options", "Planning Only", "Commercial Reference", "Detailed Specifications", "Neutral TR Specification", "TR Compliance Matrix", "Market Competition", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
     expect(workbook.getWorksheet("Executive Summary")!.getCell("B2").value).toContain("RTSP");
     const configurations = workbook.getWorksheet("3 Configurations")!;
     expect(configurations.rowCount).toBe(4);

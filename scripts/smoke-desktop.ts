@@ -336,10 +336,10 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   assert(hardware.some((item) => item.id === "laptop-vivobook-s16-285h-32gb-user"));
   const components = await api<Array<{ id: string; technicalSpecification?: { schemaVersion: string; completeness: { procurementReady: boolean } } }>>(application.origin, "/api/catalog/components");
   assert(components.length > 200);
-  assert(components.every((item) => item.technicalSpecification?.schemaVersion === "qual-hardware-component-technical-specification/1.0.0"));
+  assert(components.every((item) => item.technicalSpecification?.schemaVersion === "qual-hardware-component-technical-specification/2.0.0"));
   const specificationCoverage = await api<{ componentCount: number; procurementReadyCount: number }>(application.origin, "/api/catalog/specifications/coverage");
   assert.equal(specificationCoverage.componentCount, components.length);
-  assert.equal(specificationCoverage.procurementReadyCount, 0, "legacy facts must not be promoted to official manufacturer specifications");
+  assert.equal(specificationCoverage.procurementReadyCount, 1, "only the reviewed exact-SKU CPU snapshot may satisfy the technical-specification gate");
   const specificationHistory = await api<unknown[]>(application.origin, `/api/catalog/components/${encodeURIComponent(components[0]!.id)}/specifications/history`);
   assert(specificationHistory.length >= 1);
   const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();
@@ -371,7 +371,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
     if (format === "json") {
       const report = JSON.parse(new TextDecoder().decode(bytes)) as { schemaVersion: string; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string } }> };
-      assert.equal(report.schemaVersion, "capacity-recommendation-export/5.0.0");
+      assert.equal(report.schemaVersion, "capacity-recommendation-export/6.0.0");
       assert(report.commercialAndNeutralOptions.length >= 6);
       assert(report.commercialAndNeutralOptions.every((item) => item.commercialReference && item.procurementNeutralSpecification.status === "blocked"));
     }
@@ -450,7 +450,7 @@ async function main(): Promise<void> {
     const database = await readFile(databasePath);
     assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
     const sqlite = new DatabaseSync(databasePath, { readOnly: true });
-    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 8);
+    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 9);
     assert((sqlite.prepare("SELECT count(*) AS total FROM component_technical_specification_versions").get() as { total: number }).total > 200);
     sqlite.close();
     console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}`);

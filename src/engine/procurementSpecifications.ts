@@ -209,8 +209,13 @@ export function forbiddenNeutralIdentifiers(specification: Pick<ProcurementNeutr
 }
 
 export function procurementSpecification(scenario: CapacityScenario, option: RecommendationAlternative, components: HardwareComponent[], observations: PublicBenchmarkObservation[] = [], generatedAt = new Date().toISOString()): ProcurementNeutralSpecification {
-  const requirements = populateMatches(baseRequirements(scenario, option), components, observations);
-  const marketCompetitionAssessment = competition(requirements, components);
+  const matchedRequirements = populateMatches(baseRequirements(scenario, option), components, observations);
+  const internalAssessment = competition(matchedRequirements, components);
+  // A neutral public specification contains counts and conclusions, never
+  // product identifiers or manufacturer names. Traceability remains in the
+  // explicitly separate commercial-reference section.
+  const requirements = matchedRequirements.map((requirement) => ({ ...requirement, matchingComponentIds: [] }));
+  const marketCompetitionAssessment = { ...internalAssessment, matchingComponentIds: [], manufacturerNames: [] };
   const draft: ProcurementNeutralSpecification = {
     schemaVersion: PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION,
     id: `neutral-spec:${hashId(option.id, generatedAt)}`,

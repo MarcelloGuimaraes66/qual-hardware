@@ -18,7 +18,7 @@ describe("technical component specifications v9", () => {
     expect(components.every((component) => component.technicalSpecification!.fields.every((field) => field.value !== 0 || field.status !== "not_published"))).toBe(true);
     const coverage = specificationCoverage(components);
     expect(coverage.componentCount).toBe(components.length);
-    expect(coverage.procurementReadyCount).toBe(0);
+    expect(coverage.procurementReadyCount).toBe(1);
     expect(coverage.byKind.every((entry) => entry.missingFieldCodes.length > 0)).toBe(true);
   });
 
@@ -174,6 +174,6 @@ describe("technical component specifications v9", () => {
     expect((await history.json() as unknown[])).toHaveLength(1);
     const coverage = await (await app.request("/api/catalog/specifications/coverage")).json() as { componentCount: number; procurementReadyCount: number };
     expect(coverage.componentCount).toBe(components.length);
-    expect(coverage.procurementReadyCount).toBe(0);
+    expect(coverage.procurementReadyCount).toBe(1);
   });
 });

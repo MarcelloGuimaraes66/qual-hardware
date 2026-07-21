@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, 90+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v8, differentiated calculations, reconciled component costs, PDF/XLSX/JSON 5.0 exports, neutral DOCX/PDF/JSON annexes, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, 90+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v9, differentiated calculations, reconciled component costs, detailed PDF/XLSX/JSON 6.0 exports, neutral DOCX/PDF/JSON annexes, single-instance behavior and persistence after restart.
 
 ```sh
 npm ci
@@ -53,3 +53,6 @@ Run `PERCEPTRUM_SOURCE_ROOT=/path/to/perceptrum npm run audit:source` whenever P
 - A manufacturer datasheet never counts as a performance benchmark. Procurement-ready components require all critical official fields, while purchase-ready recommendations independently require benchmark/calibration eligibility.
 - The neutral annex must contain no manufacturer, brand, model, MPN, SKU, seller, price, commercial URL or identifying component ID. Competition is adequate only with at least three matching products and two manufacturers; a restricted/no-coverage result is blocked.
 - PDF, XLSX, JSON, DOCX and neutral PDF/JSON are generated from the same decorated recommendation set. Every format preserves quantities, proof method, acceptance criteria, status and market gate.
+- A specification is official only when an immutable field observation resolves to the exact SKU/MPN through a deterministic parser. Component-level links and legacy JSON values remain ambiguous.
+- The combined PDF keeps the original commercial summary, uses Brazilian Portuguese and justified paragraphs, then numbers machine, component, detailed specification and technical group. Visual review and searchable-text extraction are required.
+- SQLite v9 migration must preserve every v1–v8 row and create a consistent pre-migration backup before opening a persistent older database.

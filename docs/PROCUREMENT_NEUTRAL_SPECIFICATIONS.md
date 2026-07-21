@@ -45,4 +45,4 @@ O anexo separado remove fabricante, marca, modelo, MPN, SKU, vendedor, preço, U
 - `GET /api/recommendations/:id/procurement-competition`: gate de mercado por opção;
 - `GET /api/recommendations/:id/export/tr-docx|tr-pdf|tr-json`: anexo separado.
 
-O banco v8 armazena definições, artefatos, versões, valores, completude, requisitos e correspondências de mercado sem apagar v1–v7.
+O banco v9 preserva v1–v8 e armazena definições, observações oficiais por campo, resoluções, conflitos, artefatos, versões de parser, valores, completude, requisitos e correspondências de mercado.
