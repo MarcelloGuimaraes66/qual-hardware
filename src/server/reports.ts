@@ -11,6 +11,7 @@ import type {
 } from "../shared/types.js";
 import { CAPACITY_RECOMMENDATION_EXPORT_VERSION } from "../shared/types.js";
 import { procurementReportOptions, uniqueRecommendationOptions } from "../engine/procurementSpecifications.js";
+import { referencePdfReport } from "./referencePdfReport.js";
 
 export interface ReportContext {
   scenario: ScenarioRecord;
@@ -1038,76 +1039,6 @@ function addDetailedMachineSpecification(writer: PdfWriter, design: Recommendati
 }
 
 export async function pdfReport({ scenario, recommendations: input, components = [] }: ReportContext): Promise<Buffer> {
-  const recommendations = orderedRecommendations(input);
-  const narrative = buildExecutiveNarrative({ scenario, recommendations });
-  const document = await PDFDocument.create();
-  document.setTitle(`Qual Hardware - ${PDF_REPORT_OUTLINE.title}`);
-  document.setSubject("Relatório comparativo restaurado, seguido de especificações técnicas oficiais por máquina e componente.");
-  document.setKeywords(["Qual Hardware", "Perceptrum", "recomendações", "especificações técnicas"]);
-  const regular = await document.embedFont(StandardFonts.Helvetica);
-  const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  const writer = createPdfWriter(document, regular, bold);
-
-  writer.line("AIQUIMIST - QUAL HARDWARE", 12, true);
-  writer.line(PDF_REPORT_OUTLINE.title, 22, true);
-  writer.y -= 8;
-  writer.line(`${scenario.scenario.projectName} - ${scenario.scenario.totalCameras} câmeras`, 13, true);
-  writer.line(`Cliente: ${scenario.scenario.customerName || "não informado"}; mercado: ${scenario.scenario.market}; moeda: ${scenario.scenario.currency}.`);
-  writer.line(`Revisão ${scenario.revision}; build ${scenario.scenario.perceptrumBuildHash}; contrato ${recommendations[0]!.contractVersion}.`);
-  writer.y -= 10;
-  writer.heading(PDF_REPORT_OUTLINE.executiveNarrative);
-  for (const paragraph of narrative.paragraphs) {
-    writer.paragraph(paragraph, 10);
-    writer.y -= 4;
-  }
-  const commercialVerdicts = narrative.cautions.filter((caution) => caution.startsWith("VEREDITO COMERCIAL:"));
-  for (const caution of narrative.cautions.filter((item) => !commercialVerdicts.includes(item))) writer.line(`ATENÇÃO: ${caution}`, 9.5, true);
-
-  writer.heading(PDF_REPORT_OUTLINE.configurations);
-  for (const recommendation of recommendations) {
-    const design = recommendation.primary;
-    writer.line(`${POLICY_LABELS[recommendation.policy]}: ${design.nodeCount} nó(s), ${design.activeNodeCount} ativo(s), ${design.hardware.name}, ${reportOperatingSystem(operatingSystemFor(design.hardware))}.`, 11, true);
-    writer.paragraph(`CPU ${design.hardware.cpuModel}; memória RAM de ${design.hardware.ramGb} GB por nó (${reportLabel(design.hardware.memoryArchitecture)}); GPU ${design.hardware.gpuCount} × ${design.hardware.gpuModel}; ${gpuMemoryDescription(design.hardware)}; folga de ${design.headroomPercent}%; preço ${formatPrice(design)}.`, 9, 10);
-  }
-
-  writer.newPage();
-  const reportOptions = detailedPdfOptions(recommendations);
-  writer.heading(PDF_REPORT_OUTLINE.qualifiedMachines);
-  for (const [index, option] of reportOptions.entries()) {
-    writer.line(`${index + 1}. ${option.hardware.name} - ${option.hardware.cpuModel} - ${option.hardware.gpuModel} - ${formatPrice(option)} - evidência ${reportLabel(option.calibration?.status ?? "estimada")}.`, 8.7);
-  }
-
-  writer.heading(PDF_REPORT_OUTLINE.workload);
-  for (const group of scenario.scenario.cameraGroups) {
-    writer.line(`${group.count} câmera(s) — ${reportCameraGroupName(group.name)}: ${group.source.codec.toUpperCase()} ${group.source.width}×${group.source.height}, ${group.source.sourceFps} FPS de leitura RTSP, ${group.source.bitrateMbps} Mbps, decodificação por ${group.decodeMode.toUpperCase()}.`, 9.5, true);
-    for (const agent of group.agents) {
-      const media = agent.inputType === "video" ? `vídeo, ${agent.packaging}, ${Math.min(5, agent.modelFps)} FPS de inferência AiQ` : "imagem, um quadro por inferência";
-      writer.paragraph(`— ${reportAgentName(agent.name)}: modelo ${agent.model}; ${media}; execução a cada ${agent.runEverySeconds} segundos; somente com movimento: ${agent.features.onlyCaptureOnMotion ? "sim" : "não"}; regiões: ${agent.features.regions}; recorte: ${agent.features.croppedFrame ? "sim" : "não"}; faces de referência: ${agent.features.faceReferences}; referências negativas: ${agent.features.negativeReferences}; análise temporal: ${agent.features.temporal ? "sim" : "não"}.`, 9, 10);
-    }
-  }
-
-  recommendations.forEach((recommendation, index) => addConfiguration(writer, recommendation, index + 1));
-  const mainPageCount = document.getPageCount();
-  writer.newPage();
-  writer.line("AIQUIMIST - QUAL HARDWARE", 11, true);
-  writer.line(PDF_REPORT_OUTLINE.detailedSpecifications, 20, true);
-  writer.y -= 8;
-  for (const verdict of commercialVerdicts) writer.line(verdict, 10, true);
-  writer.paragraph(`Esta segunda parte acrescenta, sem substituir ou reorganizar o relatório comparativo, as especificações oficiais conhecidas dos componentes das ${reportOptions.length} máquinas listadas. A ordem permanece crescente por custo e cada capítulo começa pelo mesmo resumo comercial apresentado na Parte I.`, 10);
-  writer.paragraph("As informações são vinculadas ao componente e à fonte oficial. Campo não publicado, ambíguo ou conflitante permanece declarado como ausente; nenhum valor é inventado. A completude de uma ficha técnica não substitui benchmark elegível nem calibração física do Perceptrum.", 10);
-  writer.heading("Como ler a numeração");
-  writer.paragraph("A máquina 1 é o item 1. Seus componentes são 1.1, 1.2 e sucessivos. A especificação detalhada do primeiro componente é 1.1.1; seus grupos e campos oficiais seguem como 1.1.1.1 e 1.1.1.1.1. A mesma regra se repete para todas as máquinas.", 9.5);
-  writer.heading("Uso em Termos de Referência");
-  writer.paragraph("Esta Parte II preserva a identificação comercial para pesquisa e auditoria. Para licitações, use o anexo técnico neutro separado, que remove marca, modelo, código e preço e permanece bloqueado quando faltam evidências ou concorrência. Todo documento exige revisão técnica e jurídica do órgão.", 9.5);
-  reportOptions.forEach((option, index) => addDetailedMachineSpecification(writer, option, index + 1, reportOptions.length, components));
-
-  const pages = document.getPages();
-  const detailedPageCount = pages.length - mainPageCount;
-  pages.forEach((reportPage, index) => reportPage.drawText(
-    pdfText(index < mainPageCount
-      ? `Qual Hardware | página ${index + 1} de ${mainPageCount}`
-      : `Qual Hardware | especificações detalhadas | página ${index - mainPageCount + 1} de ${detailedPageCount}`),
-    { x: 48, y: 24, size: 8, font: regular, color: rgb(0.35, 0.4, 0.45) },
-  ));
-  return Buffer.from(await document.save());
+  void components;
+  return referencePdfReport({ scenario, recommendations: input });
 }

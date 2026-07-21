@@ -6,7 +6,7 @@ import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import type { BenchmarkManifest, CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
-import { PDF_REPORT_OUTLINE } from "../src/server/reports.js";
+import { REFERENCE_PDF_STRUCTURE } from "../src/server/referencePdfReport.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
 
 describe("Qual Hardware API and reports", () => {
@@ -69,22 +69,23 @@ describe("Qual Hardware API and reports", () => {
     expect(pdf.headers.get("content-type")).toContain("application/pdf");
     expect(pdf.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-recomendacoes.pdf"');
     expect(new TextDecoder().decode(pdfBytes.slice(0, 5))).toBe("%PDF-");
-    expect((await PDFDocument.load(pdfBytes)).getPageCount()).toBeGreaterThanOrEqual(4);
-    expect(PDF_REPORT_OUTLINE).toEqual({
+    const pageCount = (await PDFDocument.load(pdfBytes)).getPageCount();
+    expect(pageCount).toBeGreaterThanOrEqual(4);
+    expect(pageCount).toBeLessThan(20);
+    expect(REFERENCE_PDF_STRUCTURE).toEqual({
       title: "Relatório comparativo de infraestrutura",
-      executiveNarrative: "Nossa leitura e recomendação em linguagem direta",
+      narrative: "Nossa leitura e recomendação em linguagem direta",
       configurations: "As três configurações sugeridas",
-      qualifiedMachines: "Outras máquinas qualificadas em ordem crescente de custo",
-      workload: "Carga de câmeras e Agents usada no cálculo",
+      alternatives: "Outras maquinas qualificadas em ordem crescente de custo",
+      workload: "Carga de cameras e Agents usada no calculo",
       proposalSections: [
         "Resumo de capacidade",
-        "Especificação técnica por nó",
+        "Especificacao tecnica por no",
         "Custo por componente e total do projeto",
-        "Distribuição das câmeras e utilização",
+        "Distribuicao das cameras e utilizacao",
         "Demanda agregada calculada",
         "Fontes, premissas e avisos",
       ],
-      detailedSpecifications: "Parte II - Especificações técnicas detalhadas por máquina",
     });
 
     const spreadsheet = await app.request(`/api/recommendations/${recommendation.id}/export/xlsx`);
