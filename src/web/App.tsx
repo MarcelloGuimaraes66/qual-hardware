@@ -7,11 +7,11 @@ import type {
 } from "../shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
 import { CalibrationResultPanel } from "./CalibrationResultPanel.js";
+import { REPORT_DOWNLOAD_FILENAMES, REPORT_EXPORT_COPY, isNeutralAnnexFormat, type ExportFormat } from "./reportExports.js";
 
 type Language = "pt" | "en";
 const steps = ["project", "cameras", "agents", "additional", "storage", "result"] as const;
 type Step = typeof steps[number];
-type ExportFormat = "pdf" | "xlsx" | "json" | "tr-pdf" | "tr-docx" | "tr-json";
 const presets = [4, 8, 16, 32, 65, 128, 256];
 
 const text = {
@@ -328,7 +328,18 @@ function ResultsStep({ scenario, recommendations, lang, onCalibration, onDownloa
     <div className="policy-tabs">{recommendations.map((item) => <button key={item.policy} className={selectedPolicy === item.policy ? "active" : ""} onClick={() => { setSelectedPolicy(item.policy); setVariant(0); }}><span>{policyLabels[item.policy][lang]}</span><b>{item.primary.nodeCount} nodes</b></button>)}</div>
     <div className="variant-tabs">{designs.map((item, index) => <button key={item.id} className={variant === index ? "active" : ""} onClick={() => setVariant(index)}>{index + 1}. {item.hardware.name} · {item.procurementEligibility === "eligible" ? (lang === "pt" ? "apta" : "eligible") : (lang === "pt" ? "referência" : "reference")}</button>)}</div>
     <div className="workload-summary"><h4>{lang === "pt" ? "Carga usada neste cálculo" : "Workload used for this calculation"}</h4>{scenario.cameraGroups.map((group) => <div className="workload-group" key={group.id}><b>{group.count}× {group.name}</b><span>{group.source.codec.toUpperCase()} · {group.source.width}×{group.source.height} · {group.source.sourceFps} FPS RTSP · {group.source.bitrateMbps} Mbps · decode {group.decodeMode.toUpperCase()}</span>{group.agents.map((agent) => <small key={agent.id}>{readingTypeLabel(agent, lang)} · {agent.model} · {agent.inputType === "video" ? `${agent.modelFps} FPS · ` : ""}{agent.runEverySeconds <= 10 ? 10 : 60} s</small>)}</div>)}</div>
-    <DesignDetail design={design} lang={lang} scenarioCameras={scenario.totalCameras} /><div className="export-row"><span>{lang === "pt" ? "Relatório comercial + neutro" : "Commercial + neutral report"}</span>{(["pdf", "xlsx", "json"] as const).map((format) => <button key={format} type="button" className="secondary small" onClick={() => onDownload(rec, format)}>{format.toUpperCase()}</button>)}<span>{lang === "pt" ? "Anexo neutro para revisão do TR" : "Neutral annex for TR review"}</span>{(["tr-docx", "tr-pdf", "tr-json"] as const).map((format) => <button key={format} type="button" className="secondary small" onClick={() => onDownload(rec, format)}>{format.replace("tr-", "").toUpperCase()}</button>)}</div>
+    <DesignDetail design={design} lang={lang} scenarioCameras={scenario.totalCameras} />
+    <div className="export-row">
+      <section className="main-report-export" aria-label={REPORT_EXPORT_COPY[lang].mainTitle}>
+        <div><strong>{REPORT_EXPORT_COPY[lang].mainTitle}</strong><span>{REPORT_EXPORT_COPY[lang].mainDescription}</span></div>
+        <div className="export-actions"><button type="button" className="primary report-pdf-button" onClick={() => onDownload(rec, "pdf")}>{REPORT_EXPORT_COPY[lang].mainPdfButton}</button><span>{REPORT_EXPORT_COPY[lang].auditDescription}</span><button type="button" className="secondary small" onClick={() => onDownload(rec, "xlsx")}>XLSX</button><button type="button" className="secondary small" onClick={() => onDownload(rec, "json")}>JSON</button></div>
+      </section>
+      <details className="neutral-annex-export">
+        <summary>{REPORT_EXPORT_COPY[lang].neutralSummary}</summary>
+        <p>{REPORT_EXPORT_COPY[lang].neutralWarning}</p>
+        <div className="export-actions">{(["tr-docx", "tr-pdf", "tr-json"] as const).map((format) => <button key={format} type="button" className="secondary small" onClick={() => onDownload(rec, format)}>{lang === "pt" ? "ANEXO " : "ANNEX "}{format.replace("tr-", "").toUpperCase()}</button>)}</div>
+      </details>
+    </div>
   </section>;
 }
 
@@ -608,16 +619,19 @@ export function App(): ReactElement {
     try {
       const response = await fetch(`/api/recommendations/${recommendation.id}/export/${format}`);
       const blob = await checkedReportBlob(response, format);
-      const filenames: Record<ExportFormat, string> = {
-        pdf: "qual-hardware-relatorio-comercial-e-neutro.pdf",
-        xlsx: "qual-hardware-relatorio-comercial-e-neutro.xlsx",
-        json: "qual-hardware-relatorio-comercial-e-neutro.json",
-        "tr-pdf": "qual-hardware-anexo-tecnico-neutro.pdf",
-        "tr-docx": "qual-hardware-anexo-tecnico-neutro.docx",
-        "tr-json": "qual-hardware-anexo-tecnico-neutro.json",
-      };
-      saveBlob(filenames[format], blob);
-      setMessage(lang === "pt" ? `${format.toUpperCase()} com políticas e alternativas foi verificado e baixado.` : `${format.toUpperCase()} with policies and alternatives was verified and downloaded.`);
+      saveBlob(REPORT_DOWNLOAD_FILENAMES[format], blob);
+      const neutralAnnex = isNeutralAnnexFormat(format);
+      setMessage(lang === "pt"
+        ? neutralAnnex
+          ? `Anexo técnico neutro ${format.replace("tr-", "").toUpperCase()} baixado como documento separado. Ele não é o relatório de recomendações.`
+          : format === "pdf"
+            ? "Relatório completo de recomendações baixado como qual-hardware-recomendacoes.pdf."
+            : `${format.toUpperCase()} completo para auditoria foi verificado e baixado.`
+        : neutralAnnex
+          ? `Brand-neutral ${format.replace("tr-", "").toUpperCase()} annex downloaded as a separate document. It is not the recommendations report.`
+          : format === "pdf"
+            ? "Complete recommendations report downloaded as qual-hardware-recomendacoes.pdf."
+            : `Complete ${format.toUpperCase()} audit file was verified and downloaded.`);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "unknown_error";
       setMessage(lang === "pt" ? `Não foi possível gerar um ${format.toUpperCase()} válido (${detail}). Recalcule o projeto e tente novamente.` : `A valid ${format.toUpperCase()} could not be generated (${detail}). Recalculate the project and try again.`);
