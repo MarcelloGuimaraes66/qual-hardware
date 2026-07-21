@@ -6,7 +6,7 @@ import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import type { BenchmarkManifest, CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
-import { REFERENCE_PDF_STRUCTURE } from "../src/server/referencePdfReport.js";
+import { REFERENCE_PDF_STRUCTURE, REFERENCE_PDF_TYPOGRAPHY } from "../src/server/referencePdfReport.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
 
 describe("Qual Hardware API and reports", () => {
@@ -86,6 +86,10 @@ describe("Qual Hardware API and reports", () => {
         "Demanda agregada calculada",
         "Fontes, premissas e avisos",
       ],
+    });
+    expect(REFERENCE_PDF_TYPOGRAPHY).toEqual({
+      justifiedSections: ["executive_narrative", "executive_cautions", "proposal_assumptions"],
+      maximumWordGapMultiplier: 2.2,
     });
 
     const spreadsheet = await app.request(`/api/recommendations/${recommendation.id}/export/xlsx`);

@@ -29,6 +29,11 @@ export const REFERENCE_PDF_STRUCTURE = Object.freeze({
   ],
 } as const);
 
+export const REFERENCE_PDF_TYPOGRAPHY = Object.freeze({
+  justifiedSections: ["executive_narrative", "executive_cautions", "proposal_assumptions"],
+  maximumWordGapMultiplier: 2.2,
+} as const);
+
 const POLICY_ORDER: RecommendationPolicy[] = ["minimum", "recommended", "n_plus_one"];
 const POLICY_LABELS: Record<RecommendationPolicy, string> = {
   minimum: "1. Mínimo técnico",
@@ -164,7 +169,58 @@ interface PdfWriter {
   newPage: () => void;
   ensureSpace: (height: number) => void;
   line: (text: string, size?: number, isBold?: boolean, indent?: number) => void;
+  paragraph: (text: string, size?: number, isBold?: boolean, indent?: number) => void;
   heading: (text: string) => void;
+}
+
+function wrapByRenderedWidth(text: string, font: PDFFont, size: number, width: number): string[] {
+  const words = pdfSafe(text).trim().split(/\s+/).filter(Boolean).flatMap((word) => {
+    if (font.widthOfTextAtSize(word, size) <= width) return [word];
+    const parts: string[] = [];
+    let part = "";
+    for (const character of word) {
+      const candidate = part + character;
+      if (part && font.widthOfTextAtSize(candidate, size) > width) {
+        parts.push(part);
+        part = character;
+      } else part = candidate;
+    }
+    if (part) parts.push(part);
+    return parts;
+  });
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (!line || font.widthOfTextAtSize(candidate, size) <= width) {
+      line = candidate;
+      continue;
+    }
+    lines.push(line);
+    line = word;
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function drawParagraphLine(page: PDFPage, line: string, x: number, y: number, width: number, size: number, font: PDFFont, justify: boolean): void {
+  const words = line.split(/\s+/).filter(Boolean);
+  if (!justify || words.length < 3) {
+    page.drawText(line, { x, y, size, font, color: rgb(0.08, 0.12, 0.18) });
+    return;
+  }
+  const wordsWidth = words.reduce((sum, word) => sum + font.widthOfTextAtSize(word, size), 0);
+  const wordGap = (width - wordsWidth) / (words.length - 1);
+  const naturalGap = font.widthOfTextAtSize(" ", size);
+  if (wordGap > naturalGap * REFERENCE_PDF_TYPOGRAPHY.maximumWordGapMultiplier) {
+    page.drawText(line, { x, y, size, font, color: rgb(0.08, 0.12, 0.18) });
+    return;
+  }
+  let cursor = x;
+  for (const word of words) {
+    page.drawText(word, { x: cursor, y, size, font, color: rgb(0.08, 0.12, 0.18) });
+    cursor += font.widthOfTextAtSize(word, size) + wordGap;
+  }
 }
 
 function createPdfWriter(document: PDFDocument, regular: PDFFont, bold: PDFFont): PdfWriter {
@@ -192,6 +248,19 @@ function createPdfWriter(document: PDFDocument, regular: PDFFont, bold: PDFFont)
         color: rgb(0.08, 0.12, 0.18),
       });
       writer.y -= size + 4.5;
+    }
+  };
+  writer.paragraph = (text: string, size = 9.5, isBold = false, indent = 0): void => {
+    const font = isBold ? bold : regular;
+    const x = 48 + indent;
+    const width = 499 - indent;
+    const lines = wrapByRenderedWidth(text, font, size, width);
+    const lineHeight = size + 4.5;
+    if (lines.length > 1 && writer.y < 55 + lineHeight * 2) writer.newPage();
+    for (const [lineIndex, line] of lines.entries()) {
+      if (writer.y < 55) writer.newPage();
+      drawParagraphLine(writer.page, line, x, writer.y, width, size, font, lineIndex < lines.length - 1);
+      writer.y -= lineHeight;
     }
   };
   writer.heading = (text: string): void => {
@@ -267,7 +336,7 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   for (const source of hardware.sources) writer.line(`Fonte tecnica: ${source.title} - ${source.url}`);
   for (const source of design.price.sourceUrls) writer.line(`Fonte de preco: ${source}`);
   for (const warning of design.warnings) writer.line(`AVISO: ${warning}`);
-  for (const assumption of recommendation.assumptions) writer.line(`Premissa: ${assumption}`);
+  for (const assumption of recommendation.assumptions) writer.paragraph(`Premissa: ${assumption}`);
   for (const evidence of recommendation.evidence) writer.line(`Evidencia: ${evidence}`);
 }
 
@@ -288,10 +357,10 @@ export async function referencePdfReport({ scenario, recommendations: input }: R
   writer.y -= 10;
   writer.heading(narrative.title);
   for (const paragraph of narrative.paragraphs) {
-    writer.line(paragraph, 10);
+    writer.paragraph(paragraph, 10);
     writer.y -= 4;
   }
-  for (const caution of narrative.cautions) writer.line(`ATENÇÃO: ${caution}`, 9.5, true);
+  for (const caution of narrative.cautions) writer.paragraph(`ATENÇÃO: ${caution}`, 9.5, true);
 
   writer.heading(REFERENCE_PDF_STRUCTURE.configurations);
   for (const recommendation of recommendations) {
@@ -300,6 +369,7 @@ export async function referencePdfReport({ scenario, recommendations: input }: R
     writer.line(`CPU ${design.hardware.cpuModel}; RAM ${design.hardware.ramGb} GB/nó (${design.hardware.memoryArchitecture}); GPU ${design.hardware.gpuCount} x ${design.hardware.gpuModel}; ${gpuMemoryDescription(design.hardware)}; folga ${design.headroomPercent}%; preço ${formatPrice(design)}.`, 9, false, 10);
   }
 
+  writer.newPage();
   writer.heading(REFERENCE_PDF_STRUCTURE.alternatives);
   for (const [index, option] of qualifiedOptions(recommendations).entries()) {
     writer.line(`${index + 1}. ${option.hardware.name} - ${option.hardware.cpuModel} - ${option.hardware.gpuModel} - ${formatPrice(option)} - evidencia ${option.calibration?.status ?? "estimada"}.`, 9.5);
