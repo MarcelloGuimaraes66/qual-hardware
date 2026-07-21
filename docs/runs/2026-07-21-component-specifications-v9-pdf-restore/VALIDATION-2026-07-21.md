@@ -18,6 +18,9 @@
 - Migração v8→v9 testada com preservação de registro sentinela e criação de backup.
 - DMG arm64 de 62 MiB criado e validado pelo `hdiutil`.
 - SHA-256 do DMG: `6807aa19ab2b8f98849b8dc2af8424d4e24e9f6ee987a5ba2589c26cecf68011`.
+- O aplicativo v9 foi aberto no macOS pelo binário empacotado e respondeu `status=ok`, `storage=sqlite` somente em `127.0.0.1`.
+- O banco persistente existente migrou para `user_version=9`, manteve o arquivo original e registrou 37 observações oficiais.
+- Backup pré-migração confirmado em `schema-backups/qual-hardware-pre-v9-2026-07-21T14-01-56-182Z.sqlite`.
 
 ## Prova do relatório
 
