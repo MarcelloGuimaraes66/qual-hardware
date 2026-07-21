@@ -24,6 +24,8 @@ const jsonDirectory = resolve("output", "json");
 await Promise.all([mkdir(pdfDirectory, { recursive: true }), mkdir(workbookDirectory, { recursive: true }), mkdir(documentDirectory, { recursive: true }), mkdir(jsonDirectory, { recursive: true })]);
 const targets = [
   { format: "pdf", path: resolve(pdfDirectory, "qual-hardware-recomendacoes.pdf") },
+  { format: "technical-pdf", path: resolve(pdfDirectory, "qual-hardware-caderno-tecnico-detalhado.pdf") },
+  { format: "technical-docx", path: resolve(documentDirectory, "qual-hardware-caderno-tecnico-detalhado.docx") },
   { format: "xlsx", path: resolve(workbookDirectory, "qual-hardware-commercial-and-neutral.xlsx") },
   { format: "json", path: resolve(jsonDirectory, "qual-hardware-commercial-and-neutral.json") },
   { format: "tr-pdf", path: resolve(pdfDirectory, "qual-hardware-neutral-annex.pdf") },

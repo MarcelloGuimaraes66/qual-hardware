@@ -16,4 +16,14 @@ describe("report export identity", () => {
     expect(isNeutralAnnexFormat("pdf")).toBe(false);
     expect(REPORT_DOWNLOAD_FILENAMES["tr-pdf"]).toBe("qual-hardware-anexo-tecnico-neutro.pdf");
   });
+
+  it("exposes the identified technical book without changing the neutral annex", () => {
+    expect(REPORT_DOWNLOAD_FILENAMES["technical-pdf"]).toBe("qual-hardware-caderno-tecnico-detalhado.pdf");
+    expect(REPORT_DOWNLOAD_FILENAMES["technical-docx"]).toBe("qual-hardware-caderno-tecnico-detalhado.docx");
+    expect(REPORT_EXPORT_COPY.pt.technicalTitle).toContain("Caderno técnico detalhado");
+    expect(REPORT_EXPORT_COPY.pt.technicalDescription).toContain("BOM");
+    expect(isNeutralAnnexFormat("technical-pdf")).toBe(false);
+    expect(isNeutralAnnexFormat("technical-docx")).toBe(false);
+    expect(isNeutralAnnexFormat("tr-pdf")).toBe(true);
+  });
 });

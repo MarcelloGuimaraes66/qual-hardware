@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import { createDefaultAgent, createDefaultScenario } from "../shared/schemas.js";
+import { defaultCurrencyForSelection, marketSelectionForScenario, marketsForSelection, primaryMarketForSelection, type MarketSelection } from "../shared/markets.js";
 import type {
   AgentLoad, CameraGroup, CapacityRecommendation, CapacityScenario, CatalogPublication, CatalogSource, CatalogStatus, Currency, InfrastructureKind,
-  CalibrationPlan, CalibrationSession, CapacityPrediction, HardwareNodeTemplate, LocalCalibrationRun, Market, OperatingSystemFamily,
+  CalibrationPlan, CalibrationSession, CapacityPrediction, HardwareNodeTemplate, LocalCalibrationRun, OperatingSystemFamily,
   HardwareComponent, RecommendationAlternative, RecommendationPolicy, ScenarioRecord,
 } from "../shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
@@ -95,6 +96,8 @@ async function checkedReportBlob(response: Response, format: ExportFormat): Prom
     pdf: "application/pdf",
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     json: "application/json",
+    "technical-pdf": "application/pdf",
+    "technical-docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "tr-pdf": "application/pdf",
     "tr-docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "tr-json": "application/json",
@@ -103,8 +106,8 @@ async function checkedReportBlob(response: Response, format: ExportFormat): Prom
   if (!contentType.includes(expectedContentType[format])) throw new Error(`invalid_${format}_content_type`);
   const blob = await response.blob();
   const signature = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
-  if ((format === "pdf" || format === "tr-pdf") && String.fromCharCode(...signature) !== "%PDF-") throw new Error("invalid_pdf_file");
-  if ((format === "xlsx" || format === "tr-docx") && !(signature[0] === 0x50 && signature[1] === 0x4b)) throw new Error(`invalid_${format}_file`);
+  if ((format === "pdf" || format === "technical-pdf" || format === "tr-pdf") && String.fromCharCode(...signature) !== "%PDF-") throw new Error("invalid_pdf_file");
+  if ((format === "xlsx" || format === "technical-docx" || format === "tr-docx") && !(signature[0] === 0x50 && signature[1] === 0x4b)) throw new Error(`invalid_${format}_file`);
   if (format === "json" || format === "tr-json") JSON.parse(await blob.text());
   return blob;
 }
@@ -165,9 +168,15 @@ function ProjectStep({ scenario, update, lang, cameraCountConfirmed, onCameraCou
       <Field label={lang === "pt" ? "Nome do projeto" : "Project name"}><input value={scenario.projectName} onChange={(e) => update({ ...scenario, projectName: e.target.value })} /></Field>
       <Field label={lang === "pt" ? "Cliente" : "Customer"}><input value={scenario.customerName} onChange={(e) => update({ ...scenario, customerName: e.target.value })} /></Field>
       <Field label={lang === "pt" ? "Quantidade total de câmeras *" : "Total number of cameras *"} hint={lang === "pt" ? "Obrigatório. O usuário define qualquer quantidade de 1 a 4096; não existe total pré-definido." : "Required. The user defines any quantity from 1 to 4096; there is no preset total."}><input autoFocus aria-label={lang === "pt" ? "Quantidade total de câmeras" : "Total number of cameras"} type="number" min="1" max="4096" placeholder={lang === "pt" ? "Informe o total" : "Enter the total"} value={cameraCountConfirmed ? scenario.totalCameras : ""} onChange={(e) => { if (e.target.value) onCameraCount(Number(e.target.value)); }} /></Field>
-      <Field label={lang === "pt" ? "Mercado" : "Market"}><select value={scenario.market} onChange={(e) => {
-        const market = e.target.value as Market; const currency: Currency = market === "BR" ? "BRL" : market === "US" ? "USD" : "EUR"; update({ ...scenario, market, currency });
-      }}><option value="BR">Brasil</option><option value="US">United States</option><option value="DE">Deutschland / EU</option></select></Field>
+      <Field label={lang === "pt" ? "Mercados de pesquisa" : "Search markets"} hint={lang === "pt" ? "Define em quais regiões o sistema procurará máquinas, componentes e cotações compatíveis." : "Select the regions used to search compatible machines, components and quotations."}><select value={marketSelectionForScenario(scenario)} onChange={(e) => {
+        const selection = e.target.value as MarketSelection;
+        update({
+          ...scenario,
+          market: primaryMarketForSelection(selection),
+          markets: marketsForSelection(selection),
+          currency: defaultCurrencyForSelection(selection),
+        });
+      }}><option value="BR">{lang === "pt" ? "Brasil" : "Brazil"}</option><option value="US">{lang === "pt" ? "Estados Unidos" : "United States"}</option><option value="DE">{lang === "pt" ? "União Europeia" : "European Union"}</option><option value="BR_US">{lang === "pt" ? "Brasil e Estados Unidos" : "Brazil and United States"}</option><option value="BR_DE">{lang === "pt" ? "Brasil e União Europeia" : "Brazil and European Union"}</option><option value="ALL">{lang === "pt" ? "Todo o mundo — Brasil, EUA e UE" : "Worldwide — Brazil, US and EU"}</option></select></Field>
       <Field label={lang === "pt" ? "Moeda" : "Currency"}><select value={scenario.currency} onChange={(e) => update({ ...scenario, currency: e.target.value as Currency })}><option>BRL</option><option>USD</option><option>EUR</option></select></Field>
       <Field label={lang === "pt" ? "Formato" : "Form factor"}><select value={scenario.constraints.infrastructureKind} onChange={(e) => update({ ...scenario, constraints: { ...scenario.constraints, infrastructureKind: e.target.value as InfrastructureKind, requiredHardwareTemplateId: null } })}><option value="either">{lang === "pt" ? "Melhor opção (inclui opções econômicas)" : "Best fit (includes lower-cost computers)"}</option><option value="laptop">Notebook / laptop</option><option value="mini_pc">Mini PC / Mac mini</option><option value="workstation">Workstation</option><option value="rack">Rack server</option></select></Field>
       <Field label={lang === "pt" ? "Sistema operacional alvo" : "Target operating system"} hint={lang === "pt" ? "Apple/macOS é opt-in porque exige um build correspondente do Perceptrum." : "Apple/macOS is opt-in because it requires a matching Perceptrum build."}><select value={scenario.constraints.operatingSystem ?? "auto"} onChange={(e) => update({ ...scenario, constraints: { ...scenario.constraints, operatingSystem: e.target.value as "auto" | OperatingSystemFamily, requiredHardwareTemplateId: null } })}><option value="auto">{lang === "pt" ? "Automático — Windows/Ubuntu" : "Automatic — Windows/Ubuntu"}</option><option value="windows">Windows</option><option value="ubuntu">Ubuntu Linux</option><option value="macos">macOS / Apple Silicon</option></select></Field>
@@ -333,6 +342,10 @@ function ResultsStep({ scenario, recommendations, lang, onCalibration, onDownloa
       <section className="main-report-export" aria-label={REPORT_EXPORT_COPY[lang].mainTitle}>
         <div><strong>{REPORT_EXPORT_COPY[lang].mainTitle}</strong><span>{REPORT_EXPORT_COPY[lang].mainDescription}</span></div>
         <div className="export-actions"><button type="button" className="primary report-pdf-button" onClick={() => onDownload(rec, "pdf")}>{REPORT_EXPORT_COPY[lang].mainPdfButton}</button><span>{REPORT_EXPORT_COPY[lang].auditDescription}</span><button type="button" className="secondary small" onClick={() => onDownload(rec, "xlsx")}>XLSX</button><button type="button" className="secondary small" onClick={() => onDownload(rec, "json")}>JSON</button></div>
+      </section>
+      <section className="main-report-export technical-caderno-export" aria-label={REPORT_EXPORT_COPY[lang].technicalTitle}>
+        <div><strong>{REPORT_EXPORT_COPY[lang].technicalTitle}</strong><span>{REPORT_EXPORT_COPY[lang].technicalDescription}</span></div>
+        <div className="export-actions"><button type="button" className="secondary report-pdf-button" onClick={() => onDownload(rec, "technical-pdf")}>{REPORT_EXPORT_COPY[lang].technicalPdfButton}</button><button type="button" className="secondary report-pdf-button" onClick={() => onDownload(rec, "technical-docx")}>{REPORT_EXPORT_COPY[lang].technicalDocxButton}</button></div>
       </section>
       <details className="neutral-annex-export">
         <summary>{REPORT_EXPORT_COPY[lang].neutralSummary}</summary>
@@ -626,11 +639,15 @@ export function App(): ReactElement {
           ? `Anexo técnico neutro ${format.replace("tr-", "").toUpperCase()} baixado como documento separado. Ele não é o relatório de recomendações.`
           : format === "pdf"
             ? "Relatório completo de recomendações baixado como qual-hardware-recomendacoes.pdf."
+            : format === "technical-pdf" || format === "technical-docx"
+              ? `Caderno técnico detalhado ${format.endsWith("pdf") ? "PDF" : "DOCX"} verificado e baixado.`
             : `${format.toUpperCase()} completo para auditoria foi verificado e baixado.`
         : neutralAnnex
           ? `Brand-neutral ${format.replace("tr-", "").toUpperCase()} annex downloaded as a separate document. It is not the recommendations report.`
           : format === "pdf"
             ? "Complete recommendations report downloaded as qual-hardware-recomendacoes.pdf."
+            : format === "technical-pdf" || format === "technical-docx"
+              ? `Detailed technical book ${format.endsWith("pdf") ? "PDF" : "DOCX"} verified and downloaded.`
             : `Complete ${format.toUpperCase()} audit file was verified and downloaded.`);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "unknown_error";

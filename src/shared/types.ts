@@ -160,6 +160,8 @@ export interface CapacityScenario {
   projectName: string;
   customerName: string;
   market: Market;
+  /** Markets searched for compatible hardware and current quotations. Omitted by scenarios saved before multi-market search. */
+  markets?: Market[] | undefined;
   currency: Currency;
   perceptrumBuildHash: string;
   totalCameras: number;

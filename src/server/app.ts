@@ -23,6 +23,8 @@ import { createBenchmarkManifest, evidenceValidatesRecommendation, nonceMatches,
 import { CatalogUpdateService } from "./catalogUpdates.js";
 import { jsonReport, pdfReport, xlsxReport } from "./reports.js";
 import { procurementAnnexDocx, procurementAnnexJson, procurementAnnexPdf } from "./procurementAnnex.js";
+import { technicalCadernoPdf } from "./technicalCadernoPdf.js";
+import { technicalCadernoDocx } from "./technicalCadernoDocx.js";
 import { findForbiddenBenchmarkData, findForbiddenCalibrationData, safeError } from "./security.js";
 import { RevisionConflictError, type PlannerStore } from "./store.js";
 import {
@@ -587,13 +589,22 @@ export function createApp(
     if (recommendations.length !== reportPolicies.length) return context.json({ error: "recommendation_set_incomplete" }, 409);
     const format = context.req.param("format");
     const components = await store.listCatalogComponents();
-    const reportContext = { scenario, recommendations: withProcurementSpecifications(scenario.scenario, recommendations, components, await store.listBenchmarkObservations()), components };
+    const [benchmarkObservations, builds] = await Promise.all([store.listBenchmarkObservations(), store.listComponentBuilds()]);
+    const reportContext = {
+      scenario,
+      recommendations: withProcurementSpecifications(scenario.scenario, recommendations, components, benchmarkObservations),
+      components,
+      builds,
+      benchmarkObservations,
+    };
     let body: Buffer;
     let contentType: string;
     let filename: string;
     if (format === "json") { body = jsonReport(reportContext); contentType = "application/json; charset=utf-8"; filename = "qual-hardware-relatorio-comercial-e-neutro.json"; }
     else if (format === "xlsx") { body = await xlsxReport(reportContext); contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; filename = "qual-hardware-relatorio-comercial-e-neutro.xlsx"; }
     else if (format === "pdf") { body = await pdfReport(reportContext); contentType = "application/pdf"; filename = "qual-hardware-recomendacoes.pdf"; }
+    else if (format === "technical-pdf") { body = await technicalCadernoPdf(reportContext); contentType = "application/pdf"; filename = "qual-hardware-caderno-tecnico-detalhado.pdf"; }
+    else if (format === "technical-docx") { body = await technicalCadernoDocx(reportContext); contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; filename = "qual-hardware-caderno-tecnico-detalhado.docx"; }
     else if (format === "tr-json") { body = procurementAnnexJson(reportContext); contentType = "application/json; charset=utf-8"; filename = "qual-hardware-anexo-tecnico-neutro.json"; }
     else if (format === "tr-pdf") { body = await procurementAnnexPdf(reportContext); contentType = "application/pdf"; filename = "qual-hardware-anexo-tecnico-neutro.pdf"; }
     else if (format === "tr-docx") { body = await procurementAnnexDocx(reportContext); contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; filename = "qual-hardware-anexo-tecnico-neutro.docx"; }

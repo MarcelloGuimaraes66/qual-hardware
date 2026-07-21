@@ -5,18 +5,23 @@ import type {
   HardwareComponent,
   HardwareNodeTemplate,
   OperatingSystemFamily,
+  ComponentBuild,
+  PublicBenchmarkObservation,
   RecommendationAlternative,
   RecommendationPolicy,
   ScenarioRecord,
 } from "../shared/types.js";
 import { CAPACITY_RECOMMENDATION_EXPORT_VERSION } from "../shared/types.js";
 import { procurementReportOptions, uniqueRecommendationOptions } from "../engine/procurementSpecifications.js";
+import { marketLabelPt, scenarioMarkets } from "../shared/markets.js";
 import { referencePdfReport } from "./referencePdfReport.js";
 
 export interface ReportContext {
   scenario: ScenarioRecord;
   recommendations: CapacityRecommendation[];
   components?: HardwareComponent[];
+  builds?: ComponentBuild[];
+  benchmarkObservations?: PublicBenchmarkObservation[];
 }
 
 const POLICY_ORDER: RecommendationPolicy[] = ["minimum", "recommended", "n_plus_one"];
@@ -260,6 +265,7 @@ export async function xlsxReport({ scenario, recommendations: input, components 
     project: scenario.scenario.projectName,
     customer: scenario.scenario.customerName,
     market: scenario.scenario.market,
+    searchedMarkets: marketLabelPt(scenarioMarkets(scenario.scenario)),
     currency: scenario.scenario.currency,
     cameras: scenario.scenario.totalCameras,
     revision: scenario.revision,

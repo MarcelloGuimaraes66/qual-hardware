@@ -7,6 +7,7 @@ import type { BenchmarkManifest, CapacityRecommendation, HardwareNodeTemplate, S
 import { WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
 import { REFERENCE_PDF_STRUCTURE, REFERENCE_PDF_TYPOGRAPHY } from "../src/server/referencePdfReport.js";
+import { buildTechnicalCadernoModel } from "../src/server/technicalCadernoPdf.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
 
 describe("Qual Hardware API and reports", () => {
@@ -92,6 +93,29 @@ describe("Qual Hardware API and reports", () => {
       maximumWordGapMultiplier: 2.2,
     });
 
+    const technicalPdf = await app.request(`/api/recommendations/${recommendation.id}/export/technical-pdf`);
+    const technicalPdfBytes = new Uint8Array(await technicalPdf.arrayBuffer());
+    expect(technicalPdf.status).toBe(200);
+    expect(technicalPdf.headers.get("content-type")).toContain("application/pdf");
+    expect(technicalPdf.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-caderno-tecnico-detalhado.pdf"');
+    expect(new TextDecoder().decode(technicalPdfBytes.slice(0, 5))).toBe("%PDF-");
+    expect((await PDFDocument.load(technicalPdfBytes)).getPageCount()).toBeGreaterThanOrEqual(10);
+    const technicalModel = buildTechnicalCadernoModel({
+      scenario: created,
+      recommendations,
+      components: await store.listCatalogComponents(),
+    });
+    expect(technicalModel.evaluatedComponentCount).toBeGreaterThan(200);
+    expect(technicalModel.rawOptionCount).toBeGreaterThan(technicalModel.configurations.length);
+    expect(new Set(technicalModel.configurations.map((item) => item.key)).size).toBe(technicalModel.configurations.length);
+
+    const technicalDocx = await app.request(`/api/recommendations/${recommendation.id}/export/technical-docx`);
+    const technicalDocxBytes = new Uint8Array(await technicalDocx.arrayBuffer());
+    expect(technicalDocx.status).toBe(200);
+    expect(technicalDocx.headers.get("content-type")).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(technicalDocx.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-caderno-tecnico-detalhado.docx"');
+    expect(Array.from(technicalDocxBytes.slice(0, 2))).toEqual([0x50, 0x4b]);
+
     const spreadsheet = await app.request(`/api/recommendations/${recommendation.id}/export/xlsx`);
     expect(spreadsheet.status).toBe(200);
     expect(spreadsheet.headers.get("content-type")).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -150,7 +174,7 @@ describe("Qual Hardware API and reports", () => {
     expect(firstUpload.status).toBe(201);
     const reusedChallenge = await app.request(manifest.uploadUrl, { method: "POST", headers: { "content-type": "application/json", "x-benchmark-nonce": manifest.nonce }, body: JSON.stringify(metrics) });
     expect(reusedChallenge.status).toBe(409);
-  });
+  }, 30_000);
 
   it("exports a valid PDF when runtime normalization warnings contain Unicode arrows", async () => {
     const store = new MemoryPlannerStore();

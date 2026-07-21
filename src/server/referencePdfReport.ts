@@ -7,6 +7,7 @@ import type {
   RecommendationPolicy,
   ScenarioRecord,
 } from "../shared/types.js";
+import { marketLabelPt, scenarioMarkets } from "../shared/markets.js";
 
 export interface ReferencePdfReportContext {
   scenario: ScenarioRecord;
@@ -352,7 +353,7 @@ export async function referencePdfReport({ scenario, recommendations: input }: R
   writer.line(REFERENCE_PDF_STRUCTURE.title, 22, true);
   writer.y -= 8;
   writer.line(`${scenario.scenario.projectName} - ${scenario.scenario.totalCameras} câmeras`, 13, true);
-  writer.line(`Cliente: ${scenario.scenario.customerName || "não informado"}; mercado: ${scenario.scenario.market}; moeda: ${scenario.scenario.currency}.`);
+  writer.line(`Cliente: ${scenario.scenario.customerName || "não informado"}; mercados pesquisados: ${marketLabelPt(scenarioMarkets(scenario.scenario))}; moeda do relatório: ${scenario.scenario.currency}.`);
   writer.line(`Revisão ${scenario.revision}; build ${scenario.scenario.perceptrumBuildHash}; contrato ${recommendations[0]!.contractVersion}.`);
   writer.y -= 10;
   writer.heading(narrative.title);

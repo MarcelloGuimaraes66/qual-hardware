@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { HARDWARE_CATALOG_VERSION } from "./catalog.js";
 import { REFERENCE_FX_FROM_USD, referenceCostProfile } from "./referenceCosts.js";
+import { scenarioMarkets } from "../shared/markets.js";
 import type {
   AgentLoad,
   CapacityPrediction,
   CapacityRecommendation,
   CapacityScenario,
+  Currency,
   EffectiveAgentLoad,
   HardwareNodeTemplate,
   NodeAllocation,
@@ -302,11 +304,16 @@ function summarizePrice(
 ): PriceSummary {
   const now = Date.now();
   const exclusions = ["taxes", "shipping", "licenses", "energy", "support", "TCO"];
+  const selectedMarkets = new Set(scenarioMarkets(scenario));
+  const convertQuoteAmount = (amount: number, from: Currency): number => {
+    if (from === scenario.currency) return amount;
+    const amountInUsd = amount / REFERENCE_FX_FROM_USD[from].rate;
+    return amountInUsd * REFERENCE_FX_FROM_USD[scenario.currency].rate;
+  };
   const matching = quotes
     .filter((quote) =>
       quote.hardwareTemplateId === template.id &&
-      quote.market === scenario.market &&
-      quote.currency === scenario.currency &&
+      selectedMarkets.has(quote.market) &&
       quote.condition === "new" &&
       quote.inStock,
     );
@@ -318,7 +325,9 @@ function summarizePrice(
   const applicable = matching
     .filter((quote) => !staleIds.has(quote.id))
     .sort((left, right) => left.amount - right.amount);
-  const rawAmounts = applicable.map((quote) => quote.amount * nodeCount);
+  const rawAmounts = applicable
+    .map((quote) => convertQuoteAmount(quote.amount, quote.currency) * nodeCount)
+    .sort((left, right) => left - right);
   const rawMedian = rawAmounts.length === 0 ? 0 : rawAmounts[Math.floor((rawAmounts.length - 1) / 2)] ?? 0;
   const amounts = rawAmounts.length < 3 ? rawAmounts : rawAmounts.filter((amount) =>
     amount >= rawMedian * 0.5 && amount <= rawMedian * 1.5,
