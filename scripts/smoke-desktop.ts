@@ -339,7 +339,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   assert(components.every((item) => item.technicalSpecification?.schemaVersion === "qual-hardware-component-technical-specification/2.0.0"));
   const specificationCoverage = await api<{ componentCount: number; procurementReadyCount: number }>(application.origin, "/api/catalog/specifications/coverage");
   assert.equal(specificationCoverage.componentCount, components.length);
-  assert.equal(specificationCoverage.procurementReadyCount, 1, "only the reviewed exact-SKU CPU snapshot may satisfy the technical-specification gate");
+  assert.equal(specificationCoverage.procurementReadyCount, 3, "only the three reviewed exact-SKU CPU/GPU snapshots may satisfy the technical-specification gate");
   const specificationHistory = await api<unknown[]>(application.origin, `/api/catalog/components/${encodeURIComponent(components[0]!.id)}/specifications/history`);
   assert(specificationHistory.length >= 1);
   const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();

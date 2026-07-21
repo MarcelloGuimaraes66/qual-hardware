@@ -14,26 +14,27 @@ interface FieldMapping {
 
 const fields: FieldMapping[] = [
   { code: "architecture", sectionCode: "identity", sectionLabelPt: "Identificação e ciclo de vida", displayOrder: 10, valueType: "string", unit: null, patterns: [/architecture/i, /code name/i] },
-  { code: "physical_cores", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 100, valueType: "number", unit: "núcleos", patterns: [/^total cores$/i, /^# of cores$/i, /^cores$/i] },
+  { code: "physical_cores", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 100, valueType: "number", unit: "núcleos", patterns: [/^total cores$/i, /^# of (?:cpu )?cores$/i, /^cores$/i] },
   { code: "performance_cores", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 110, valueType: "number", unit: "núcleos", patterns: [/performance cores/i, /# of p-cores/i] },
   { code: "efficient_cores", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 120, valueType: "number", unit: "núcleos", patterns: [/efficient cores/i, /# of e-cores/i] },
   { code: "threads", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 130, valueType: "number", unit: "threads", patterns: [/^total threads$/i, /^# of threads$/i, /^threads$/i] },
-  { code: "max_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 140, valueType: "number", unit: "GHz", patterns: [/^max turbo frequency$/i, /^max\. boost clock$/i] },
+  { code: "max_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 140, valueType: "number", unit: "GHz", patterns: [/^max turbo frequency$/i, /max\.? boost clock/i] },
   { code: "performance_core_max_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 150, valueType: "number", unit: "GHz", patterns: [/performance-core max turbo frequency/i, /p-core max turbo frequency/i] },
   { code: "efficient_core_max_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 160, valueType: "number", unit: "GHz", patterns: [/efficient-core max turbo frequency/i, /e-core max turbo frequency/i] },
-  { code: "base_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 170, valueType: "number", unit: "GHz", patterns: [/^processor base frequency$/i, /^base clock$/i] },
+  { code: "base_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 170, valueType: "number", unit: "GHz", patterns: [/^processor base frequency$/i, /base clock/i] },
   { code: "performance_core_base_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 180, valueType: "number", unit: "GHz", patterns: [/performance-core base frequency/i, /p-core base frequency/i] },
   { code: "efficient_core_base_clock_ghz", sectionCode: "topology", sectionLabelPt: "Topologia e frequências", displayOrder: 190, valueType: "number", unit: "GHz", patterns: [/efficient-core base frequency/i, /e-core base frequency/i] },
+  { code: "l1_cache", sectionCode: "cache", sectionLabelPt: "Estrutura de memória cache", displayOrder: 205, valueType: "string", unit: null, patterns: [/^l1 cache$/i] },
   { code: "l2_cache_mb", sectionCode: "cache", sectionLabelPt: "Estrutura de memória cache", displayOrder: 210, valueType: "number", unit: "MB", patterns: [/total l2 cache/i, /^l2 cache$/i] },
   { code: "l3_cache_mb", sectionCode: "cache", sectionLabelPt: "Estrutura de memória cache", displayOrder: 220, valueType: "number", unit: "MB", patterns: [/intel smart cache/i, /^l3 cache$/i, /^cache$/i] },
   { code: "maximum_memory_gb", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 300, valueType: "number", unit: "GB", patterns: [/max memory size/i, /max\. memory/i] },
-  { code: "memory_type", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 310, valueType: "string", unit: null, patterns: [/^memory types$/i, /^system memory specification$/i, /^memory type$/i] },
+  { code: "memory_type", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 310, valueType: "string", unit: null, patterns: [/^memory types$/i, /^system memory (?:specification|type)$/i, /^memory type$/i] },
   { code: "maximum_memory_speed", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 320, valueType: "string", unit: null, patterns: [/max memory speed/i] },
   { code: "memory_channels", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 330, valueType: "number", unit: "canais", patterns: [/max # of memory channels/i, /^memory channels$/i] },
   { code: "ecc_support", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 340, valueType: "boolean", unit: null, patterns: [/ecc memory supported/i, /^ecc support$/i] },
-  { code: "pcie_generation", sectionCode: "io", sectionLabelPt: "Controladores de I/O e expansão", displayOrder: 400, valueType: "number", unit: null, patterns: [/pci express revision/i, /^pci express$/i] },
+  { code: "pcie_generation", sectionCode: "io", sectionLabelPt: "Controladores de I/O e expansão", displayOrder: 400, valueType: "number", unit: null, patterns: [/pci express.*(?:revision|version)/i, /^pci express(?:®)? gen\s*\d+/i, /^pci express$/i] },
   { code: "pcie_configurations", sectionCode: "io", sectionLabelPt: "Controladores de I/O e expansão", displayOrder: 410, valueType: "string", unit: null, patterns: [/pci express configurations/i] },
-  { code: "pcie_lanes", sectionCode: "io", sectionLabelPt: "Controladores de I/O e expansão", displayOrder: 420, valueType: "number", unit: "pistas", patterns: [/max # of pci express lanes/i, /^pcie lanes$/i] },
+  { code: "pcie_lanes", sectionCode: "io", sectionLabelPt: "Controladores de I/O e expansão", displayOrder: 420, valueType: "number", unit: "pistas", patterns: [/max # of pci express lanes/i, /^pcie lanes$/i, /native pcie.*lanes/i] },
   { code: "integrated_gpu", sectionCode: "acceleration", sectionLabelPt: "Aceleradores e processamento", displayOrder: 500, valueType: "string", unit: null, patterns: [/^gpu name$/i, /processor graphics/i, /^graphics model$/i] },
   { code: "integrated_npu", sectionCode: "acceleration", sectionLabelPt: "Aceleradores e processamento", displayOrder: 510, valueType: "string", unit: null, patterns: [/npu name/i, /intel ai boost/i] },
   { code: "npu_tops", sectionCode: "acceleration", sectionLabelPt: "Aceleradores e processamento", displayOrder: 520, valueType: "number", unit: "TOPS", patterns: [/npu peak tops/i] },
@@ -44,18 +45,27 @@ const fields: FieldMapping[] = [
   { code: "vram_gb", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 350, valueType: "number", unit: "GB", patterns: [/standard memory config/i, /^memory size$/i, /^gpu memory$/i] },
   { code: "memory_type", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 360, valueType: "string", unit: null, patterns: [/^memory type$/i] },
   { code: "memory_bus_bits", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 370, valueType: "number", unit: "bits", patterns: [/memory interface width/i, /memory bus/i] },
+  { code: "memory_bandwidth_gbps", sectionCode: "memory", sectionLabelPt: "Memória e interconexão", displayOrder: 380, valueType: "number", unit: "GB/s", patterns: [/memory bandwidth/i] },
   { code: "boost_clock_ghz", sectionCode: "acceleration", sectionLabelPt: "Aceleradores e processamento", displayOrder: 550, valueType: "number", unit: "GHz", patterns: [/^boost clock(?: \(ghz\))?$/i] },
-  { code: "video_decode", sectionCode: "video", sectionLabelPt: "Codificação e decodificação de vídeo", displayOrder: 600, valueType: "string", unit: null, patterns: [/decode/i, /nvdec/i] },
-  { code: "video_encode", sectionCode: "video", sectionLabelPt: "Codificação e decodificação de vídeo", displayOrder: 610, valueType: "string", unit: null, patterns: [/encode/i, /nvenc/i] },
-  { code: "process_nm", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 700, valueType: "number", unit: "nm", patterns: [/lithography/i, /process technology/i] },
+  { code: "video_decode_engines", sectionCode: "video", sectionLabelPt: "Codificação e decodificação de vídeo", displayOrder: 590, valueType: "string", unit: null, patterns: [/nvidia decoder.*nvdec/i] },
+  { code: "video_encode_engines", sectionCode: "video", sectionLabelPt: "Codificação e decodificação de vídeo", displayOrder: 595, valueType: "string", unit: null, patterns: [/nvidia encoder.*nvenc/i] },
+  { code: "video_decode", sectionCode: "video", sectionLabelPt: "Codificação e decodificação de vídeo", displayOrder: 600, valueType: "string", unit: null, patterns: [/supported.*decode codecs/i, /^decode codecs$/i] },
+  { code: "video_encode", sectionCode: "video", sectionLabelPt: "Codificação e decodificação de vídeo", displayOrder: 610, valueType: "string", unit: null, patterns: [/supported.*encode codecs/i, /^encode codecs$/i] },
+  { code: "acceleration_backends", sectionCode: "software_security", sectionLabelPt: "Software, instruções e segurança", displayOrder: 620, valueType: "string", unit: null, patterns: [/cuda capability/i, /acceleration backends/i] },
+  { code: "supported_operating_systems", sectionCode: "software_security", sectionLabelPt: "Software, instruções e segurança", displayOrder: 630, valueType: "string", unit: null, patterns: [/^\*?os support$/i, /supported operating systems/i] },
+  { code: "process_nm", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 700, valueType: "number", unit: "nm", patterns: [/lithography/i, /process(?:or)? technology/i] },
   { code: "socket", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 710, valueType: "string", unit: null, patterns: [/sockets supported/i, /^cpu socket$/i, /^socket$/i] },
   { code: "package", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 720, valueType: "string", unit: null, patterns: [/package specifications/i, /^package$/i] },
-  { code: "dimensions_mm", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 730, valueType: "string", unit: "mm", patterns: [/card dimensions/i, /^length$/i, /^dimensions$/i] },
+  { code: "dimensions_mm", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 730, valueType: "string", unit: "mm", patterns: [/card dimensions/i, /^dimensions$/i] },
+  { code: "length_mm", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 735, valueType: "number", unit: "mm", patterns: [/^length$/i] },
+  { code: "slots_wide", sectionCode: "physical", sectionLabelPt: "Construção, encapsulamento e dimensões", displayOrder: 740, valueType: "number", unit: "slots", patterns: [/^slot$/i] },
   { code: "base_power_watts", sectionCode: "power_thermal", sectionLabelPt: "Alimentação e limites térmicos", displayOrder: 800, valueType: "number", unit: "W", patterns: [/processor base power/i, /^default tdp$/i, /^tdp$/i] },
   { code: "turbo_power_watts", sectionCode: "power_thermal", sectionLabelPt: "Alimentação e limites térmicos", displayOrder: 810, valueType: "number", unit: "W", patterns: [/maximum turbo power/i] },
   { code: "continuous_power_watts", sectionCode: "power_thermal", sectionLabelPt: "Alimentação e limites térmicos", displayOrder: 820, valueType: "number", unit: "W", patterns: [/total graphics power/i, /graphics card power/i, /^board power$/i] },
+  { code: "required_system_power_watts", sectionCode: "power_thermal", sectionLabelPt: "Alimentação e limites térmicos", displayOrder: 825, valueType: "number", unit: "W", patterns: [/required system power/i] },
+  { code: "power_connectors", sectionCode: "power_thermal", sectionLabelPt: "Alimentação e limites térmicos", displayOrder: 827, valueType: "string", unit: null, patterns: [/supplementary power connectors/i, /^power connectors$/i] },
   { code: "maximum_temperature_c", sectionCode: "power_thermal", sectionLabelPt: "Alimentação e limites térmicos", displayOrder: 830, valueType: "number", unit: "°C", patterns: [/tjunction/i, /max\. operating temperature/i, /maximum temperature/i] },
-  { code: "instruction_set_extensions", sectionCode: "software_security", sectionLabelPt: "Software, instruções e segurança", displayOrder: 900, valueType: "string", unit: null, patterns: [/instruction set extensions/i] },
+  { code: "instruction_set_extensions", sectionCode: "software_security", sectionLabelPt: "Software, instruções e segurança", displayOrder: 900, valueType: "string", unit: null, patterns: [/instruction set extensions/i, /supported extensions/i] },
   { code: "virtualization", sectionCode: "software_security", sectionLabelPt: "Software, instruções e segurança", displayOrder: 910, valueType: "string", unit: null, patterns: [/virtualization technology/i] },
 ];
 
@@ -126,9 +136,14 @@ export function extractManufacturerSpecificationObservations(
     const primary = mappingFor(pair.label);
     const selected: Array<{ mapping: FieldMapping; normalizedValue: string | number | boolean | null }> = [];
     if (primary) {
+      const generationFromLabel = primary.code === "pcie_generation"
+        ? Number(/gen\s*([0-9]+(?:\.[0-9]+)?)/i.exec(pair.label)?.[1])
+        : Number.NaN;
       selected.push({
         mapping: primary,
-        normalizedValue: primary.valueType === "number" ? normalizedNumber(pair.value, primary.unit)
+        normalizedValue: Number.isFinite(generationFromLabel) ? generationFromLabel
+          : primary.code === "acceleration_backends" && /cuda capability/i.test(pair.label) ? `CUDA ${pair.value}; NVENC; NVDEC`
+          : primary.valueType === "number" ? normalizedNumber(pair.value, primary.unit)
           : primary.valueType === "boolean" ? normalizedBoolean(pair.value) : pair.value,
       });
     }
@@ -176,6 +191,60 @@ export function extractManufacturerSpecificationObservations(
         licensePolicy: "Fato técnico normalizado com atribuição e rastreabilidade; o documento-fonte não é redistribuído.",
       },
       });
+    }
+  }
+  const appendOfficialField = (
+    fieldCode: string,
+    normalizedValue: string | number | boolean,
+    originalLabel: string,
+    originalValue: string,
+    evidenceLocator: string,
+  ): void => {
+    const mapping = fields.find((field) => field.code === fieldCode);
+    if (!mapping || seen.has(mapping.code)) return;
+    seen.add(mapping.code);
+    results.push({
+      id: `${source.id}:${contentHash}:manufacturer-field:${mapping.code}`,
+      sourceId: source.id,
+      retrievedAt,
+      url,
+      contentType,
+      contentHash,
+      evidenceLocator,
+      payload: {
+        kind: "manufacturer_specification_field",
+        componentId: target.componentId,
+        manufacturer: target.manufacturer,
+        canonicalMpn: target.canonicalMpn,
+        scope: target.scope,
+        subject: target.subject,
+        authority: target.authority,
+        parserId: target.parserId,
+        parserVersion: "1.1.0",
+        fieldCode: mapping.code,
+        sectionCode: mapping.sectionCode,
+        sectionLabelPt: mapping.sectionLabelPt,
+        displayOrder: mapping.displayOrder,
+        valueType: mapping.valueType,
+        originalLabel,
+        originalValue,
+        originalUnit: null,
+        normalizedValue,
+        normalizedUnit: mapping.unit,
+        licensePolicy: "Fato técnico normalizado com atribuição e rastreabilidade; o documento-fonte não é redistribuído.",
+      },
+    });
+  };
+  if (source.id === "spec-nvidia-products" && /developer\.nvidia\.com\/video-codec-sdk/i.test(url)) {
+    const plainText = text(html);
+    if (/NVENC.*H\.264.*HEVC.*H\.265.*AV1/is.test(plainText)) {
+      appendOfficialField("video_encode", "H.264; H.265 (HEVC); AV1", "Codecs de codificação por NVENC", "H.264, HEVC (H.265) e AV1", "html:#ii4h1");
+    }
+    if (/NVDEC.*MPEG-2.*VC-1.*H\.264.*H\.265.*VP8.*VP9.*AV1/is.test(plainText)) {
+      appendOfficialField("video_decode", "MPEG-2; VC-1; H.264; H.265 (HEVC); VP8; VP9; AV1", "Codecs de decodificação por NVDEC", "MPEG-2, VC-1, H.264, H.265, VP8, VP9 e AV1", "html:#inzs5x");
+    }
+    if (/Windows and Linux/i.test(plainText)) {
+      appendOfficialField("supported_operating_systems", "Windows; Linux", "Plataformas suportadas pelo Video Codec SDK", "Windows and Linux", "html:meta[description]");
     }
   }
   return results;

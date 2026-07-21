@@ -63,7 +63,7 @@ export function buildExecutiveNarrative(context: ReportContext): ExecutiveNarrat
     title: "Nossa leitura e recomendação em linguagem direta",
     paragraphs: [
       `Analisamos o trabalho completo de ${scenario.totalCameras} câmera(s): recebimento RTSP, decodificação, processamento de imagem, criação e leitura de clipes, gravação em disco, tráfego de rede e inferência no AiQ/Qwen local. O FPS de leitura RTSP (${sourceFps.join("/ ")} por câmera) foi tratado separadamente do FPS efetivamente enviado ao modelo (${inferenceFps.join("/ ")}), porque esses dois momentos consomem recursos diferentes.`,
-      `${recommendation} O limitante calculado desta proposta é ${selected.bottleneck}; por isso a recomendação considera o conjunto CPU, GPU, VRAM, RAM, SSD, rede e sustentação térmica, e não apenas a marca ou um score genérico.`,
+      `${recommendation} O limitante calculado desta proposta é ${reportLabel(selected.bottleneck)}; por isso a recomendação considera o conjunto CPU, GPU, VRAM, RAM, SSD, rede e sustentação térmica, e não apenas a marca ou um índice genérico.`,
       `Sobre a força da evidência: ${evidenceText}. ${priceText}`,
       `A opção mínima, ${minimum!.primary.hardware.name}, é sempre informativa e trabalha com menos reserva para picos. A opção recomendada busca o melhor equilíbrio para operação contínua e, a partir de 64 câmeras, já inclui N+1. A opção N+1, ${resilient!.primary.hardware.name}, mantém redundância para a indisponibilidade de um nó. ${commerciallyEligible ? "As opções aptas passaram pelo gate de evidências de todos os estágios." : "Neste momento todas continuam bloqueadas para aquisição até a cobertura ficar completa."}`,
     ],
@@ -112,11 +112,7 @@ function planningOptions(recommendations: CapacityRecommendation[]): Recommendat
 
 function detailedPdfOptions(recommendations: CapacityRecommendation[]): RecommendationAlternative[] {
   const selected = new Map<string, RecommendationAlternative>();
-  for (const recommendation of recommendations) {
-    const option = recommendation.primary;
-    selected.set(`${option.hardware.id}:${option.nodeCount}:${option.activeNodeCount}`, option);
-  }
-  for (const option of qualifiedOptions(recommendations)) {
+  for (const option of [...qualifiedOptions(recommendations), ...planningOptions(recommendations)]) {
     selected.set(`${option.hardware.id}:${option.nodeCount}:${option.activeNodeCount}`, option);
   }
   return [...selected.values()].sort((left, right) =>
@@ -601,7 +597,21 @@ interface PdfWriter {
 }
 
 function wrappedLines(text: string, font: PDFFont, size: number, width: number): string[] {
-  const words = pdfText(text).trim().split(/\s+/).filter(Boolean);
+  const rawWords = pdfText(text).trim().split(/\s+/).filter(Boolean);
+  const words = rawWords.flatMap((word) => {
+    if (font.widthOfTextAtSize(word, size) <= width) return [word];
+    const parts: string[] = [];
+    let current = "";
+    for (const character of word) {
+      const candidate = current + character;
+      if (current && font.widthOfTextAtSize(candidate, size) > width) {
+        parts.push(current);
+        current = character;
+      } else current = candidate;
+    }
+    if (current) parts.push(current);
+    return parts;
+  });
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
@@ -664,15 +674,21 @@ function createPdfWriter(document: PDFDocument, regular: PDFFont, bold: PDFFont)
     const x = 48 + indent;
     const width = 499 - indent;
     const lines = wrappedLines(text, font, size, width);
-    for (const [lineIndex, line] of lines.entries()) {
+    for (const line of lines) {
       if (writer.y < 55) writer.newPage();
-      drawJustifiedLine(writer.page, line, x, writer.y, width, size, font, !isBold && lineIndex < lines.length - 1);
+      drawJustifiedLine(writer.page, line, x, writer.y, width, size, font, false);
       writer.y -= size + 4.5;
     }
   };
   writer.paragraph = (text: string, size = 9.5, indent = 0): void => {
-    writer.line(text, size, false, indent);
-    writer.y -= 4;
+    const x = 48 + indent;
+    const width = 499 - indent;
+    const lines = wrappedLines(text, regular, size, width);
+    for (const [lineIndex, line] of lines.entries()) {
+      if (writer.y < 55) writer.newPage();
+      drawJustifiedLine(writer.page, line, x, writer.y, width, size, regular, lineIndex < lines.length - 1);
+      writer.y -= size + 4.5;
+    }
   };
   writer.heading = (text: string): void => {
     writer.ensureSpace(95);
@@ -703,6 +719,134 @@ function formatMoney(value: number | null): string {
   return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 }
 
+const RESOURCE_LABELS: Record<string, string> = {
+  cpuCores: "núcleos de CPU",
+  ramGb: "memória RAM",
+  gpuVramGb: "memória de vídeo (VRAM)",
+  localAiqSlots: "inferências locais simultâneas no AiQ",
+  gpuDecode1080p30Streams: "decodificação de vídeo pela GPU",
+  diskCapacityTb: "capacidade de armazenamento",
+  diskWriteMbps: "taxa de gravação em disco",
+  diskReadMbps: "taxa de leitura em disco",
+  memoryBandwidthGbps: "largura de banda da memória",
+  lanGbps: "rede local",
+  internetUploadMbps: "envio pela internet",
+  processThreads: "threads de processo",
+  ffmpegProcessesPerSecond: "processos FFmpeg por segundo",
+  inferenceRequestsPerSecond: "requisições de inferência por segundo",
+  rtsp_ingest: "recepção RTSP",
+  video_decode: "decodificação de vídeo",
+  bgr_processing: "processamento BGR/OpenCV",
+  video_encode: "codificação de vídeo",
+  disk_write: "gravação em disco",
+  disk_read: "leitura de disco",
+  frame_extraction: "extração de quadros",
+  local_inference: "inferência local AiQ/Qwen",
+  memory_bandwidth: "largura de banda da memória",
+  network_ingest: "recepção pela rede",
+  job_scheduler: "agendador de Jobs, Steps e Agents",
+  intelligence_scheduler: "agendador de Intelligence",
+  database_persistence: "persistência no banco de dados",
+  dashboard_queries: "consultas do painel",
+  thermal_sustain: "sustentação térmica",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  validated_local: "validada localmente",
+  extrapolated_high: "extrapolada com confiança alta",
+  extrapolated_medium: "extrapolada com confiança moderada",
+  reference_only: "somente referência",
+  incompatible: "incompatível",
+  eligible: "apta para aquisição",
+  blocked: "bloqueada",
+  active: "ativo",
+  reserve: "reserva",
+  current: "geração atual",
+  previous: "geração anterior",
+  two_generations_back: "duas gerações anteriores",
+  dedicated: "memória dedicada",
+  unified: "memória unificada",
+};
+
+function reportLabel(value: string | null | undefined): string {
+  if (!value) return "não informado";
+  return STATUS_LABELS[value] ?? RESOURCE_LABELS[value] ?? value.replaceAll("_", " ");
+}
+
+function reportOperatingSystem(value: string): string {
+  return ({ windows: "Windows", macos: "macOS", ubuntu: "Ubuntu", linux: "Linux" } as Record<string, string>)[value.toLowerCase()] ?? value;
+}
+
+function reportHardwareKind(value: string): string {
+  return ({ workstation: "estação de trabalho", desktop: "computador de mesa", laptop: "notebook", mini_pc: "minicomputador", rack_server: "servidor em rack", server: "servidor" } as Record<string, string>)[value] ?? value.replaceAll("_", " ");
+}
+
+function reportExclusion(value: string): string {
+  return ({ taxes: "tributos", shipping: "frete", licenses: "licenças", energy: "energia", support: "suporte", TCO: "custo total de propriedade" } as Record<string, string>)[value] ?? value;
+}
+
+function reportWarning(value: string): string {
+  const exact: Record<string, string> = {
+    reference_price_estimate_purchase_quote_required: "Os preços são estimativas de referência; obtenha cotação itemizada antes da aquisição.",
+    non_ecc_memory: "A configuração usa memória sem correção de erros (ECC).",
+    physical_calibration_or_comparable_public_evidence_required: "É obrigatória uma calibração física completa ou evidência pública diretamente comparável.",
+    procurement_neutral_specification_blocked: "A especificação técnica neutra ainda não pode ser usada em aquisição.",
+    "not eligible for hardware acquisition": "A configuração não está apta para aquisição.",
+    "conservative unbenchmarked compute derating 90 percent": "Foi aplicado um redutor conservador de 10% por falta de benchmark diretamente comparável.",
+  };
+  return exact[value] ?? value
+    .replace("inputType:image->video", "entrada ajustada de imagem para vídeo")
+    .replace(/State of evidence 'reference only' does not release acquisition\.?/i, "O estado de evidência 'somente referência' não libera a aquisição.")
+    .replace(/^(\w[\w ]+): (\d+) comparable physical calibrations are required; (\d+) exist\.?$/i, (_match, stage, required, current) => `${reportLabel(String(stage).replaceAll(" ", "_"))}: são necessárias ${required} calibrações físicas comparáveis; existem ${current}.`)
+    .replace(/^(\w[\w ]+): There is no eligible and comparable public benchmark for this stage\.?$/i, (_match, stage) => `${reportLabel(String(stage).replaceAll(" ", "_"))}: não existe benchmark público elegível e comparável para este estágio.`)
+    .replaceAll("_", " ");
+}
+
+function reportAssumption(value: string): string {
+  const exact: Record<string, string> = {
+    "Continuous RTSP decode remains charged at source codec, resolution and FPS.": "A decodificação RTSP contínua é dimensionada com o codec, a resolução e o FPS da fonte.",
+    "BGR buffer capacity is estimated as two seconds at the configured source FPS.": "A capacidade do buffer BGR corresponde a dois segundos no FPS configurado para a fonte.",
+    "Video frame extraction includes one FFmpeg process per sampled frame, capped at 300 frames per request.": "A extração de quadros considera um processo FFmpeg por quadro amostrado, limitada a 300 quadros por requisição.",
+    "AiQ/Qwen Core uses one effective inference frame per second in 60-second execution cycles; RTSP receive/decode FPS remains independent.": "O AiQ/Qwen Core usa um quadro efetivo de inferência por segundo em ciclos de 60 segundos; o FPS de recepção e decodificação RTSP permanece independente.",
+    "Disk write throughput and at least one day of rolling temporary source clips participate in sizing; configured retention and RAID factor increase capacity demand.": "A taxa de gravação em disco e pelo menos um dia de clipes temporários entram no dimensionamento; a retenção e o fator RAID configurados aumentam a capacidade necessária.",
+    "The final safe camera count is the minimum across receive, decode, BGR processing, encode, local inference, RAM/VRAM, disk, network and sustained thermal evidence.": "A quantidade final segura de câmeras é o menor limite entre recepção, decodificação, processamento BGR, codificação, inferência local, RAM/VRAM, disco, rede e sustentação térmica.",
+    "Built-in component costs are dated planning references converted with official FX snapshots; current compatible market quotes take precedence when available.": "Os custos embarcados são referências de planejamento datadas e convertidas por câmbio oficial; cotações atuais e compatíveis prevalecem quando disponíveis.",
+    "Reference estimates exclude taxes, shipping, licenses, energy, support and TCO and still require a purchase quotation.": "As estimativas excluem tributos, frete, licenças, energia, suporte e custo total de propriedade, e ainda exigem cotação de compra.",
+    "Windows is the current packaged workstation target; the exact CPU, GPU, driver and workload still require a matching sustained benchmark before validation.": "O Windows é a plataforma indicada para esta estação; CPU, GPU, driver e carga exatos ainda exigem benchmark sustentado compatível antes da validação.",
+    "The full active catalog competes on compatible capacity and price; laptops and mini PCs are considered for small loads instead of starting at workstation class.": "Todo o catálogo ativo concorre por capacidade e preço compatíveis; notebooks e minicomputadores são considerados para cargas pequenas antes de se adotar uma estação de trabalho.",
+    "The final safe camera count is the minimum across RTSP ingest, decode, BGR, encode, frame extraction, AiQ, memory bandwidth, SSD read/write, network, Jobs, Steps, Agents, Intelligence, database, dashboard and sustained thermal evidence.": "A quantidade final segura de câmeras é o menor limite entre recepção RTSP, decodificação, BGR, codificação, extração de quadros, AiQ, largura de banda da memória, leitura e gravação no SSD, rede, Jobs, Steps, Agents, Intelligence, banco de dados, painel e sustentação térmica.",
+    "This design is shown for planning or diagnosis only, and is not approved for hardware acquisition until every required stage has comparable evidence.": "Esta configuração é apresentada somente para planejamento ou diagnóstico e não está aprovada para aquisição enquanto todos os estágios obrigatórios não possuírem evidência comparável.",
+    "This design is shown for planning or diagnosis only and is not approved for hardware acquisition until every required stage has comparable evidence.": "Esta configuração é apresentada somente para planejamento ou diagnóstico e não está aprovada para aquisição enquanto todos os estágios obrigatórios não possuírem evidência comparável.",
+  };
+  return exact[value] ?? value;
+}
+
+function evidenceCoverageSummary(design: RecommendationAlternative, compact = false): string {
+  if (!design.bom) return "BOM normalizada indisponível para esta recomendação legada.";
+  const coverage = design.bom.coverage;
+  const missing = coverage.stages.filter((stage) => !stage.covered).map((stage) => reportLabel(stage.stage));
+  return `Cobertura de evidências: ${coverage.coveredStageCount} de ${coverage.requiredStageCount} estágios (${coverage.percent}%), com ${coverage.physicalAnchorCount} calibração(ões) física(s). ${missing.length ? compact ? "Os estágios ausentes e seus motivos estão detalhados no caderno técnico." : `Estágios ainda sem cobertura: ${missing.join(", ")}.` : "Todos os estágios obrigatórios estão cobertos."}`;
+}
+
+function coreWarnings(warnings: string[]): string[] {
+  const important = warnings.filter((warning) =>
+    ["reference_price_estimate_purchase_quote_required", "non_ecc_memory", "physical_calibration_or_comparable_public_evidence_required"].includes(warning)
+    || /inputType:|unbenchmarked compute derating/i.test(warning));
+  return [...new Set(important)];
+}
+
+function reportEvidence(value: string): string {
+  const prefixes: Array<[string, string]> = [
+    ["workload-contract:", "Contrato da carga: "],
+    ["perceptrum-build:", "Build do Perceptrum: "],
+    ["catalog-version:", "Versão do catálogo: "],
+    ["operating-system:", "Sistema operacional: "],
+    ["procurement-eligibility:", "Elegibilidade para aquisição: "],
+  ];
+  const prefix = prefixes.find(([candidate]) => value.startsWith(candidate));
+  return prefix ? `${prefix[1]}${reportLabel(value.slice(prefix[0].length))}` : value;
+}
+
 function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendation, index: number): void {
   writer.newPage();
   const design = recommendation.primary;
@@ -710,75 +854,63 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   writer.page.drawRectangle({ x: 0, y: 744, width: 595, height: 98, color: rgb(0.04, 0.09, 0.11) });
   writer.page.drawText(pdfText(`PROPOSTA ${index} DE 3`), { x: 48, y: 805, size: 9, font: writer.bold, color: rgb(0.78, 1, 0.24) });
   writer.page.drawText(pdfText(POLICY_LABELS[recommendation.policy]), { x: 48, y: 774, size: 22, font: writer.bold, color: rgb(0.94, 0.97, 0.98) });
-  writer.page.drawText(pdfText(`${recommendation.confidence.toUpperCase()} — ${design.nodeCount} nó(s) — ${hardware.name}`), {
+  writer.page.drawText(pdfText(`${reportLabel(recommendation.confidence).toUpperCase()} — ${design.nodeCount} nó(s) — ${hardware.name}`), {
     x: 48, y: 754, size: 9, font: writer.regular, color: rgb(0.65, 0.73, 0.76),
   });
   writer.y = 720;
 
   writer.heading("Resumo de capacidade");
-  writer.line(`Nós: ${design.nodeCount}; ativos: ${design.activeNodeCount}; reserva: ${design.nodeCount - design.activeNodeCount}.`);
-  writer.line(`Folga-alvo: ${design.headroomPercent}%; gargalo dominante: ${design.bottleneck}; capacidade estimada neste perfil: ${recommendation.primary.maximumAdditionalCameras + recommendation.primary.allocations.filter((node) => node.role === "active").reduce((sum, node) => sum + node.cameraGroups.reduce((cameraSum, group) => cameraSum + group.cameras, 0), 0)} câmeras (${design.maximumAdditionalCameras} adicionais).`);
-  writer.line(`Preço do projeto: ${formatPrice(design)}`);
+  writer.paragraph(`Nós: ${design.nodeCount}; ativos: ${design.activeNodeCount}; reserva: ${design.nodeCount - design.activeNodeCount}.`);
+  writer.paragraph(`Folga-alvo: ${design.headroomPercent}%; gargalo dominante: ${reportLabel(design.bottleneck)}; capacidade estimada neste perfil: ${recommendation.primary.maximumAdditionalCameras + recommendation.primary.allocations.filter((node) => node.role === "active").reduce((sum, node) => sum + node.cameraGroups.reduce((cameraSum, group) => cameraSum + group.cameras, 0), 0)} câmeras (${design.maximumAdditionalCameras} adicionais).`);
+  writer.paragraph(`Preço do projeto: ${formatPrice(design)}.`);
 
   writer.heading("Especificação técnica resumida por nó");
-  writer.line(`Sistema: ${hardware.name}; formato: ${hardware.kind}; plataforma: ${operatingSystemFor(hardware)}; geração: ${hardware.generation}.`, 10, true);
-  writer.line(`CPU: ${hardware.cpuModel}; fabricante ${hardware.cpuVendor}; ${hardware.physicalCores} núcleos físicos; fator conservador sustentado ${Math.round((hardware.sustainedComputeFactor ?? 1) * 100)}%.`);
-  writer.line(`Placa-mãe/plataforma: ${hardware.motherboard}.`);
-  writer.line(`RAM: ${hardware.ramGb} GB por nó; ECC: ${hardware.ecc ? "sim" : "não"}; arquitetura: ${hardware.memoryArchitecture}.`);
-  writer.line(`GPU: ${hardware.gpuCount} × ${hardware.gpuModel} (${hardware.gpuVendor}); ${gpuMemoryDescription(hardware)}.`);
-  writer.line(`AiQ local: ${hardware.localAiqSlots} instância(s) por nó; decodificação Perceptrum por GPU: ${hardware.supportsPerceptrumGpuDecode ? "compatível" : "não compatível"}; capacidade de referência: ${hardware.gpuDecode1080p30Streams} streams 1080p30.`);
-  writer.line(`NVMe operacional: ${hardware.storageModel}; ${hardware.usableStorageTb} TB úteis; escrita, clipes temporários, retenção e RAID participam do dimensionamento.`);
+  writer.line(`Sistema: ${hardware.name}; formato: ${reportHardwareKind(hardware.kind)}; plataforma: ${reportOperatingSystem(operatingSystemFor(hardware))}; ${reportLabel(hardware.generation)}.`, 10, true);
+  writer.paragraph(`CPU: ${hardware.cpuModel}; fabricante ${displayManufacturer(hardware.cpuVendor)}; ${hardware.physicalCores} núcleos físicos; fator conservador sustentado de ${Math.round((hardware.sustainedComputeFactor ?? 1) * 100)}%.`);
+  writer.paragraph(`Placa-mãe ou plataforma: ${hardware.motherboard}.`);
+  writer.paragraph(`Memória RAM: ${hardware.ramGb} GB por nó; ECC: ${hardware.ecc ? "sim" : "não"}; arquitetura: ${reportLabel(hardware.memoryArchitecture)}.`);
+  writer.paragraph(`GPU: ${hardware.gpuCount} × ${hardware.gpuModel} (${displayManufacturer(hardware.gpuVendor)}); ${gpuMemoryDescription(hardware)}.`);
+  writer.paragraph(`AiQ local: ${hardware.localAiqSlots} instância(s) por nó; decodificação do Perceptrum por GPU: ${hardware.supportsPerceptrumGpuDecode ? "compatível" : "não compatível"}; capacidade nominal de referência: ${hardware.gpuDecode1080p30Streams} fluxos 1080p30.`);
+  writer.paragraph(`NVMe operacional: ${hardware.storageModel}; ${hardware.usableStorageTb} TB úteis. A escrita, os clipes temporários, a retenção e o fator RAID participam do dimensionamento.`);
   if (design.calibration) {
     const calibration = design.calibration;
-    writer.line(`Evidência de capacidade: ${calibration.status}; confiança ${calibration.confidenceClass}; intervalo seguro ${calibration.safeCameraMinimum ?? "n/d"}-${calibration.safeCameraMaximum ?? "n/d"} câmeras; reserva ${calibration.reservePercent}%; gargalo ${calibration.bottleneck ?? "sem cobertura"}.`);
-    for (const stage of calibration.stagePredictions) {
-      writer.line(`Extrapolação ${stage.stage}: ${stage.safeCameraCapacity} câmeras seguras, ${stage.reservePercent}% de reserva, âncoras ${stage.anchorHardwareIds.join(", ") || "nenhuma"}.`);
-    }
+    writer.paragraph(`Evidência de capacidade: ${reportLabel(calibration.status)}; confiança ${calibration.confidenceClass}; intervalo seguro ${calibration.safeCameraMinimum ?? "não determinado"} a ${calibration.safeCameraMaximum ?? "não determinado"} câmeras; reserva de ${calibration.reservePercent}%; gargalo ${reportLabel(calibration.bottleneck)}.`);
   }
-  writer.line(`Rede: ${hardware.nicGbps} GbE; fonte: ${hardware.powerSupply}; refrigeração: ${hardware.cooling}.`);
-  writer.line(`Chassi: ${hardware.chassis}; sistema operacional: ${hardware.windowsEdition}; índice de expansão: ${hardware.expansionScore}.`);
-
-  if (design.bom) {
-    writer.heading("BOM auditável, compatibilidade e cobertura");
-    writer.line(`Build ${design.bom.id}; classe ${design.bom.kind}; gate ${design.bom.procurementGate.status}; cobertura ${design.bom.coverage.coveredStageCount}/${design.bom.coverage.requiredStageCount} estágios (${design.bom.coverage.percent}%); âncoras físicas ${design.bom.coverage.physicalAnchorCount}/3.`, 9.5, true);
-    for (const item of design.bom.items) writer.line(`${item.role}: ${item.quantity} × ${item.componentId} (${item.kind})${item.required ? " — obrigatório" : ""}.`);
-    for (const decision of design.bom.compatibility) writer.line(`${decision.compatible ? "COMPATÍVEL" : "INCOMPATÍVEL"} ${decision.code}: ${decision.message}`);
-    for (const stage of design.bom.coverage.stages) {
-      writer.line(`${stage.covered ? "COBERTO" : "BLOQUEADO"} ${stage.stage}: benchmarks ${stage.eligibleObservationIds.length}; âncoras ${stage.physicalAnchorRunIds.length}; ${stage.reasons.join(" ") || "evidência completa"}.`);
-    }
-  }
+  writer.paragraph(`Rede: ${hardware.nicGbps} GbE; fonte: ${hardware.powerSupply}; refrigeração: ${hardware.cooling}.`);
+  writer.paragraph(`Chassi: ${hardware.chassis}; sistema operacional: ${hardware.windowsEdition}; índice de expansão: ${hardware.expansionScore}.`);
+  writer.paragraph(evidenceCoverageSummary(design, true), 9);
 
   writer.heading("Custo por componente e total do projeto");
   if (design.price.componentEstimates?.length) {
     for (const component of design.price.componentEstimates) {
-      writer.line(`${component.component}: ${component.quantityPerNode} por nó; ${design.price.currency} ${formatMoney(component.perNodeAmount)} por nó; ${design.price.currency} ${formatMoney(component.projectAmount)} no projeto.`);
+      writer.paragraph(`${component.component}: ${component.quantityPerNode} por nó; ${design.price.currency} ${formatMoney(component.perNodeAmount)} por nó; ${design.price.currency} ${formatMoney(component.projectAmount)} no projeto.`);
     }
     const perNodeTotal = design.price.median === null ? null : design.price.median / design.nodeCount;
     writer.line(`TOTAL POR NÓ: ${design.price.currency} ${formatMoney(perNodeTotal)}.`, 10, true);
     writer.line(`QUANTIDADE DE NÓS: ${design.nodeCount}. TOTAL DO PROJETO: ${design.price.currency} ${formatMoney(design.price.median)}.`, 10, true);
     writer.line(`Faixa do projeto: ${formatPrice(design)}.`);
-    writer.line(`Base: ${priceBasisPt(design)}; referência: ${design.price.observedAt ?? "não disponível"}; exclui ${(design.price.exclusions ?? []).join(", ")}.`);
+    writer.paragraph(`Base: ${priceBasisPt(design)}; referência: ${design.price.observedAt ?? "não disponível"}; exclui ${(design.price.exclusions ?? []).map(reportExclusion).join(", ")}.`);
   } else writer.line("Sem estimativa compatível; obter cotação itemizada antes da proposta comercial.");
 
   writer.heading("Distribuição das câmeras e utilização");
   for (const node of design.allocations) {
     const cameraCount = node.cameraGroups.reduce((sum, group) => sum + group.cameras, 0);
-    writer.line(`Nó ${node.nodeIndex} — ${node.role} — ${cameraCount} câmera(s) — ${node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(", ") || "reserva sem câmeras"}.`, 9.5, true);
+    writer.line(`Nó ${node.nodeIndex} — ${reportLabel(node.role)} — ${cameraCount} câmera(s) — ${node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(", ") || "reserva sem câmeras"}.`, 9.5, true);
     writer.line(`CPU ${Math.round(node.utilization.cpuCores * 100)}%; RAM ${Math.round(node.utilization.ramGb * 100)}%; VRAM ${Math.round(node.utilization.gpuVramGb * 100)}%; NVDEC ${Math.round(node.utilization.gpuDecode1080p30Streams * 100)}%; LAN ${Math.round(node.utilization.lanGbps * 100)}%; Internet ${Math.round(node.utilization.internetUploadMbps * 100)}%.`, 9, false, 10);
   }
 
   writer.heading("Demanda agregada calculada");
   for (const [resource, demand] of Object.entries(design.aggregateDemand)) {
     const sizing = true;
-    writer.line(`${resource}: ${Math.round(demand * 1000) / 1000}${resource === design.bottleneck ? " - GARGALO" : ""}${sizing ? "" : " - observacional"}.`);
+    writer.line(`${reportLabel(resource)}: ${Math.round(demand * 1000) / 1000}${resource === design.bottleneck ? " — GARGALO" : ""}${sizing ? "" : " — observacional"}.`);
   }
 
   writer.heading("Fontes, premissas e avisos");
-  for (const source of hardware.sources) writer.line(`Fonte técnica: ${source.title} — ${source.url}`);
-  for (const source of design.price.sourceUrls) writer.line(`Fonte de preço: ${source}`);
-  for (const warning of design.warnings) writer.line(`AVISO: ${warning}`);
-  for (const assumption of recommendation.assumptions) writer.line(`Premissa: ${assumption}`);
-  for (const evidence of recommendation.evidence) writer.line(`Evidência: ${evidence}`);
+  for (const source of hardware.sources) writer.line(`Fonte técnica: ${source.title} — ${source.url}`, 8.5);
+  for (const source of design.price.sourceUrls) writer.line(`Fonte de preço: ${source}`, 8.5);
+  for (const warning of coreWarnings(design.warnings)) writer.paragraph(`AVISO: ${reportWarning(warning)}`, 9);
+  for (const assumption of recommendation.assumptions) writer.paragraph(`Premissa: ${reportAssumption(assumption)}`, 9);
+  for (const evidence of recommendation.evidence) writer.line(`Evidência: ${reportEvidence(evidence)}`);
 }
 
 const COMPONENT_LABELS: Partial<Record<HardwareComponent["kind"], string>> = {
@@ -799,6 +931,45 @@ function displayManufacturer(value: string): string {
   return known[value.toLowerCase()] ?? value;
 }
 
+function commercialComponentName(manufacturer: string, model: string): string {
+  const display = displayManufacturer(manufacturer);
+  return model.toLowerCase().startsWith(display.toLowerCase()) ? model : `${display} ${model}`;
+}
+
+function ptBrText(value: string): string {
+  const replacements: Array<[RegExp, string]> = [
+    [/\bnao\b/gi, "não"], [/\btecnica\b/gi, "técnica"], [/\btecnico\b/gi, "técnico"],
+    [/\baplicacao\b/gi, "aplicação"], [/\boperacao\b/gi, "operação"], [/\bgravacao\b/gi, "gravação"],
+    [/\bconfiguracao\b/gi, "configuração"], [/\bcodigo\b/gi, "código"], [/\bcriterio\b/gi, "critério"],
+    [/\bminima\b/gi, "mínima"], [/\bmaxima\b/gi, "máxima"], [/\bpotencia\b/gi, "potência"],
+    [/\btermica\b/gi, "térmica"], [/\brefrigeracao\b/gi, "refrigeração"], [/\bmecanica\b/gi, "mecânica"],
+    [/\bexpansao\b/gi, "expansão"], [/\bmanutencao\b/gi, "manutenção"], [/\bcomprovacao\b/gi, "comprovação"],
+    [/\bespecificacoes\b/gi, "especificações"], [/\breferencia\b/gi, "referência"], [/\brelatorio\b/gi, "relatório"],
+    [/\baquisicao\b/gi, "aquisição"], [/\bpublicacao\b/gi, "publicação"], [/\banalise\b/gi, "análise"],
+    [/\bevidencias\b/gi, "evidências"], [/\bcalibracoes\b/gi, "calibrações"], [/\bfisicas\b/gi, "físicas"],
+    [/\bconcorrencia\b/gi, "concorrência"], [/\bequivalencia\b/gi, "equivalência"], [/\butilizacao\b/gi, "utilização"],
+  ];
+  return replacements.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), value);
+}
+
+function componentRolePt(value: string): string {
+  const labels: Record<string, string> = {
+    compute: "processamento central", acceleration: "aceleração", operating_storage: "armazenamento operacional",
+    retention_storage: "armazenamento de retenção", network: "rede", power: "alimentação elétrica",
+    cooling: "refrigeração", chassis: "chassi", oem_system: "sistema completo", memory: "memória",
+  };
+  return labels[value] ?? reportLabel(value);
+}
+
+function proofMethodPt(value: string): string {
+  return ({
+    official_datasheet: "ficha técnica oficial do fabricante",
+    independent_benchmark: "benchmark independente e reproduzível",
+    technical_proposal: "proposta técnica acompanhada de memória de cálculo",
+    sample_or_poc: "amostra ou prova de conceito",
+  } as Record<string, string>)[value] ?? ptBrText(reportLabel(value));
+}
+
 function addDetailedCommercialComponents(writer: PdfWriter, design: RecommendationAlternative, components: HardwareComponent[], machineIndex: number): void {
   const byId = new Map(components.map((component) => [component.id, component]));
   const commercial = design.commercialReference;
@@ -810,7 +981,7 @@ function addDetailedCommercialComponents(writer: PdfWriter, design: Recommendati
     const number = `${machineIndex}.${componentIndex + 1}`;
     const label = COMPONENT_LABELS[reference.kind] ?? reference.kind;
     writer.subheading(`${number}. ${label} — especificação resumida`);
-    writer.paragraph(`${reference.quantityPerNode} unidade(s) por nó; referência comercial ${displayManufacturer(reference.manufacturer)} ${reference.model}; código canônico ${reference.canonicalMpn}; completude de especificações oficiais ${reference.specificationCompletenessPercent}%.`, 9.5);
+    writer.paragraph(`${reference.quantityPerNode} unidade(s) por nó. Referência comercial: ${commercialComponentName(reference.manufacturer, reference.model)}. Código canônico: ${reference.canonicalMpn}. Completude das especificações oficiais: ${reference.specificationCompletenessPercent}%.`, 9.5);
     const component = byId.get(reference.componentId);
     writer.subheading(`${number}.1. Especificação técnica detalhada do fabricante`);
     const published = component?.technicalSpecification?.fields.filter((field) => field.status === "published" && field.confidence === "official") ?? [];
@@ -826,15 +997,48 @@ function addDetailedCommercialComponents(writer: PdfWriter, design: Recommendati
       for (const [section, fields] of groups) {
         sectionIndex += 1;
         writer.line(`${number}.1.${sectionIndex}. ${section}`, 9.5, true, 8);
-        for (const field of fields) {
-          writer.paragraph(`${field.labelPt}: ${specificationValue(field.value, field.unit)}. Valor publicado: ${specificationValue(field.originalValue, null)}. Evidência: ${field.sourceEvidence.map((evidence) => `${evidence.sourceId}, ${evidence.evidenceLocator}`).join("; ")}.`, 8.8, 16);
+        for (const [fieldIndex, field] of fields.entries()) {
+          const normalized = specificationValue(field.value, field.unit);
+          const original = specificationValue(field.originalValue, null);
+          const originalSuffix = original !== normalized && !normalized.startsWith(original)
+            ? ` O fabricante publicou: ${original}.`
+            : "";
+          writer.paragraph(`${number}.1.${sectionIndex}.${fieldIndex + 1}. ${field.labelPt}: ${normalized}.${originalSuffix}`, 8.8, 16);
         }
       }
     }
     const missing = component?.technicalSpecification?.completeness.missingRequiredFieldCodes ?? [];
-    if (missing.length) writer.paragraph(`Campos oficiais obrigatórios ainda ausentes: ${missing.join(", ")}. Enquanto houver ausência, conflito ou ambiguidade, o componente permanece bloqueado para aquisição.`, 8.8, 8);
+    if (missing.length) writer.paragraph(`Campos oficiais obrigatórios ainda ausentes: ${missing.map(reportLabel).join(", ")}. Enquanto houver ausência, conflito ou ambiguidade, o componente permanece bloqueado para aquisição.`, 8.8, 8);
     const urls = [...new Set(component?.technicalSpecification?.fields.flatMap((field) => field.sourceEvidence.map((evidence) => evidence.url)) ?? reference.sourceUrls)];
-    for (const url of urls) writer.line(`Fonte oficial: ${url}`, 8, false, 8);
+    for (const [sourceIndex, url] of urls.entries()) writer.line(`${number}.1.F${sourceIndex + 1}. Fonte oficial: ${url}`, 8, false, 8);
+  }
+}
+
+function addEvidenceAudit(writer: PdfWriter, design: RecommendationAlternative, machineIndex: number): void {
+  const bom = design.bom;
+  writer.heading(`${machineIndex}.A. Auditoria de compatibilidade, benchmarks e calibrações`);
+  if (!bom) {
+    writer.paragraph("Esta recomendação legada não possui uma BOM normalizada. A ausência fica registrada e impede que a opção seja liberada automaticamente para aquisição.");
+    return;
+  }
+  writer.paragraph(`Identificador da configuração: ${bom.id}. Classe: ${reportHardwareKind(bom.kind)}. Gate de aquisição: ${reportLabel(bom.procurementGate.status)}. ${evidenceCoverageSummary(design)}`, 9.2);
+  writer.subheading(`${machineIndex}.A.1. Lista de componentes da BOM`);
+  for (const [index, item] of bom.items.entries()) {
+    writer.line(`${machineIndex}.A.1.${index + 1}. ${COMPONENT_LABELS[item.kind] ?? reportLabel(item.kind)}: ${item.quantity} unidade(s) por nó; ${item.required ? "obrigatório" : "opcional"}; código interno auditável ${item.componentId}.`, 8.8);
+  }
+  writer.subheading(`${machineIndex}.A.2. Decisões de compatibilidade`);
+  for (const [index, decision] of bom.compatibility.entries()) {
+    writer.paragraph(`${machineIndex}.A.2.${index + 1}. ${decision.compatible ? "Compatível" : "Incompatível"}: ${reportWarning(decision.message)} (regra ${decision.code}).`, 8.8);
+  }
+  writer.subheading(`${machineIndex}.A.3. Cobertura por estágio do Perceptrum`);
+  for (const [index, stage] of bom.coverage.stages.entries()) {
+    const evidence = `${stage.eligibleObservationIds.length} benchmark(s) elegível(is) e ${stage.physicalAnchorRunIds.length} calibração(ões) física(s)`;
+    const reason = stage.reasons.length ? ` Motivo: ${stage.reasons.map(reportWarning).join(" ")}` : " Evidência suficiente para este estágio.";
+    writer.paragraph(`${machineIndex}.A.3.${index + 1}. ${reportLabel(stage.stage)}: ${stage.covered ? "coberto" : "bloqueado"}; ${evidence}.${reason}`, 8.8);
+  }
+  writer.subheading(`${machineIndex}.A.4. Avisos técnicos registrados`);
+  for (const [index, warning] of [...new Set(design.warnings)].entries()) {
+    writer.paragraph(`${machineIndex}.A.4.${index + 1}. ${reportWarning(warning)}`, 8.8);
   }
 }
 
@@ -847,30 +1051,36 @@ function addCommercialAndNeutralOption(writer: PdfWriter, design: Recommendation
   writer.y = 720;
 
   writer.heading(`${index}. Referência comercial interna`);
-  writer.paragraph("Esta seção identifica a configuração usada na análise interna. Ela preserva fabricante, modelo e código para pesquisa de preços, conferência de compatibilidade e auditoria, mas não deve ser copiada para o edital ou para o anexo técnico neutro.", 9.5);
+  writer.paragraph("Esta seção identifica a configuração usada na análise interna. Ela preserva fabricante, modelo e código para pesquisa de preços, conferência de compatibilidade e auditoria, mas não deve ser copiada para o edital nem para o anexo técnico neutro.", 9.5);
   const commercial = design.commercialReference;
   if (!commercial) writer.line("Referência comercial indisponível nesta recomendação legada.");
   else {
-    writer.line(`${commercial.hardwareName}; ${commercial.nodeCount} nó(s), ${commercial.activeNodeCount} ativo(s); plataforma ${commercial.operatingSystem}; preço do projeto ${commercial.currency} ${formatMoney(commercial.projectPrice)} (${commercial.priceBasis}).`, 10, true);
+    writer.line(`${commercial.hardwareName}; ${commercial.nodeCount} nó(s), ${commercial.activeNodeCount} ativo(s); plataforma ${reportOperatingSystem(commercial.operatingSystem)}; preço do projeto ${commercial.currency} ${formatMoney(commercial.projectPrice)} (${reportLabel(commercial.priceBasis)}).`, 10, true);
     addDetailedCommercialComponents(writer, design, components, index);
   }
+
+  addEvidenceAudit(writer, design, index);
 
   writer.heading(`${index}.${(commercial?.components.length ?? 0) + 1}. Especificação técnica não comercial`);
   const neutral = design.procurementNeutralSpecification;
   if (!neutral) writer.line("Especificação neutra indisponível nesta recomendação legada.", 9.5, true);
   else {
-    writer.line(`Estado: ${neutral.status.toUpperCase()}; gate técnico: ${neutral.procurementEligibility}; concorrência: ${neutral.marketCompetitionAssessment.status}.`, 10, true);
+    writer.line(`Estado: ${reportLabel(neutral.status).toUpperCase()}; gate técnico: ${reportLabel(neutral.procurementEligibility)}; concorrência: ${reportLabel(neutral.marketCompetitionAssessment.status)}.`, 10, true);
     if (neutral.status === "blocked") writer.line("NÃO UTILIZAR COMO ESPECIFICAÇÃO DE AQUISIÇÃO. Evidências, completude ou concorrência ainda são insuficientes.", 10, true);
     for (const item of neutral.requirements) {
-      const comparison = item.comparator === "minimum" ? "no mínimo" : item.comparator === "maximum" ? "no máximo" : item.comparator;
-      writer.line(`${item.componentRole} — ${item.characteristic}: ${comparison} ${String(item.value)}${item.unit ? ` ${item.unit}` : ""}; quantidade ${item.quantityPerNode} por nó / ${item.projectQuantity} no projeto.`, 9.5, item.mandatory);
-      writer.paragraph(`Justificativa: ${item.rationale} Comprovação: ${item.proofMethod}. Critério de aceite: ${item.acceptanceCriterion}`, 8.5, 10);
+      const comparison = item.comparator === "minimum" ? "no mínimo"
+        : item.comparator === "maximum" ? "no máximo"
+          : item.comparator === "equals" ? "igual a"
+            : item.comparator === "supports" ? "deve suportar"
+              : item.comparator === "prohibited" ? "proibido" : "dentro do intervalo";
+      writer.line(`${componentRolePt(item.componentRole)} — ${ptBrText(item.characteristic)}: ${comparison} ${String(item.value)}${item.unit ? ` ${item.unit}` : ""}; quantidade ${item.quantityPerNode} por nó / ${item.projectQuantity} no projeto.`, 9.5, item.mandatory);
+      writer.paragraph(`Justificativa: ${ptBrText(item.rationale)} Comprovação: ${proofMethodPt(item.proofMethod)}. Critério de aceite: ${ptBrText(item.acceptanceCriterion)}`, 8.5, 10);
     }
     writer.heading("Competitividade e controle de direcionamento");
     writer.paragraph(`Produtos no requisito limitante: ${neutral.marketCompetitionAssessment.matchingProductCount}; fabricantes distintos: ${neutral.marketCompetitionAssessment.distinctManufacturerCount}; publicação automática: ${neutral.marketCompetitionAssessment.safeForPublication ? "permitida" : "bloqueada ou sujeita a revisão"}.`);
-    for (const reason of neutral.marketCompetitionAssessment.reasons) writer.line(reason);
+    for (const reason of neutral.marketCompetitionAssessment.reasons) writer.paragraph(ptBrText(reportWarning(reason)));
     for (const finding of neutral.forbiddenIdentifierFindings) writer.line(`IDENTIFICADOR COMERCIAL DETECTADO: ${finding}.`);
-    for (const disclaimer of neutral.disclaimers) writer.line(`Nota: ${disclaimer}`);
+    for (const disclaimer of neutral.disclaimers) writer.paragraph(`Nota: ${ptBrText(disclaimer)}`);
   }
 }
 
@@ -891,40 +1101,49 @@ export async function pdfReport({ scenario, recommendations: input, components =
   writer.y -= 10;
   writer.heading(narrative.title);
   for (const paragraph of narrative.paragraphs) {
-    writer.line(paragraph, 10);
-    writer.y -= 4;
+    writer.paragraph(paragraph, 10);
   }
   for (const caution of narrative.cautions) writer.line(`ATENÇÃO: ${caution}`, 9.5, true);
 
   writer.heading("As três configurações sugeridas");
   for (const recommendation of recommendations) {
     const design = recommendation.primary;
-    writer.line(`${POLICY_LABELS[recommendation.policy]}: ${design.nodeCount} nó(s), ${design.activeNodeCount} ativo(s), ${design.hardware.name}, ${operatingSystemFor(design.hardware)}.`, 11, true);
-    writer.line(`CPU ${design.hardware.cpuModel}; RAM ${design.hardware.ramGb} GB/nó (${design.hardware.memoryArchitecture}); GPU ${design.hardware.gpuCount} x ${design.hardware.gpuModel}; ${gpuMemoryDescription(design.hardware)}; folga ${design.headroomPercent}%; preço ${formatPrice(design)}.`, 9, false, 10);
+    writer.line(`${POLICY_LABELS[recommendation.policy]}: ${design.nodeCount} nó(s), ${design.activeNodeCount} ativo(s), ${design.hardware.name}, ${reportOperatingSystem(operatingSystemFor(design.hardware))}.`, 11, true);
+    writer.paragraph(`CPU ${design.hardware.cpuModel}; memória RAM de ${design.hardware.ramGb} GB por nó (${reportLabel(design.hardware.memoryArchitecture)}); GPU ${design.hardware.gpuCount} × ${design.hardware.gpuModel}; ${gpuMemoryDescription(design.hardware)}; folga de ${design.headroomPercent}%; preço ${formatPrice(design)}.`, 9, 10);
   }
 
   const qualified = qualifiedOptions(recommendations);
   writer.heading("Máquinas aptas para aquisição em ordem crescente de custo");
   if (!qualified.length) writer.line("Nenhuma máquina está apta para aquisição: faltam evidências numéricas e calibrações físicas completas para todos os estágios.", 9.5, true);
   for (const [index, option] of qualified.entries()) {
-    writer.line(`${index + 1}. ${option.hardware.name} - ${option.hardware.cpuModel} - ${option.hardware.gpuModel} - ${formatPrice(option)} - evidencia ${option.calibration?.status ?? "estimada"}.`, 9.5);
+    writer.paragraph(`${index + 1}. ${option.hardware.name} — ${option.hardware.cpuModel} — ${option.hardware.gpuModel} — ${formatPrice(option)} — evidência ${reportLabel(option.calibration?.status ?? "estimada")}.`, 9.5);
   }
   writer.heading("Referências de planejamento bloqueadas para compra");
   for (const [index, option] of planningOptions(recommendations).entries()) {
-    writer.line(`${index + 1}. ${option.hardware.name} — ${formatPrice(option)} — ${option.calibration?.status ?? "reference_only"}; não comprar sem completar as evidências.`, 9.5);
+    writer.paragraph(`${index + 1}. ${option.hardware.name} — ${option.hardware.cpuModel} — ${option.hardware.gpuModel} — ${formatPrice(option)} — ${reportLabel(option.calibration?.status ?? "reference_only")}; não adquirir sem completar as evidências.`, 9.5);
   }
 
   writer.heading("Carga de câmeras e Agents usada no cálculo");
   for (const group of scenario.scenario.cameraGroups) {
-    writer.line(`${group.count} câmera(s) — ${group.name}: ${group.source.codec.toUpperCase()} ${group.source.width}×${group.source.height}, ${group.source.sourceFps} FPS RTSP, ${group.source.bitrateMbps} Mbps, decodificação ${group.decodeMode}.`, 9.5, true);
+    writer.line(`${group.count} câmera(s) — ${group.name}: ${group.source.codec.toUpperCase()} ${group.source.width}×${group.source.height}, ${group.source.sourceFps} FPS de leitura RTSP, ${group.source.bitrateMbps} Mbps, decodificação ${reportLabel(group.decodeMode)}.`, 9.5, true);
     for (const agent of group.agents) {
-      const media = agent.inputType === "video" ? `video, ${agent.packaging}, ${agent.modelFps} FPS` : "imagem, 1 frame";
-      writer.line(`- ${agent.name}: ${agent.model}, ${media}, a cada ${agent.runEverySeconds}s, movimento=${agent.features.onlyCaptureOnMotion}, regioes=${agent.features.regions}, recorte=${agent.features.croppedFrame}, faces=${agent.features.faceReferences}, negativas=${agent.features.negativeReferences}, temporal=${agent.features.temporal}.`, 9, false, 10);
+      const media = agent.inputType === "video" ? `vídeo, ${agent.packaging}, ${Math.min(5, agent.modelFps)} FPS de inferência AiQ` : "imagem, um quadro por inferência";
+      writer.paragraph(`— ${agent.name}: modelo ${agent.model}; ${media}; execução a cada ${agent.runEverySeconds} segundos; somente com movimento: ${agent.features.onlyCaptureOnMotion ? "sim" : "não"}; regiões: ${agent.features.regions}; recorte: ${agent.features.croppedFrame ? "sim" : "não"}; faces de referência: ${agent.features.faceReferences}; referências negativas: ${agent.features.negativeReferences}; análise temporal: ${agent.features.temporal ? "sim" : "não"}.`, 9, 10);
     }
   }
 
   recommendations.forEach((recommendation, index) => addConfiguration(writer, recommendation, index + 1));
   const reportOptions = detailedPdfOptions(recommendations);
+  writer.newPage();
+  writer.line("AIQUIMIST — QUAL HARDWARE", 11, true);
+  writer.line("Caderno técnico, especificações oficiais e auditoria", 20, true);
+  writer.y -= 8;
+  writer.paragraph(`Este caderno complementa o relatório comparativo sem substituir suas páginas originais. Ele detalha ${reportOptions.length} máquina(s) única(s), em ordem crescente de custo, com a referência comercial, as especificações oficiais conhecidas de cada componente, a cobertura de benchmarks e calibrações e a correspondente especificação técnica não comercial.`, 10);
+  writer.paragraph("Os identificadores comerciais aparecem somente na parte de auditoria interna. A seção técnica não comercial e o anexo neutro separado devem permanecer livres de marca, modelo e código de produto. Nenhuma opção bloqueada pode ser convertida em recomendação de compra apenas porque suas especificações de fabricante estão completas.", 10);
+  writer.heading("Como ler a numeração");
+  writer.paragraph("A máquina 1 é o item 1. Seus componentes são numerados como 1.1, 1.2 e assim por diante. A especificação detalhada de cada componente aparece em 1.1.1, e os grupos e campos oficiais seguem em 1.1.1.1, 1.1.1.1.1 e sucessivos. O bloco 1.A registra compatibilidade, benchmarks, calibrações e motivos de bloqueio.", 9.5);
+  writer.heading("Aviso para Termos de Referência");
+  writer.paragraph("Este documento é apoio técnico. Ele não substitui Estudo Técnico Preliminar, pesquisa de preços, análise de competitividade, parecer jurídico nem aprovação da autoridade competente. A especificação neutra somente pode ser usada quando o próprio relatório indicar que as evidências e a concorrência são suficientes.", 9.5);
   reportOptions.forEach((option, index) => addCommercialAndNeutralOption(writer, option, index + 1, reportOptions.length, components));
 
   const pages = document.getPages();

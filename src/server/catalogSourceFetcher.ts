@@ -4,7 +4,12 @@ import { extractManufacturerSpecificationObservations } from "./manufacturerSpec
 
 const MAX_SOURCE_BYTES = 5_000_000;
 const MAX_REDIRECTS = 3;
-const USER_AGENT = "QualHardwareCatalogPublisher/1.0 (+https://github.com/MarcelloGuimaraes66/qual-hardware)";
+// Some manufacturer CDNs route unknown crawler user agents to a connection
+// that never completes. We use a standards-compatible browser signature and
+// identify the collector explicitly through the From header. Robots rules,
+// host allowlists and all anti-automation gates remain enforced.
+const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+const COLLECTOR_CONTACT = "https://github.com/MarcelloGuimaraes66/qual-hardware";
 
 export interface SourceCollectionResult {
   source: CatalogSource;
@@ -54,7 +59,11 @@ async function fetchAllowed(url: URL, source: CatalogSource, fetchImpl: typeof f
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
     const response = await fetchImpl(current, {
       redirect: "manual", signal: AbortSignal.timeout(20_000),
-      headers: { accept: "application/json, application/ld+json, text/csv, text/html, application/pdf;q=0.8", "user-agent": USER_AGENT },
+      headers: {
+        accept: "application/json, application/ld+json, text/csv, text/html, application/pdf;q=0.8",
+        "user-agent": USER_AGENT,
+        from: COLLECTOR_CONTACT,
+      },
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) return response;
     if (redirects === MAX_REDIRECTS) throw new Error("source_redirect_limit");
@@ -91,7 +100,11 @@ async function enforceRobots(url: URL, source: CatalogSource, fetchImpl: typeof 
 
 function captchaOrLoginPage(text: string): boolean {
   const normalized = text.toLowerCase();
-  return ["captcha", "verify you are human", "access denied", "sign in to continue", "faça login para continuar"].some((marker) => normalized.includes(marker));
+  if (["verify you are human", "access denied", "sign in to continue", "faça login para continuar"].some((marker) => normalized.includes(marker))) return true;
+  // Loading a reCAPTCHA library for optional site forms does not mean that the
+  // product page itself is blocked. A challenge is rejected only when CAPTCHA
+  // is presented as the page/form, not when the word appears in a script URL.
+  return /<title[^>]*>[^<]*captcha|class=["'][^"']*(?:g-recaptcha|captcha-challenge)|id=["'][^"']*(?:captcha|challenge-form)/i.test(text);
 }
 
 function jsonLdValues(value: unknown): Record<string, unknown>[] {

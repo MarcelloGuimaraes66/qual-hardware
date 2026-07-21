@@ -45,6 +45,18 @@ export const MANUFACTURER_SOURCE_TARGETS: readonly ManufacturerSourceTarget[] = 
     parserId: "manufacturer-spec-table",
   },
   {
+    sourceId: "spec-nvidia-products",
+    url: "https://developer.nvidia.com/video-codec-sdk",
+    componentId: canonicalComponentId("gpu", "nvidia", "NVIDIA GeForce RTX 5090 32 GB"),
+    kind: "gpu",
+    manufacturer: "NVIDIA",
+    canonicalMpn: "GeForce RTX 5090",
+    subject: "NVIDIA GeForce RTX 5090",
+    scope: "sku",
+    authority: "official_sku",
+    parserId: "manufacturer-spec-table",
+  },
+  {
     sourceId: "spec-amd-products",
     url: "https://www.amd.com/en/products/processors/desktops/ryzen/9000-series/amd-ryzen-9-9950x.html",
     componentId: canonicalComponentId("cpu", "amd", "AMD Ryzen 9 9950X"),

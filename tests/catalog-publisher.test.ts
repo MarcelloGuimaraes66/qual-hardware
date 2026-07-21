@@ -338,7 +338,7 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('technical_specification_field_definitions','manufacturer_specification_artifacts','component_technical_specification_versions','component_technical_specification_values','component_specification_completeness','procurement_specifications','procurement_requirements','procurement_market_matches')").get() as { total: number }).total).toBe(8);
     expect((check.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN ('manufacturer_specification_observations','component_specification_resolutions','component_specification_conflicts','component_specification_inheritance','component_source_mappings','specification_parser_versions','component_report_sections')").get() as { total: number }).total).toBe(7);
     expect((check.prepare("SELECT count(*) AS total FROM manufacturer_specification_observations").get() as { total: number }).total).toBeGreaterThanOrEqual(30);
-    expect((check.prepare("SELECT count(*) AS total FROM component_specification_completeness WHERE procurement_ready=1").get() as { total: number }).total).toBe(1);
+    expect((check.prepare("SELECT count(*) AS total FROM component_specification_completeness WHERE procurement_ready=1").get() as { total: number }).total).toBe(3);
     check.close();
     const backups = await readdir(join(directory, "schema-backups"));
     expect(backups).toHaveLength(1);

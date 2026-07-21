@@ -18,8 +18,10 @@ describe("technical component specifications v9", () => {
     expect(components.every((component) => component.technicalSpecification!.fields.every((field) => field.value !== 0 || field.status !== "not_published"))).toBe(true);
     const coverage = specificationCoverage(components);
     expect(coverage.componentCount).toBe(components.length);
-    expect(coverage.procurementReadyCount).toBe(1);
-    expect(coverage.byKind.every((entry) => entry.missingFieldCodes.length > 0)).toBe(true);
+    expect(coverage.procurementReadyCount).toBe(3);
+    const ready = components.filter((component) => component.technicalSpecification?.completeness.procurementReady).map((component) => component.canonicalMpn);
+    expect(ready).toEqual(expect.arrayContaining(["Intel Core Ultra 9 285K (24 cores / 24 threads)", "AMD Ryzen 9 9950X", "NVIDIA GeForce RTX 5090 32 GB"]));
+    expect(coverage.byKind.some((entry) => entry.missingFieldCodes.length > 0)).toBe(true);
   });
 
   it("qualifies a component only when every required field has official evidence", () => {
@@ -91,6 +93,31 @@ describe("technical component specifications v9", () => {
     expect(observations.map((item) => [item.payload.fieldCode, item.payload.normalizedValue])).toEqual([
       ["physical_cores", 24], ["max_clock_ghz", 5.7], ["maximum_memory_gb", 256],
     ]);
+  });
+
+  it("parses the official AMD 9950X definition list without approximating the SKU", () => {
+    const source = BUNDLED_SOURCE_REGISTRY.sources.find((item) => item.id === "spec-amd-products")!;
+    const html = `<dl><dt>Processor Architecture</dt><dd>Zen 5</dd>
+      <dt># of CPU Cores</dt><dd>16</dd><dt># of Threads</dt><dd>32</dd>
+      <dt>System Memory Type</dt><dd>DDR5</dd><dt>ECC Support</dt><dd>Yes</dd>
+      <dt>PCI Express® Version</dt><dd>PCIe® 5.0</dd></dl>`;
+    const observations = extractManufacturerSpecificationObservations(source, source.primaryUrl, "text/html", html, "2026-07-21T00:00:00.000Z");
+    expect(observations.map((item) => [item.payload.fieldCode, item.payload.normalizedValue])).toEqual([
+      ["architecture", "Zen 5"], ["physical_cores", 16], ["threads", 32], ["memory_type", "DDR5"], ["ecc_support", true], ["pcie_generation", 5],
+    ]);
+  });
+
+  it("extracts NVIDIA codec and operating-system support only from explicit official text", () => {
+    const source = BUNDLED_SOURCE_REGISTRY.sources.find((item) => item.id === "spec-nvidia-products")!;
+    const url = "https://developer.nvidia.com/video-codec-sdk";
+    const html = `<p id="ii4h1">NVENC provides video encoding for H.264, HEVC (H.265) and AV1 codecs.</p>
+      <p id="inzs5x">NVDEC supports hardware-accelerated decoding on Windows and Linux platforms: MPEG-2, VC-1, H.264, H.265 (HEVC), VP8, VP9, and AV1.</p>`;
+    const observations = extractManufacturerSpecificationObservations(source, url, "text/html", html, "2026-07-21T00:00:00.000Z");
+    expect(observations.map((item) => [item.payload.fieldCode, item.payload.normalizedValue])).toEqual(expect.arrayContaining([
+      ["video_encode", "H.264; H.265 (HEVC); AV1"],
+      ["video_decode", "MPEG-2; VC-1; H.264; H.265 (HEVC); VP8; VP9; AV1"],
+      ["supported_operating_systems", "Windows; Linux"],
+    ]));
   });
 
   it("preserves same-authority disagreements as conflicts instead of choosing a value", () => {
@@ -174,6 +201,6 @@ describe("technical component specifications v9", () => {
     expect((await history.json() as unknown[])).toHaveLength(1);
     const coverage = await (await app.request("/api/catalog/specifications/coverage")).json() as { componentCount: number; procurementReadyCount: number };
     expect(coverage.componentCount).toBe(components.length);
-    expect(coverage.procurementReadyCount).toBe(1);
+    expect(coverage.procurementReadyCount).toBe(3);
   });
 });
