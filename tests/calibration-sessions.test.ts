@@ -89,6 +89,39 @@ describe("secure cross-platform calibration handoff", () => {
     expect(await resolveCalibrationDirectory({ platform: "linux", home: "/home/test", env: { QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR: "/mnt/docs" } })).toBe("/mnt/docs/Qual Hardware/Calibracoes");
   });
 
+  it("uses platform-explicit resolution for explicit Windows document inputs", async () => {
+    await expect(resolveCalibrationDirectory({
+      platform: "win32",
+      documentsDirectory: "C:\\Users\\test\\Docs",
+      env: {},
+    })).resolves.toBe("C:\\Users\\test\\Docs\\Qual Hardware\\Calibracoes");
+
+    await expect(resolveCalibrationDirectory({
+      platform: "win32",
+      home: "C:\\Users\\test",
+      env: { QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR: "D:\\Calibrations" },
+    })).resolves.toBe("D:\\Calibrations\\Qual Hardware\\Calibracoes");
+  });
+
+  it("bypasses shell documents lookup when a Windows home path is injected", async () => {
+    vi.resetModules();
+    const execFileMock = vi.fn();
+    vi.doMock("node:child_process", async () => {
+      const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+      return { ...actual, execFile: execFileMock };
+    });
+    const { resolveCalibrationDirectory: resolveWithMock } = await import("../src/server/calibrationSessions.js");
+
+    await expect(resolveWithMock({
+      platform: "win32",
+      home: "C:\\Users\\test",
+      env: {},
+    })).resolves.toBe("C:\\Users\\test\\Documents\\Qual Hardware\\Calibracoes");
+
+    expect(execFileMock).not.toHaveBeenCalled();
+    vi.doUnmock("node:child_process");
+  });
+
   it("normalizes untrusted progress without allowing unbounded UI data", () => {
     const progress = normalizeCalibrationProgress({ phase: "sustained", stage: "x".repeat(500), percent: 180, message: "m".repeat(2_000) });
     expect(progress.percent).toBe(100);
