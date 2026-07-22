@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
-import { lstat, mkdir, writeFile } from "node:fs/promises";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { lstat, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { canonicalSha256 } from "../engine/calibrationProfile.js";
@@ -10,6 +10,7 @@ import type {
   CalibrationDiagnosticArtifact,
   CalibrationPlan,
   CalibrationRuntimeStatus,
+  CalibrationSessionRecord,
   CalibrationSessionProgress,
   HardwareNodeTemplate,
   LocalCalibrationRun,
@@ -29,6 +30,7 @@ import type {
 } from "./calibrationKernelProtocol.js";
 
 const MAX_EVIDENCE_BYTES = 10 * 1024 * 1024;
+const MAX_DIAGNOSTIC_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
 const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isNotFound(error: unknown): boolean {
@@ -58,6 +60,10 @@ export interface CalibrationKernelPort {
   start(input: CalibrationKernelStartInput, handlers: CalibrationKernelHandlers): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   retryCleanup(sessionId: string, interruptedRecovery?: boolean, previouslyRemovedBytes?: number): Promise<CalibrationCleanupStatus>;
+  recoverInterruptedSession(session: CalibrationSessionRecord): Promise<{
+    cleanup: CalibrationCleanupStatus;
+    diagnostic: CalibrationDiagnosticArtifact;
+  }>;
   isActive(sessionId: string): boolean;
   hasActiveSession(): boolean;
   close(): Promise<void>;
@@ -339,6 +345,37 @@ export class CalibrationKernelService implements CalibrationKernelPort {
     return this.cleanupWithRetry(sessionId, interruptedRecovery, previouslyRemovedBytes);
   }
 
+  async recoverInterruptedSession(session: CalibrationSessionRecord): Promise<{
+    cleanup: CalibrationCleanupStatus;
+    diagnostic: CalibrationDiagnosticArtifact;
+  }> {
+    const runtimeStatus = await this.runtimeStatus().catch(() => null);
+    const diagnostic = await this.persistDiagnostic({
+      schemaVersion: "qual-hardware-calibration-diagnostic/1.0.0",
+      sessionId: session.id,
+      runId: session.id,
+      planId: session.planId,
+      createdAt: session.createdAt,
+      completedAt: new Date().toISOString(),
+      status: "interrupted",
+      error: "calibration_session_interrupted_after_process_exit",
+      kernelVersion: runtimeStatus?.kernelVersion ?? session.plan.kernelVersion,
+      runtimeManifestHash: runtimeStatus?.manifestHash ?? "unavailable",
+      workloadProfileId: session.plan.workloadProfile.id,
+      workloadProfileSignature: session.plan.workloadProfile.signature,
+      compatiblePerceptrumCommit: runtimeStatus?.authorityCommit ?? session.plan.workloadProfile.targetBuildHash,
+      lastProgress: session.progress,
+      fingerprint: session.result?.fingerprint ?? null,
+      runtimeSummary: null,
+      tierResults: session.result?.tierResults ?? [],
+      repetitions: session.result?.repetitions ?? [],
+      measurements: [],
+    });
+    const cleanup = await this.cleanupWithRetry(session.id, true,
+      session.cleanup?.bytesRemoved ?? session.progress?.bytesRemoved ?? 0);
+    return { cleanup, diagnostic };
+  }
+
   isActive(sessionId: string): boolean {
     return this.active.has(sessionId);
   }
@@ -422,6 +459,9 @@ export class CalibrationKernelService implements CalibrationKernelPort {
   }
 
   private async persistDiagnostic(payload: CalibrationKernelDiagnosticPayload): Promise<CalibrationDiagnosticArtifact> {
+    if (!SESSION_UUID.test(payload.sessionId) || !SESSION_UUID.test(payload.runId)) {
+      throw new Error("invalid_calibration_diagnostic_identity");
+    }
     await mkdir(this.options.evidenceDirectory, { recursive: true });
     const payloadSha256 = canonicalSha256(payload);
     const fileName = `${payload.runId}.${payload.status}.qhcal-diagnostic.json.gz`;
@@ -431,7 +471,48 @@ export class CalibrationKernelService implements CalibrationKernelPort {
       payloadSha256,
     }), "utf8"), { level: 9 });
     if (compressed.byteLength > MAX_EVIDENCE_BYTES) throw new Error("calibration_diagnostic_exceeds_10mb");
-    await writeFile(join(this.options.evidenceDirectory, fileName), compressed, { flag: "wx" });
+    const filePath = join(this.options.evidenceDirectory, fileName);
+    try {
+      await writeFile(filePath, compressed, { flag: "wx" });
+    } catch (error) {
+      if (!error || typeof error !== "object" || !("code" in error) ||
+          (error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      let existingError: unknown = new Error("calibration_existing_diagnostic_invalid");
+      for (const retryDelay of [0, 50, 200]) {
+        if (retryDelay > 0) await wait(retryDelay);
+        try {
+          const info = await stat(filePath);
+          if (!info.isFile() || info.size > MAX_EVIDENCE_BYTES) throw new Error("calibration_existing_diagnostic_invalid");
+          const envelope = JSON.parse(gunzipSync(await readFile(filePath), {
+            maxOutputLength: MAX_DIAGNOSTIC_DECOMPRESSED_BYTES,
+          }).toString("utf8")) as {
+            schemaVersion?: unknown;
+            diagnostic?: Partial<CalibrationKernelDiagnosticPayload>;
+            payloadSha256?: unknown;
+          };
+          if (envelope.schemaVersion !== "qual-hardware-calibration-diagnostic-envelope/1.0.0" ||
+              envelope.diagnostic?.sessionId !== payload.sessionId ||
+              envelope.diagnostic?.runId !== payload.runId ||
+              envelope.diagnostic?.status !== payload.status ||
+              typeof envelope.payloadSha256 !== "string" ||
+              canonicalSha256(envelope.diagnostic) !== envelope.payloadSha256) {
+            throw new Error("calibration_existing_diagnostic_invalid");
+          }
+          return {
+            schemaVersion: "qual-hardware-calibration-diagnostic-artifact/1.0.0",
+            fileName,
+            payloadSha256: envelope.payloadSha256,
+            persistedAt: (info.birthtimeMs > 0 ? info.birthtime : info.mtime).toISOString(),
+            status: payload.status,
+            completedMeasurementCount: Array.isArray(envelope.diagnostic.measurements)
+              ? envelope.diagnostic.measurements.length : 0,
+          };
+        } catch (readError) {
+          existingError = readError;
+        }
+      }
+      throw existingError;
+    }
     return {
       schemaVersion: "qual-hardware-calibration-diagnostic-artifact/1.0.0",
       fileName,

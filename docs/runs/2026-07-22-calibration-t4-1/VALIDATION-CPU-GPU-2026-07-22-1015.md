@@ -27,7 +27,7 @@ Status: local Qual Hardware gates green; first corrective commit published; seco
 
 - Typecheck: passed.
 - Production build: passed.
-- Complete Vitest suite: 25 files / 198 tests passed.
+- Complete Vitest suite after native corrections: 25 files / 200 tests passed.
 - Pipeline and temporary-file critical set: 29 tests passed in three consecutive executions after the concurrency fix.
 - Packaged desktop smoke: passed on macOS arm64 from `release-t4-cpugpu-20260722-1010`; success, cancellation, restart, persisted SQLite v9 evidence and exact-session cleanup were exercised.
 - Smoke temporary data: removed; zero retained smoke workspace.
@@ -36,6 +36,7 @@ Status: local Qual Hardware gates green; first corrective commit published; seco
 - Second hosted-correction critical set: 6 files / 51 tests passed.
 - Windows path portability: every repository-root URL uses `fileURLToPath`; Documents resolution is tested with native Windows and POSIX paths.
 - Virtual-runner thermal behavior: missing sensors remain explicit, diagnostic and ineligible; physical qualification still requires measured evidence.
+- Forced-process-exit recovery: compact evidence is persisted and hash-validated before owned temporary cleanup; repeated recovery reuses the same immutable artifact.
 - Dependency audit: zero high-or-higher vulnerabilities.
 - Source audit: `externalSourceAccess:false`; source-lock SHA-256 `8ab591a075e8f25a58736ebf68a55292eb11bc338d3da43be73e4c462558aa4d`.
 - `git diff --check`: passed.

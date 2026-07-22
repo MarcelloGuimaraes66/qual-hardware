@@ -3,6 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { createCalibrationPlan } from "../src/engine/calibration.js";
+import { createDefaultScenario } from "../src/shared/schemas.js";
+import type { CalibrationSessionRecord } from "../src/shared/types.js";
 import {
   cleanupCalibrationWorkspace,
   calibrationDiskReserveBytes,
@@ -15,6 +18,7 @@ import {
   setCalibrationWorkspaceOwner,
 } from "../src/server/calibrationTemporaryFiles.js";
 import { CalibrationKernelService } from "../src/server/calibrationKernelService.js";
+import { createInternalCalibrationSession } from "../src/server/calibrationSessions.js";
 
 const generatedRoots: string[] = [];
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -174,6 +178,43 @@ describe("session-owned calibration temporary files", () => {
     const recovered = await service.retryCleanup(created.manifest.sessionId, true);
     expect(recovered.state).toBe("completed");
     expect(recovered.remainingBytes).toBe(0);
+  });
+
+  it("persists an idempotent crash diagnostic before reclaiming an orphaned session", async () => {
+    const created = await workspace();
+    await writeFile(join(created.directory, "partial-telemetry.jsonl"), "partial telemetry");
+    await registerCalibrationTemporaryFile(created, "partial-telemetry.jsonl");
+    const plan = createCalibrationPlan(createDefaultScenario(4), "quick", null);
+    const session: CalibrationSessionRecord = {
+      ...createInternalCalibrationSession({
+        plan,
+        recommendationId: "00000000-0000-4000-8000-000000000178",
+        scenarioId: "00000000-0000-4000-8000-000000000179",
+        advancedTelemetry: false,
+      }),
+      id: created.manifest.sessionId,
+      state: "discovering",
+    };
+    const evidenceDirectory = join(created.root, "evidence");
+    const service = new CalibrationKernelService({
+      temporaryRoot: created.root,
+      evidenceDirectory,
+      resourceRoot: projectRoot,
+      appVersion: "test",
+    });
+
+    const first = await service.recoverInterruptedSession(session);
+    expect(first.cleanup).toMatchObject({ state: "completed", remainingBytes: 0 });
+    expect(first.diagnostic).toMatchObject({ status: "interrupted", completedMeasurementCount: 0 });
+    expect(await readFile(join(evidenceDirectory, first.diagnostic.fileName))).not.toHaveLength(0);
+    const second = await service.recoverInterruptedSession(session);
+    expect(second.diagnostic).toMatchObject({
+      fileName: first.diagnostic.fileName,
+      payloadSha256: first.diagnostic.payloadSha256,
+      status: first.diagnostic.status,
+      completedMeasurementCount: first.diagnostic.completedMeasurementCount,
+    });
+    expect(await readdir(evidenceDirectory)).toEqual([first.diagnostic.fileName]);
   });
 
   it("does not refresh or remove an unregistered file during interrupted-session recovery", async () => {

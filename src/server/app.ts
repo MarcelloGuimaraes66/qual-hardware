@@ -336,16 +336,16 @@ export function createApp(
     if (["completed", "cancelled", "failed", "interrupted", "expired"].includes(session.state)) return session;
     if (session.tokenHash === "internal" && !calibrationKernel.isActive(session.id) &&
       ["launching", "preflight", "discovering", "qualifying", "finalizing", "running", "cancelling"].includes(session.state)) {
-      const cleanup = await calibrationKernel.retryCleanup(session.id, true,
-        session.cleanup?.bytesRemoved ?? session.progress?.bytesRemoved ?? 0);
+      const recovery = await calibrationKernel.recoverInterruptedSession(session);
       const interrupted: CalibrationSessionRecord = {
         ...session,
         state: "interrupted",
         completedAt: new Date().toISOString(),
-        progress: normalizeCalibrationProgress({ ...(session.progress ?? { updatedAt: new Date().toISOString() }), stage: "interrupted", phase: "interrupted", percent: cleanup.state === "completed" ? 100 : 99,
-          bytesTemporary: cleanup.bytesTemporary, bytesRemoved: cleanup.bytesRemoved,
-          message: cleanup.state === "completed" ? "Execução interrompida; temporários removidos com segurança." : "Execução interrompida; limpeza temporária pendente." }),
-        cleanup,
+        progress: normalizeCalibrationProgress({ ...(session.progress ?? { updatedAt: new Date().toISOString() }), stage: "interrupted", phase: "interrupted", percent: recovery.cleanup.state === "completed" ? 100 : 99,
+          bytesTemporary: recovery.cleanup.bytesTemporary, bytesRemoved: recovery.cleanup.bytesRemoved,
+          message: recovery.cleanup.state === "completed" ? "Execução interrompida; diagnóstico preservado e temporários removidos com segurança." : "Execução interrompida; diagnóstico preservado e limpeza temporária pendente." }),
+        cleanup: recovery.cleanup,
+        diagnostic: recovery.diagnostic,
         error: "calibration_session_interrupted",
       };
       await store.saveCalibrationSession(interrupted);

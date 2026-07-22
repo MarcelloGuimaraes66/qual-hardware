@@ -2,7 +2,7 @@
 
 Update 2026-07-22 16:20: every tier/phase still requires isolated CPU and GPU lanes. Hosted native execution additionally required `fileURLToPath` for Windows repository roots, target-specific Windows/POSIX Documents semantics, Windows-safe test timeouts and diagnostic handling of unavailable thermal sensors on virtual Ubuntu. None of these changes weakens the physical evidence gate. Local proof is recorded in `CI-CORRECTION-2026-07-22-1605.md`.
 
-Status: corrective implementation complete and locally green; hosted native revalidation, approved runtime and physical gates pending.
+Status: corrective implementation complete and locally green, inclusive crash recovery; hosted native revalidation, approved runtime and physical gates pending.
 
 ## Execution order
 
@@ -40,6 +40,7 @@ Status: corrective implementation complete and locally green; hosted native reva
 - The packaged telemetry probe uses no shell, network, automatic elevation or user-controlled arguments. It reads `pmset`/`ioreg` on macOS, thermal sysfs/counters on Linux, Windows CIM thermal policy, and NVIDIA thermal slowdown flags when available.
 - Probe output is accepted only with the exact schema, local platform/architecture, bounded values and explicit sensor quality. Partial GPU/CPU coverage remains diagnostic; it can never satisfy the commercial thermal guardrail.
 - Immediate cancellation now dominates FFmpeg/child exit codes and late results, so stopping a test produces `cancelled`, preserves a compact diagnostic, and cleans the exact session instead of reporting a false hardware failure.
+- A sessão ativa órfã por encerramento forçado agora preserva um diagnóstico compacto validado antes da limpeza. A persistência é append-only e idempotente, portanto reiniciar novamente entre a gravação da evidência e o evento do banco não duplica nem sobrescreve o arquivo.
 - Branch pushes under `codex/**` now trigger the Windows/macOS/Ubuntu desktop matrix. Each native job exports a signed platform fixture; every receiver OS verifies and consolidates all three packages before CI can pass.
 
 ## Deliberate fail-closed state

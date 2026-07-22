@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { createCalibrationPlan } from "../src/engine/calibration.js";
 import { createDefaultScenario } from "../src/shared/schemas.js";
-import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, CALIBRATION_KERNEL_VERSION, LEGACY_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT, WORKLOAD_CONTRACT_VERSION, type CalibrationCheckpoint, type CalibrationCleanupStatus, type CalibrationDiagnosticArtifact, type CalibrationRuntimeStatus, type LocalCalibrationRun } from "../src/shared/types.js";
+import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, CALIBRATION_KERNEL_VERSION, LEGACY_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT, WORKLOAD_CONTRACT_VERSION, type CalibrationCheckpoint, type CalibrationCleanupStatus, type CalibrationDiagnosticArtifact, type CalibrationRuntimeStatus, type CalibrationSessionRecord, type LocalCalibrationRun } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
 import {
   assertAutonomousCalibrationSessionContract,
@@ -41,6 +41,7 @@ class FakeCalibrationKernel implements CalibrationKernelPort {
   private activeSessionId: string | null = null;
   private handlers: CalibrationKernelHandlers | null = null;
   readonly starts: CalibrationKernelStartInput[] = [];
+  readonly interruptedRecoveries: string[] = [];
   readonly status: CalibrationRuntimeStatus = {
     schemaVersion: "qual-hardware-calibration-runtime-status/1.0.0",
     kernelVersion: "qual-hardware-calibration-kernel/1.0.0",
@@ -95,6 +96,23 @@ class FakeCalibrationKernel implements CalibrationKernelPort {
     });
   }
   async retryCleanup(): Promise<CalibrationCleanupStatus> { return cleaned; }
+  async recoverInterruptedSession(session: CalibrationSessionRecord): Promise<{
+    cleanup: CalibrationCleanupStatus;
+    diagnostic: CalibrationDiagnosticArtifact;
+  }> {
+    this.interruptedRecoveries.push(session.id);
+    return {
+      cleanup: cleaned,
+      diagnostic: {
+        schemaVersion: "qual-hardware-calibration-diagnostic-artifact/1.0.0",
+        fileName: `${session.id}.interrupted.qhcal-diagnostic.json.gz`,
+        payloadSha256: "e".repeat(64),
+        persistedAt: new Date().toISOString(),
+        status: "interrupted",
+        completedMeasurementCount: 0,
+      },
+    };
+  }
   isActive(sessionId: string): boolean { return this.activeSessionId === sessionId; }
   hasActiveSession(): boolean { return this.activeSessionId !== null; }
   async close(): Promise<void> { this.activeSessionId = null; }
@@ -248,6 +266,29 @@ describe("secure cross-platform calibration handoff", () => {
     });
     expect((await store.getCalibrationSession(created.id))?.state).toBe("interrupted");
     expect((await store.getCalibrationSession(created.id))?.cleanup?.remainingBytes).toBe(0);
+    await store.close();
+  });
+
+  it("preserves a compact diagnostic before cleaning an active session orphaned by process exit", async () => {
+    const store = new MemoryPlannerStore();
+    const kernel = new FakeCalibrationKernel();
+    const plan = createCalibrationPlan(createDefaultScenario(4), "quick", null);
+    const created = createInternalCalibrationSession({
+      plan,
+      recommendationId: "00000000-0000-4000-8000-000000000032",
+      scenarioId: "00000000-0000-4000-8000-000000000033",
+      advancedTelemetry: false,
+    });
+    await store.saveCalibrationSession({ ...created, state: "discovering" });
+
+    createApp(store, undefined, { calibrationKernel: kernel });
+    await vi.waitFor(async () => {
+      expect((await store.getCalibrationSession(created.id))?.state).toBe("interrupted");
+    });
+    const recovered = await store.getCalibrationSession(created.id);
+    expect(recovered?.diagnostic).toMatchObject({ status: "interrupted", completedMeasurementCount: 0 });
+    expect(recovered?.cleanup).toMatchObject({ state: "completed", remainingBytes: 0 });
+    expect(kernel.interruptedRecoveries).toEqual([created.id]);
     await store.close();
   });
 
