@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "qual-hardware-calibration-handoff/1.0.0",
+  "sessionId": "00000000-0000-4000-8000-000000000001",
+  "callbackOrigin": "http://127.0.0.1:49152",
+  "nonce": "abcdefghijklmnopqrstuvwxyzABCDE_FG123456789",
+  "expiresAt": "2026-07-21T20:00:00.000Z"
+}

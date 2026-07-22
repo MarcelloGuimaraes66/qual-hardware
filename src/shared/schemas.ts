@@ -397,13 +397,12 @@ export const calibrationHandoffSchema = z.object({
   sessionId: z.string().uuid(),
   callbackOrigin: z.string().url().superRefine((value, context) => {
     const parsed = new URL(value);
-    if (parsed.protocol !== "http:" || !parsed.hostname.startsWith("127.") || parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.username || parsed.password) {
+    if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1" || parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.username || parsed.password) {
       context.addIssue({ code: "custom", message: "Calibration callback must be a plain loopback HTTP origin." });
     }
   }),
-  token: z.string().regex(/^[A-Za-z0-9_-]{43,128}$/),
+  nonce: z.string().regex(/^[A-Za-z0-9_-]{43,128}$/),
   expiresAt: z.iso.datetime(),
-  planId: z.string().uuid(),
 });
 
 export const calibrationSessionRequestSchema = z.object({

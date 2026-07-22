@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "qual-hardware-calibration-plan/1.0.0",
+  "id": "00000000-0000-4000-8000-000000000002",
+  "createdAt": "2026-07-21T20:00:00.000Z",
+  "mode": "quick",
+  "executionMode": "readiness",
+  "workloadContractVersion": "perceptrum-workload/3.1.0",
+  "targetHardwareTemplateId": null,
+  "scenario": {
+    "schemaVersion": "capacity-scenario/1.0.0",
+    "workloadContractVersion": "perceptrum-workload/3.1.0",
+    "projectName": "Fixture",
+    "customerName": "",
+    "market": "BR",
+    "markets": ["BR"],
+    "currency": "BRL",
+    "perceptrumBuildHash": "fixture",
+    "totalCameras": 4,
+    "cameraGroups": [{
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "Group",
+      "count": 4,
+      "source": { "codec": "h264", "width": 1920, "height": 1080, "sourceFps": 15, "bitrateMbps": 4 },
+      "decodeMode": "gpu",
+      "motionPercent": 100,
+      "storage": { "storeVideo": false, "retentionDays": 1, "raidFactor": 1 },
+      "agents": [{
+        "id": "00000000-0000-4000-8000-000000000004",
+        "name": "Agent",
+        "model": "aiq-3.7",
+        "inputType": "video",
+        "packaging": "mosaic_2x2",
+        "modelFps": 1,
+        "runEverySeconds": 60,
+        "features": { "onlyCaptureOnMotion": false, "temporal": false, "regions": 0, "croppedFrame": false, "faceReferences": 0, "negativeReferences": 0 }
+      }]
+    }],
+    "concurrentWorkloads": { "activeJobs": 0, "groupedJobCameras": 0, "concurrentChatSessions": 0, "activeSearches": 0, "intelligenceStreams": 0 },
+    "constraints": { "infrastructureKind": "either", "preferredCpuVendors": [], "preferredGpuVendors": [], "operatingSystem": "auto", "requiredHardwareTemplateId": null, "maxNodes": null, "budget": null, "requireEcc": false }
+  },
+  "localOnly": true,
+  "rtspOrigin": "rtsp://127.0.0.1",
+  "aiqOrigin": "http://127.0.0.1",
+  "inferenceProvider": "aiq_local",
+  "phases": [
+    { "name": "warmup", "durationSeconds": 120, "loadPercent": 80 },
+    { "name": "sustained", "durationSeconds": 300, "loadPercent": 100 },
+    { "name": "surge", "durationSeconds": 180, "loadPercent": 120 }
+  ],
+  "sourceProfiles": [{ "codec": "h264", "width": 1920, "height": 1080, "sourceFps": 15, "bitrateMbps": 4 }],
+  "requestedInferenceFps": [1],
+  "instructions": ["Loopback only"]
+}

@@ -9,6 +9,7 @@ import {
   resolveDesktopPaths,
   shouldQuitWhenAllWindowsClosed,
 } from "../src/desktop/runtime.js";
+import { redactDesktopLog } from "../src/desktop/logger.js";
 
 describe("cross-platform desktop runtime", () => {
   it.each(["win32", "darwin", "linux"] as const)("keeps persistent resources under userData on %s", (platform) => {
@@ -43,9 +44,32 @@ describe("cross-platform desktop runtime", () => {
   });
 
   it("does not request remote fonts or styles from the packaged renderer", async () => {
-    const styles = await readFile(new URL("../src/web/styles.css", import.meta.url), "utf8");
+    const [styles, html] = await Promise.all([
+      readFile(new URL("../src/web/styles.css", import.meta.url), "utf8"),
+      readFile(new URL("../index.html", import.meta.url), "utf8"),
+    ]);
     expect(styles).not.toContain("fonts.googleapis.com");
     expect(styles).not.toMatch(/@import\s+url\(['\"]https?:/i);
+    expect(html).not.toMatch(/http-equiv=["']Content-Security-Policy["']/i);
+  });
+
+  it("uses protocol activation and dynamic runtime origins instead of a fixed Perceptrum port", async () => {
+    const [application, sessions] = await Promise.all([
+      readFile(new URL("../src/server/app.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/server/calibrationSessions.ts", import.meta.url), "utf8"),
+    ]);
+    expect(`${application}\n${sessions}`).not.toContain("127.0.0.1:4000");
+    expect(sessions).toContain('searchParams.set("qualOrigin"');
+    expect(sessions).toContain("runtimeOrigin");
+  });
+
+  it("redacts credentials and complete URL query strings from desktop logs", () => {
+    const redacted = redactDesktopLog('Bearer abcdefghijklmnopqrstuvwxyz123456 https://127.0.0.1/run?nonce=secret&plan=private {"apiKey":"key-value"} OPENAI_API_KEY=top-secret');
+    expect(redacted).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
+    expect(redacted).not.toContain("nonce=secret");
+    expect(redacted).not.toContain("key-value");
+    expect(redacted).not.toContain("top-secret");
+    expect(redacted).toContain("?[redacted]");
   });
 
   it("uses the original proportional Aiquimist logo as the canonical external brand link", async () => {

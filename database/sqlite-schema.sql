@@ -98,7 +98,7 @@ CREATE INDEX IF NOT EXISTS calibration_runs_hardware_idx
 CREATE TABLE IF NOT EXISTS calibration_sessions (
   id TEXT PRIMARY KEY,
   plan_id TEXT NOT NULL UNIQUE,
-  state TEXT NOT NULL CHECK (state IN ('pending','launching','running','completed','failed','expired')),
+  state TEXT NOT NULL CHECK (state IN ('pending','launching','running','cancelling','cancelled','completed','failed','expired')),
   session_json TEXT NOT NULL CHECK (json_valid(session_json)),
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,

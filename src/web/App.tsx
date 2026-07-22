@@ -436,6 +436,33 @@ interface CalibrationStatusSummary {
   inferenceProvider: "aiq_local";
 }
 
+interface DesktopDiagnostics {
+  appVersion: string;
+  runtime: {
+    node: string;
+    electron: string | null;
+    chrome: string | null;
+    platform: string;
+    arch: string;
+  };
+  data: {
+    path: string | null;
+    schemaVersion: number;
+    calibrationDirectory: string;
+    logDirectory: string | null;
+  };
+  catalog: CatalogStatus;
+  perceptrum: {
+    registered: boolean;
+    handlerName: string | null;
+    detail: string | null;
+  };
+  prerequisites: {
+    reports: Record<string, boolean>;
+    packagedContractsPresent: boolean;
+  };
+}
+
 function CalibrationCenter({
   recommendation,
   catalogStatus,
@@ -462,10 +489,12 @@ function CalibrationCenter({
   const [result, setResult] = useState<LocalCalibrationRun | null>(null);
   const [history, setHistory] = useState<LocalCalibrationRun[]>([]);
   const [directory, setDirectory] = useState("");
+  const [diagnostics, setDiagnostics] = useState<DesktopDiagnostics | null>(null);
   const refreshStatus = (): void => {
     void api<CalibrationStatusSummary>("/api/calibrations/status").then(setStatus).catch(() => setStatus(null));
     void api<LocalCalibrationRun[]>("/api/calibrations").then((runs) => { setHistory(runs); if (!result && runs[0]) setResult(runs[0]); }).catch(() => setHistory([]));
     void api<{ directory: string }>("/api/calibration-sessions/directory").then((value) => setDirectory(value.directory)).catch(() => setDirectory(""));
+    void api<DesktopDiagnostics>("/api/desktop/diagnostics").then(setDiagnostics).catch(() => setDiagnostics(null));
   };
   useEffect(refreshStatus, []);
   useEffect(() => {
@@ -474,6 +503,11 @@ function CalibrationCenter({
       void api<CalibrationSession>(`/api/calibration-sessions/${session.id}`).then((next) => {
         setSession(next);
         if (next.result) { setResult(next.result); refreshStatus(); }
+        if (next.state === "running" && next.claimedAt && !next.result) {
+          setDetail(lang === "pt"
+            ? "Perceptrum confirmou a sessão protegida. O resultado será salvo e importado automaticamente."
+            : "Perceptrum acknowledged the protected session. The local result will be saved and imported automatically.");
+        }
         if (next.state === "cancelled") setDetail(lang === "pt" ? "Teste interrompido. O diagnóstico parcial foi preservado em Documentos e não será usado para recomendar uma compra." : "Test stopped. Partial diagnostics were preserved in Documents and will not be used for purchasing recommendations.");
         if (next.state === "failed" || next.state === "expired") setDetail(next.error ?? next.state);
       }).catch((error: unknown) => setDetail(error instanceof Error ? error.message : "calibration_status_failed"));
@@ -495,8 +529,8 @@ function CalibrationCenter({
       setSession(started.session);
       setResult(null);
       setDetail(lang === "pt"
-        ? `Perceptrum aberto. O ${mode === "quick" ? "teste rápido de 10 minutos" : "teste completo de 60 minutos"} usa RTSP, FFmpeg e AiQ/Qwen locais; o resultado será salvo e importado automaticamente.`
-        : "Perceptrum opened. The local result will be saved and imported automatically.");
+        ? `Perceptrum foi acionado. Aguardando confirmação da sessão protegida para iniciar o ${mode === "quick" ? "teste rápido de 10 minutos" : "teste completo de 60 minutos"}.`
+        : "Perceptrum was launched. Waiting for protected-session acknowledgement before the local run starts.");
     } catch (error) { setDetail(error instanceof Error ? error.message : "calibration_launch_failed"); }
     finally { setWorking(false); }
   };
@@ -594,6 +628,7 @@ function CalibrationCenter({
         {session && <article className="calibration-live"><b>2. {lang === "pt" ? "Progresso em tempo real" : "Live progress"}</b><div className="calibration-progress"><div><i style={{ width: `${session.progress?.percent ?? 0}%` }} /></div><b>{Math.round(session.progress?.percent ?? 0)}%</b></div><span>{session.progress?.message ?? detail}</span><small>{session.state} · {session.mode === "full" ? "60 min" : "10 min"} · {session.advancedTelemetry ? (lang === "pt" ? "telemetria avançada" : "advanced telemetry") : (lang === "pt" ? "telemetria padrão" : "standard telemetry")}</small>{["launching", "running", "cancelling"].includes(session.state) && <div className="catalog-actions"><button type="button" className="secondary" disabled={working || session.state === "cancelling"} onClick={() => void cancelCalibration()}>{session.state === "cancelling" ? (lang === "pt" ? "Salvando diagnóstico parcial…" : "Saving partial diagnostics…") : (lang === "pt" ? "Interromper e guardar parcial" : "Stop and keep partial data")}</button></div>}</article>}
         <article><b>{session ? "3" : "2"}. {lang === "pt" ? "Recuperação e dados anteriores" : "Recovery and previous data"}</b><span>{lang === "pt" ? "O fluxo normal é automático. Use estes controles somente para um resultado vindo de outro computador ou se a abertura direta não estiver disponível." : "The normal flow is automatic. Use these controls only for another computer or when direct launch is unavailable."}</span><div className="catalog-actions"><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar calibração anterior" : "Import previous calibration"}<input hidden type="file" accept=".json,.qhcal" disabled={working} onChange={importCalibration} /></label><button className="secondary" disabled={working || !recommendation} onClick={() => void createPlan("quick")}>{lang === "pt" ? "Salvar plano manual" : "Save manual plan"}</button><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar base pública assinada" : "Import signed public evidence"}<input hidden type="file" accept=".json" disabled={working} onChange={importEvidence} /></label></div></article></div>
       {detail && <div className="catalog-message">{detail}</div>}
+      {diagnostics && <details className="calibration-sensors"><summary>{lang === "pt" ? "Diagnóstico do desktop e do runtime" : "Desktop and runtime diagnostics"}</summary><div><b>{lang === "pt" ? "Aplicativo" : "Application"}</b><span>{diagnostics.appVersion}</span><small>{diagnostics.runtime.platform}/{diagnostics.runtime.arch} · Node {diagnostics.runtime.node} · Electron {diagnostics.runtime.electron ?? "n/a"}</small></div><div><b>{lang === "pt" ? "Dados" : "Data"}</b><span>{diagnostics.data.path ?? "n/a"}</span><small>{lang === "pt" ? `SQLite schema v${diagnostics.data.schemaVersion} · logs: ${diagnostics.data.logDirectory ?? "n/a"}` : `SQLite schema v${diagnostics.data.schemaVersion} · logs: ${diagnostics.data.logDirectory ?? "n/a"}`}</small></div><div><b>Catalog</b><span>{diagnostics.catalog.catalogVersion}</span><small>{diagnostics.catalog.source} · {diagnostics.catalog.channel}</small></div><div><b>Perceptrum</b><span>{diagnostics.perceptrum.registered ? (lang === "pt" ? "protocolo registrado" : "protocol registered") : (lang === "pt" ? "protocolo indisponível" : "protocol unavailable")}</span><small>{diagnostics.perceptrum.handlerName ?? diagnostics.perceptrum.detail ?? "n/a"}</small></div></details>}
       {result && <CalibrationResultPanel result={result} directory={directory} lang={lang} onOpenDirectory={() => void openDirectory()} onRecalculate={() => void recalculate()} />}
       {history.length > 0 && <section className="calibration-history"><div><span>HISTORY</span><h3>{lang === "pt" ? "Calibrações anteriores" : "Previous calibrations"}</h3></div>{history.map((run) => <button type="button" key={run.id} className={result?.id === run.id ? "active" : ""} onClick={() => setResult(run)}><b>{new Date(run.completedAt).toLocaleString()}</b><span>{run.fingerprint.cpuModel} · {run.fingerprint.gpuModel}</span><small>{run.overallSafeCameraCapacity === null ? (lang === "pt" ? "capacidade não validada" : "capacity not validated") : `${Math.floor(run.overallSafeCameraCapacity)} ${lang === "pt" ? "câmeras" : "cameras"}`} · {run.qualityGate?.validationStatus ?? (run.qualityGate?.eligibleForCapacityExtrapolation ? "anchor_approved" : "diagnostic")}</small></button>)}</section>}
       <p className="catalog-privacy">{lang === "pt" ? "Os resultados contêm somente métricas agregadas e hashes. Mídia, RTSP, credenciais, nome do computador e dados pessoais são recusados." : "Results contain aggregate metrics and hashes only. Media, RTSP credentials, computer name and personal data are rejected."}</p>

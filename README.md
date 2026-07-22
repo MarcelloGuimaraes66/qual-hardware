@@ -19,7 +19,7 @@ See `database/README.md` for locations, backup and migration rules.
 
 ## Desenvolvimento do aplicativo desktop
 
-Use Node.js 24 LTS on Windows 11 x64, macOS 26 Apple Silicon or Ubuntu 24.04 x64. The repository has one npm lockfile and the same commands on every system:
+Use Node.js `24.18.0` and npm `11.16.0` on Windows 11 x64, macOS 26 Apple Silicon or Ubuntu 24.04 x64. The repository has one npm lockfile and the same commands on every system:
 
 ```sh
 npm ci
@@ -27,6 +27,15 @@ npm run dev
 ```
 
 `npm run dev`, `npm start` e `npm run desktop:run` compilam e abrem a janela desktop. Não há comando de hospedagem web, imagem Docker ou configuração de proxy/reverse proxy.
+
+No Windows, use o launcher do projeto. Ele respeita `QUAL_HARDWARE_NODE_HOME` e, quando a variável não existe, provisiona o runtime portátil exato em `.tools` ou `C:\dev\tools`, sem alterar o Node global da máquina:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\qual-hardware.ps1 setup
+powershell -ExecutionPolicy Bypass -File .\scripts\qual-hardware.ps1 check
+powershell -ExecutionPolicy Bypass -File .\scripts\qual-hardware.ps1 test
+powershell -ExecutionPolicy Bypass -File .\scripts\qual-hardware.ps1 package
+```
 
 ## Aplicativo desktop multiplataforma
 
@@ -43,11 +52,11 @@ npm ci
 npm run desktop:package
 ```
 
-Cada artefato é compilado no sistema operacional de destino. A versão `0.1.0` produz:
+Cada artefato é compilado no sistema operacional de destino. A versão `0.2.0` produz:
 
-- Windows: `release/Qual-Hardware-0.1.0-windows-x64-portable.exe`.
-- macOS: `release/Qual-Hardware-0.1.0-macos-arm64.dmg`.
-- Ubuntu: `release/Qual-Hardware-0.1.0-linux-x64.AppImage` e `release/qual-hardware_0.1.0_amd64.deb`.
+- Windows: `release/Qual-Hardware-0.2.0-windows-x64-portable.exe`.
+- macOS: `release/Qual-Hardware-0.2.0-macos-arm64.dmg`.
+- Ubuntu: `release/Qual-Hardware-0.2.0-linux-x64.AppImage` e `release/qual-hardware_0.2.0_amd64.deb`.
 
 Os pacotes contêm o runtime necessário, abrem uma janela própria e iniciam a API somente em uma porta aleatória de `127.0.0.1`. O usuário final não precisa instalar Node.js. Os pacotes internos não são assinados e podem exibir SmartScreen ou Gatekeeper; a publicação de cada GitHub Release é manual.
 
@@ -86,4 +95,4 @@ npm run audit:source
 
 See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, `docs/PUBLIC_EVIDENCE_CURATION.md`, and `contracts/perceptrum-workload-v3.json`.
 
-A área permanente **Calibração de capacidade** inicia testes locais de 10 ou 60 minutos no Perceptrum desktop em macOS, Windows ou Ubuntu. O fluxo de um clique usa uma sessão descartável autenticada em `127.0.0.1`, abre `perceptrum://calibration/run`, acompanha o progresso, importa o resultado e recalcula as previsões. O Perceptrum salva antes o `.qhcal.json` em **Documentos/Qual Hardware/Calibracoes**, de forma append-only. A tela separa FPS de leitura RTSP de FPS de inferência AiQ e mostra CPU, GPU, RAM, SSD, rede, quatro fases, quinze etapas, Jobs, Steps, Agents, Intelligence, banco/dashboard, gargalo, sensores indisponíveis, caminho, checksum e JSON completo. O teste usa MediaMTX, FFmpeg, sondas nativas de memória/SSD e AiQ/Qwen locais, sem câmeras físicas, OpenAI ou APIs externas. `.qhplan.json` e importação manual permanecem como recuperação.
+A área permanente **Calibração de capacidade** prepara testes locais de 10 ou 60 minutos no Perceptrum desktop. No Windows, o fluxo de um clique já abre `perceptrum://calibration/run` sem expor o bearer token na URI: ela carrega apenas versão, origem loopback do Qual Hardware, UUID da sessão e um nonce de uso único. O Perceptrum reivindica a sessão protegida, acompanha cancelamento/progresso e salva diagnósticos append-only em **Documentos/Qual Hardware/Calibracoes**. O adaptador Windows atual é deliberadamente `diagnosticOnly`: localizar executáveis não conta como medição, seus resultados `developmentOnly` não são importáveis e nenhuma capacidade de compra é produzida. A homologação de 10/60 minutos permanece bloqueada até MediaMTX, ffprobe, FFmpeg e AiQ/Qwen serem fixados por versão/SHA/licença e o pipeline real emitir medições validadas. `.qhplan.json` e importação manual permanecem como recuperação, mas arquivos parciais ou diagnósticos são rejeitados como evidência.

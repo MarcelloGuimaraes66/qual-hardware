@@ -1,6 +1,7 @@
 node_modules/
 dist/
-release/
+release/*
+!release/SHA256SUMS
 .playwright-cli/
 output/
 outputs/
