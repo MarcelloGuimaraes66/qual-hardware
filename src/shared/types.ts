@@ -9,16 +9,18 @@ export type WorkloadContractVersion =
 export const LEGACY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0" as const;
 export const TELEMETRY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.1.0" as const;
 export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0" as const;
-export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/3.0.0" as const;
-export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/1.0.0" as const;
+export const LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/3.0.0" as const;
+export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/4.0.0" as const;
+export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/2.0.0" as const;
 export const PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT = "d918faa0ecd6a9906b711039e5d89f78e0536c44" as const;
-export const CALIBRATION_HANDOFF_VERSION = "qual-hardware-calibration-handoff/1.0.0" as const;
 export const LEGACY_CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
-export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/2.0.0" as const;
+export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/3.0.0" as const;
 export const CALIBRATION_PROGRESS_VERSION = "qual-hardware-calibration-progress/2.0.0" as const;
 export const CALIBRATION_CHECKPOINT_VERSION = "qual-hardware-calibration-checkpoint/1.0.0" as const;
-export const QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/1.0.0" as const;
-export const QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/1.0.0" as const;
+export const LEGACY_QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/1.0.0" as const;
+export const LEGACY_QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/1.0.0" as const;
+export const QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/2.0.0" as const;
+export const QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/2.0.0" as const;
 export const BENCHMARK_SUITE_VERSION = "qual-hardware-benchmark-suite/1.0.0" as const;
 export const LEGACY_COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/2.0.0" as const;
 export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/3.0.0" as const;
@@ -91,15 +93,14 @@ export type CalibrationStage =
   | "thermal_sustain";
 export type TelemetryEvidenceStatus = "measured" | "unavailable" | "failed" | "not_applicable";
 export type CalibrationValidationStatus = "diagnostic" | "anchor_approved" | "invalid";
+export type CalibrationMode = "quick" | "validation" | "qualification";
 export type CalibrationSessionState =
   | "pending"
-  | "launching"
   | "preflight"
   | "discovering"
+  | "validating"
   | "qualifying"
   | "finalizing"
-  | "running"
-  | "cancelling"
   | "cancelled"
   | "completed"
   | "failed"
@@ -556,80 +557,6 @@ export interface CapacityRecommendation {
   evidence: string[];
 }
 
-export interface BenchmarkManifest {
-  schemaVersion: "capacity-benchmark-manifest/1.0.0";
-  id: string;
-  nonce: string;
-  scenarioId: string;
-  scenarioRevision: number;
-  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
-  perceptrumBuildHash: string;
-  createdAt: string;
-  expiresAt: string;
-  uploadUrl: string;
-  targetHardware: {
-    cpuModel: string;
-    gpuModel: string;
-    gpuDriver: string;
-  };
-  slaInferenceLatencyMs: number;
-  privacy: {
-    acceptMedia: false;
-    acceptRtspCredentials: false;
-    aggregateMetricsOnly: true;
-  };
-  phases: Array<{ name: "warmup" | "sustained" | "surge"; durationSeconds: number; loadPercent: number }>;
-  scenario: CapacityScenario;
-}
-
-export interface BenchmarkMetrics {
-  cpuModel: string;
-  gpuModel: string;
-  gpuDriver: string;
-  perceptrumBuildHash: string;
-  workloadContractVersion: string;
-  startedAt: string;
-  completedAt: string;
-  p95InferenceLatencyMs: number;
-  p99InferenceLatencyMs: number;
-  peakCpuPercent: number;
-  peakRamBytes: number;
-  peakGpuPercent: number;
-  peakVramBytes: number;
-  peakDecoderPercent: number;
-  gpuTelemetryAvailable: boolean;
-  peakHandleCount: number;
-  peakThreadCount: number;
-  peakProcessCount: number;
-  peakDiskWriteBytesPerSecond: number;
-  peakNetworkReceiveBytesPerSecond: number;
-  captureReadP95Ms: number;
-  decodeP95Ms: number;
-  maxQueueDepth: number;
-  queueGrowthPerMinute: number;
-  inferenceSuccessRate: number;
-  outOfMemoryCount: number;
-  mediaFieldCount: 0;
-  credentialFieldCount: 0;
-  phases: Array<{
-    name: "warmup" | "sustained" | "surge";
-    durationSeconds: number;
-    loadPercent: number;
-    p95InferenceLatencyMs: number;
-    maxQueueDepth: number;
-    queueGrowthPerMinute: number;
-    outOfMemoryCount: number;
-  }>;
-}
-
-export interface BenchmarkResultRecord {
-  manifestId: string;
-  receivedAt: string;
-  passed: boolean;
-  failures: string[];
-  metrics: BenchmarkMetrics;
-}
-
 export interface HardwareFingerprint {
   hardwareTemplateId: string | null;
   hostnameHash: string;
@@ -738,6 +665,7 @@ export interface CalibrationProcessGroupSummary {
 export interface LocalCalibrationRun {
   schemaVersion:
     | typeof AUTONOMOUS_LOCAL_CALIBRATION_VERSION
+    | typeof LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof LOCAL_CALIBRATION_VERSION
     | typeof TELEMETRY_LOCAL_CALIBRATION_VERSION
     | typeof LEGACY_LOCAL_CALIBRATION_VERSION;
@@ -747,7 +675,7 @@ export interface LocalCalibrationRun {
   startedAt: string;
   completedAt: string;
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION | "perceptrum-workload/3.0.0" | "perceptrum-workload/2.0.0";
-  mode: "quick" | "full";
+  mode: CalibrationMode | "full";
   executionMode?: "readiness" | "production_pipeline";
   developmentOnly?: true;
   fingerprint: HardwareFingerprint;
@@ -796,7 +724,7 @@ export interface LocalCalibrationRun {
     failures: string[];
     warnings: string[];
   };
-  kernelVersion?: typeof CALIBRATION_KERNEL_VERSION;
+  kernelVersion?: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/1.0.0";
   runtimeManifestHash?: string;
   runtimeProvenance?: {
     platform: NodeJS.Platform;
@@ -878,15 +806,6 @@ export interface LocalCalibrationRun {
   notes: string[];
 }
 
-export interface CalibrationHandoff {
-  schemaVersion: typeof CALIBRATION_HANDOFF_VERSION;
-  sessionId: string;
-  callbackOrigin: string;
-  token: string;
-  expiresAt: string;
-  planId: string;
-}
-
 export interface CalibrationSessionProgress {
   schemaVersion?: typeof CALIBRATION_PROGRESS_VERSION;
   phase?: string;
@@ -941,7 +860,7 @@ export interface CalibrationSession {
   planId: string;
   recommendationId: string;
   scenarioId: string;
-  mode: "quick" | "full";
+  mode: CalibrationMode;
   advancedTelemetry: boolean;
   state: CalibrationSessionState;
   createdAt: string;
@@ -1098,7 +1017,7 @@ export interface QhcalPackageProvenance {
 }
 
 export interface QhcalUnsignedPayload {
-  schemaVersion: typeof QHCAL_PACKAGE_VERSION;
+  schemaVersion: typeof QHCAL_PACKAGE_VERSION | typeof LEGACY_QHCAL_PACKAGE_VERSION;
   packageId: string;
   createdAt: string;
   device: QhcalDeviceProof;
@@ -1115,7 +1034,7 @@ export interface QhcalPackage extends QhcalUnsignedPayload {
 }
 
 export interface QhcalSetUnsignedPayload {
-  schemaVersion: typeof QHCALSET_PACKAGE_VERSION;
+  schemaVersion: typeof QHCALSET_PACKAGE_VERSION | typeof LEGACY_QHCALSET_PACKAGE_VERSION;
   collectionId: string;
   createdAt: string;
   packages: QhcalPackage[];
@@ -1145,7 +1064,7 @@ export interface CalibrationPlan {
   schemaVersion: typeof CALIBRATION_PLAN_VERSION;
   id: string;
   createdAt: string;
-  mode: "quick" | "full";
+  mode: CalibrationMode;
   executionMode: "readiness" | "production_pipeline";
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
   kernelVersion: typeof CALIBRATION_KERNEL_VERSION;
@@ -1153,7 +1072,7 @@ export interface CalibrationPlan {
   workloadProfile: CalibrationWorkloadProfile;
   cameraTiers: number[];
   discovery: { stabilizationSeconds: number; sampleSeconds: number };
-  qualification: { repetitions: 3; cooldownSeconds: number; maximumVariabilityPercent: number };
+  qualification: { repetitions: 1 | 3; cooldownSeconds: number; maximumVariabilityPercent: number };
   targetHardwareTemplateId: string | null;
   scenario: CapacityScenario;
   localOnly: true;
@@ -1258,6 +1177,40 @@ export interface CalibrationRuntimeStatus {
     failures: string[];
   };
   reasons: string[];
+}
+
+export type CalibrationRuntimeClassification = "candidate" | "production";
+export type CalibrationRuntimeInstallationState = "pending" | "selecting" | "validating" | "installing" | "completed" | "cancelled" | "failed";
+
+export interface CalibrationRuntimePackageStatus {
+  schemaVersion: "qual-hardware-calibration-runtime-package-status/1.0.0";
+  target: "win32-x64" | "darwin-arm64" | "linux-x64" | null;
+  active: {
+    manifestHash: string;
+    version: string;
+    classification: CalibrationRuntimeClassification;
+    keyId: string;
+    installedAt: string;
+  } | null;
+  previous: {
+    manifestHash: string;
+    version: string;
+    classification: CalibrationRuntimeClassification;
+    keyId: string;
+    installedAt: string;
+  } | null;
+  installationInProgress: boolean;
+  qualificationAllowed: boolean;
+  reasons: string[];
+}
+
+export interface CalibrationRuntimeInstallation {
+  installationId: string;
+  state: CalibrationRuntimeInstallationState;
+  createdAt: string;
+  updatedAt: string;
+  manifestHash: string | null;
+  error: string | null;
 }
 
 export interface CalibrationHardwarePreflight {

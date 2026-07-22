@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "qual-hardware-calibration-runtime-trust/1.0.0",
+  "keys": [
+    {
+      "keyId": "qual-hardware-candidate-2026",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQ4VWMqlX1nQFoj5E8q4iItoEXh9bRst3ATdUMrUU/II=\n-----END PUBLIC KEY-----\n",
+      "classification": "candidate"
+    }
+  ]
+}

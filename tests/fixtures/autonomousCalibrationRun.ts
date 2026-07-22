@@ -17,14 +17,14 @@ export function autonomousCalibrationRun(input: {
   const capacity = input.capacity ?? 16;
   const workloadProfile = autonomousCalibrationWorkloadProfile();
   return {
-    schemaVersion: "qual-hardware-local-calibration/3.0.0",
+    schemaVersion: "qual-hardware-local-calibration/4.0.0",
     id,
     planId: "00000000-0000-4000-8000-000000000902",
     createdAt: "2026-07-22T10:00:00.000Z",
     startedAt: "2026-07-22T10:00:00.000Z",
     completedAt: "2026-07-22T11:00:00.000Z",
     workloadContractVersion: WORKLOAD_CONTRACT_VERSION,
-    mode: "full",
+    mode: "qualification",
     executionMode: "production_pipeline",
     fingerprint: {
       hardwareTemplateId: input.hardwareTemplateId ?? "hp-z2-g1i-ultra9-rtx4500ada",
@@ -67,7 +67,7 @@ export function autonomousCalibrationRun(input: {
         .map((phase) => ({ phase, completedProbeCount: 1, failedProbeCount: 0 })),
     },
     qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", validationStatus: "anchor_approved", failures: [], warnings: [] },
-    kernelVersion: "qual-hardware-calibration-kernel/1.0.0",
+    kernelVersion: "qual-hardware-calibration-kernel/2.0.0",
     runtimeManifestHash: input.runtimeManifestHash ?? "c".repeat(64),
     runtimeProvenance: {
       platform: "win32", architecture: "x64", featureMode: "full",

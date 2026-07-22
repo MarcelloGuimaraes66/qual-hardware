@@ -6,18 +6,11 @@ import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, CALIBRATION_KERNEL_VERSION, LEGAC
 import { createApp } from "../src/server/app.js";
 import {
   assertAutonomousCalibrationSessionContract,
-  authorizeCalibrationSession,
   calibrationPayloadSha256,
-  cancelDeliveredCalibrationSession,
-  createCalibrationSession,
   createInternalCalibrationSession,
-  deliverCalibrationSession,
   normalizeCalibrationProgress,
   legacyCalibrationPayloadSha256,
-  publicCalibrationSession,
   resolveCalibrationDirectory,
-  tokenSha256,
-  validatePerceptrumProtocolUri,
 } from "../src/server/calibrationSessions.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
 import { CatalogUpdateService } from "../src/server/catalogUpdates.js";
@@ -43,7 +36,7 @@ class FakeCalibrationKernel implements CalibrationKernelPort {
   readonly starts: CalibrationKernelStartInput[] = [];
   readonly status: CalibrationRuntimeStatus = {
     schemaVersion: "qual-hardware-calibration-runtime-status/1.0.0",
-    kernelVersion: "qual-hardware-calibration-kernel/1.0.0",
+    kernelVersion: CALIBRATION_KERNEL_VERSION,
     authorityCommit: "d918faa0ecd6a9906b711039e5d89f78e0536c44",
     platform: "darwin",
     architecture: "arm64",
@@ -100,19 +93,7 @@ class FakeCalibrationKernel implements CalibrationKernelPort {
   async close(): Promise<void> { this.activeSessionId = null; }
 }
 
-function session() {
-  const plan = createCalibrationPlan(createDefaultScenario(8), "quick", null);
-  return createCalibrationSession({
-    plan,
-    recommendationId: "00000000-0000-4000-8000-000000000010",
-    scenarioId: "00000000-0000-4000-8000-000000000011",
-    advancedTelemetry: true,
-    callbackOrigin: "http://127.0.0.1:49152",
-    now: new Date("2026-07-18T12:00:00.000Z"),
-  });
-}
-
-describe("secure cross-platform calibration handoff", () => {
+describe("secure cross-platform autonomous calibration", () => {
   it("classifies a subprocess error after a stop request as cancellation, not hardware failure", () => {
     expect(calibrationFailureWasCancelled(true, "calibration_process_failed:ffmpeg:255:")).toBe(true);
     expect(calibrationFailureWasCancelled(false, "calibration_cancelled")).toBe(true);
@@ -167,54 +148,9 @@ describe("secure cross-platform calibration handoff", () => {
     expect(() => assertAutonomousCalibrationSessionContract(result, record, runtimeStatus)).not.toThrow();
   });
 
-  it("persists only a token hash and exposes no secret in public session state", async () => {
-    const created = session();
-    expect(created.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(created.record.tokenHash).toBe(tokenSha256(created.token));
-    expect(JSON.stringify(publicCalibrationSession(created.record))).not.toContain(created.token);
-    expect(validatePerceptrumProtocolUri(created.uri)).toBe(created.uri);
-    expect(validatePerceptrumProtocolUri(created.uri.replace("127.0.0.1", "example.com"))).toBeNull();
-
-    const store = new MemoryPlannerStore();
-    await store.saveCalibrationSession(created.record);
-    expect((await store.getCalibrationSession(created.record.id))?.planId).toBe(created.record.planId);
-    await store.close();
-  });
-
-  it("uses constant-shape authorization checks and rejects expiry or replayed completion", () => {
-    const created = session();
-    expect(() => authorizeCalibrationSession(created.record, `Bearer ${created.token}`, Date.parse("2026-07-18T12:30:00.000Z"))).not.toThrow();
-    expect(() => authorizeCalibrationSession(created.record, "Bearer invalid", Date.parse("2026-07-18T12:30:00.000Z"))).toThrow("invalid_calibration_session_token");
-    expect(() => authorizeCalibrationSession(created.record, `Bearer ${created.token}`, Date.parse("2026-07-18T14:00:01.000Z"))).toThrow("calibration_session_expired");
-    expect(() => authorizeCalibrationSession({ ...created.record, state: "completed" }, `Bearer ${created.token}`, Date.parse("2026-07-18T12:30:00.000Z"))).toThrow("calibration_session_already_completed");
-    expect(() => authorizeCalibrationSession({ ...created.record, state: "cancelled" }, `Bearer ${created.token}`, Date.parse("2026-07-18T12:30:00.000Z"))).toThrow("calibration_session_already_completed");
-  });
-
-  it("delivers to a running Perceptrum or falls back to the exact native protocol", async () => {
-    const created = session();
-    const runningFetch = vi.fn(async () => new Response("{}", { status: 202 })) as unknown as typeof fetch;
-    await expect(deliverCalibrationSession(created.uri, true, undefined, runningFetch)).resolves.toBe("running_instance");
-    const openPerceptrumCalibration = vi.fn(async (_uri: string) => undefined);
-    const unavailableFetch = vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch;
-    await expect(deliverCalibrationSession(created.uri, false, { openPerceptrumCalibration }, unavailableFetch)).resolves.toBe("protocol_launch");
-    expect(openPerceptrumCalibration).toHaveBeenCalledWith(created.uri);
-  });
-
-  it("cancels only the exact active session through loopback without persisting the token", async () => {
-    const created = session();
-    const cancelFetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
-      expect(init?.method).toBe("POST");
-      expect(init?.headers).toMatchObject({ authorization: `Bearer ${created.token}` });
-      expect(JSON.parse(String(init?.body))).toEqual({ sessionId: created.record.id });
-      return new Response("{}", { status: 202 });
-    }) as unknown as typeof fetch;
-    await expect(cancelDeliveredCalibrationSession(created.record.id, created.token, cancelFetch)).resolves.toBeUndefined();
-    expect(cancelFetch).toHaveBeenCalledWith("http://127.0.0.1:4000/api/runtime/calibration/cancel", expect.any(Object));
-  });
-
   it("resolves the real Documents convention for macOS, Windows and Ubuntu", async () => {
     expect(await resolveCalibrationDirectory({ platform: "darwin", home: "/Users/test", env: {} })).toBe("/Users/test/Documents/Qual Hardware/Calibracoes");
-    expect(await resolveCalibrationDirectory({ platform: "win32", home: "/Users/test", env: {} })).toBe("/Users/test/Documents/Qual Hardware/Calibracoes");
+    expect(await resolveCalibrationDirectory({ platform: "win32", home: "C:\\Users\\test", env: {} })).toBe("C:\\Users\\test\\Documents\\Qual Hardware\\Calibracoes");
     expect(await resolveCalibrationDirectory({ platform: "linux", home: "/home/test", env: { QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR: "/mnt/docs" } })).toBe("/mnt/docs/Qual Hardware/Calibracoes");
   });
 
@@ -253,7 +189,6 @@ describe("secure cross-platform calibration handoff", () => {
 
   it("completes the internal worker cycle without opening or calling Perceptrum", async () => {
     const store = new MemoryPlannerStore();
-    const openPerceptrumCalibration = vi.fn(async (_uri: string) => undefined);
     const externalFetch = vi.fn(async () => { throw new Error("external fetch must not run"); }) as unknown as typeof fetch;
     const kernel = new FakeCalibrationKernel();
     const catalogUpdates = new CatalogUpdateService(store);
@@ -282,7 +217,6 @@ describe("secure cross-platform calibration handoff", () => {
     expect(startResponse.status).toBe(201);
     const started = await startResponse.json() as { session: { id: string; planId: string }; delivery: string };
     expect(started.delivery).toBe("internal");
-    expect(openPerceptrumCalibration).not.toHaveBeenCalled();
     expect(externalFetch).not.toHaveBeenCalled();
     const refreshDuringCalibration = await application.request("/api/catalog/refresh", { method: "POST" });
     expect(refreshDuringCalibration.status).toBe(409);
@@ -334,7 +268,7 @@ describe("secure cross-platform calibration handoff", () => {
     const recommendations = await (await application.request(`/api/scenarios/${scenario.id}/recommendations`, { method: "POST" })).json() as Array<{ id: string }>;
     const response = await application.request("http://127.0.0.1:49152/api/calibration-sessions", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ recommendationId: recommendations[0]!.id, mode: "full", targetHardwareTemplateId: null, advancedTelemetry: false }),
+      body: JSON.stringify({ recommendationId: recommendations[0]!.id, mode: "qualification", targetHardwareTemplateId: null, advancedTelemetry: false }),
     });
     expect(response.status).toBe(201);
     const started = await response.json() as { session: { id: string; advancedTelemetry: boolean } };
@@ -348,7 +282,6 @@ describe("secure cross-platform calibration handoff", () => {
 
   it("cancels the internal worker, preserves compact diagnostics and removes temporary files without importing a capacity run", async () => {
     const store = new MemoryPlannerStore();
-    const openPerceptrumCalibration = vi.fn(async (_uri: string) => undefined);
     const localFetch = vi.fn(async () => { throw new Error("external fetch must not run"); }) as unknown as typeof fetch;
     const kernel = new FakeCalibrationKernel();
     const application = createApp(store, undefined, {
@@ -362,13 +295,13 @@ describe("secure cross-platform calibration handoff", () => {
     const recommendations = await (await application.request(`/api/scenarios/${scenario.id}/recommendations`, { method: "POST" })).json() as Array<{ id: string }>;
     const missingTargetResponse = await application.request("http://127.0.0.1:49152/api/calibration-sessions", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ recommendationId: recommendations[0]!.id, mode: "full", targetHardwareTemplateId: null, advancedTelemetry: false }),
+      body: JSON.stringify({ recommendationId: recommendations[0]!.id, mode: "qualification", targetHardwareTemplateId: null, advancedTelemetry: false }),
     });
     expect(missingTargetResponse.status).toBe(422);
-    expect(await missingTargetResponse.json()).toEqual({ error: "calibration_target_hardware_required_for_full" });
+    expect(await missingTargetResponse.json()).toEqual({ error: "calibration_target_hardware_required_for_qualification" });
     const startResponse = await application.request("http://127.0.0.1:49152/api/calibration-sessions", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ recommendationId: recommendations[0]!.id, mode: "full", targetHardwareTemplateId: "hp-z2-g1i-ultra9-rtx4500ada", advancedTelemetry: false }),
+      body: JSON.stringify({ recommendationId: recommendations[0]!.id, mode: "qualification", targetHardwareTemplateId: "hp-z2-g1i-ultra9-rtx4500ada", advancedTelemetry: false }),
     });
     const started = await startResponse.json() as { session: { id: string } };
     const cancelResponse = await application.request(`/api/calibration-sessions/${started.session.id}/cancel`, { method: "POST" });
@@ -382,7 +315,6 @@ describe("secure cross-platform calibration handoff", () => {
     expect((await store.getCalibrationSession(started.session.id))?.diagnostic).toMatchObject({
       status: "cancelled", completedMeasurementCount: 1,
     });
-    expect(openPerceptrumCalibration).not.toHaveBeenCalled();
     expect(localFetch).not.toHaveBeenCalled();
     expect(await store.listCalibrationRuns()).toHaveLength(0);
     await store.close();
@@ -425,5 +357,5 @@ describe("secure cross-platform calibration handoff", () => {
     expect((await store.getCalibrationSession(source.id))?.state).toBe("cancelled");
     expect(kernel.starts.at(-1)?.resumeCheckpoint?.id).toBe(checkpoint.id);
     await store.close();
-  });
+  }, 15_000);
 });

@@ -77,7 +77,7 @@ export function CalibrationResultPanel({
     <p className="calibration-natural-verdict">{verdict}</p>
     <div className="calibration-result-grid">
       <div><span>{lang === "pt" ? "Capacidade segura" : "Safe capacity"}</span><b>{safeCapacity} {result.overallSafeCameraCapacity === null ? "" : lang === "pt" ? "câmeras" : "cameras"}</b><small>{lang === "pt" ? "margem conservadora aplicada" : "conservative reserve applied"}</small></div>
-      <div><span>{lang === "pt" ? "Primeiro gargalo" : "First bottleneck"}</span><b>{result.bottleneck}</b><small>{result.mode === "full" ? "60 min" : "10 min"}</small></div>
+      <div><span>{lang === "pt" ? "Primeiro gargalo" : "First bottleneck"}</span><b>{result.bottleneck}</b><small>{result.mode === "qualification" || result.mode === "full" ? "6–7 h" : result.mode === "validation" ? "60 min" : "10 min"}</small></div>
       <div><span>FPS RTSP</span><b>{result.measuredSourceFps.toFixed(2)} / {result.requestedSourceFps}</b><small>{lang === "pt" ? "recebido / solicitado por câmera" : "received / requested per camera"}</small></div>
       <div><span>FPS AiQ</span><b>{result.effectiveInferenceFps.toFixed(2)} / {result.requestedInferenceFps}</b><small>{lang === "pt" ? "processado / solicitado ao modelo" : "processed / requested by model"}</small></div>
     </div>

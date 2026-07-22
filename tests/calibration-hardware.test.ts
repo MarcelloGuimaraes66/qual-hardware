@@ -39,4 +39,17 @@ describe("calibration hardware preflight", () => {
     expect(calibrationHardwareMatchesTemplate({ ...detected, gpuCount: 2 }, target)).toBe(false);
     expect(calibrationHardwareMatchesTemplate({ ...detected, formFactor: "laptop" }, target)).toBe(false);
   });
+
+  it("maps this Windows laboratory laptop to its exact qualification anchor", () => {
+    const target = HARDWARE_CATALOG.find((item) => item.id === "asus-g835lx-ultra9-275hx-rtx5090l")!;
+    expect(calibrationHardwareMatchesTemplate({
+      cpuModel: "Intel(R) Core(TM) Ultra 9 275HX",
+      physicalCores: 24,
+      gpuModel: "NVIDIA GeForce RTX 5090 Laptop GPU",
+      gpuCount: 1,
+      ramBytes: 33_673_297_920,
+      operatingSystem: "windows",
+      formFactor: "laptop",
+    }, target)).toBe(true);
+  });
 });

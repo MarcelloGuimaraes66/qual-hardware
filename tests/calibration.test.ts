@@ -37,7 +37,7 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
     startedAt: "2026-07-18T12:00:00.000Z",
     completedAt: "2026-07-18T13:00:00.000Z",
     workloadContractVersion: WORKLOAD_CONTRACT_VERSION,
-    mode: "full",
+    mode: "qualification",
     executionMode: "production_pipeline",
     fingerprint: {
       hardwareTemplateId, hostnameHash: "0123456789abcdef", cpuModel: "Intel Core Ultra 9 285K",
@@ -77,7 +77,7 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
       phaseCoverage: ["warmup", "ramp", "sustained", "surge"].map((phase) => ({ phase: phase as "warmup" | "ramp" | "sustained" | "surge", completedProbeCount: 1, failedProbeCount: 0 })),
     },
     qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", validationStatus: "anchor_approved", failures: [], warnings: [] },
-    kernelVersion: "qual-hardware-calibration-kernel/1.0.0",
+    kernelVersion: "qual-hardware-calibration-kernel/2.0.0",
     runtimeManifestHash: "c".repeat(64),
     runtimeProvenance: {
       platform: "win32", architecture: "x64", featureMode: "full",
@@ -130,11 +130,11 @@ function observations(): PublicBenchmarkObservation[] {
 describe("local calibration and conservative extrapolation", () => {
   it("creates only loopback/AiQ-local plans with the approved durations", () => {
     const quick = createCalibrationPlan(createDefaultScenario(8), "quick", "target-c");
-    const full = createCalibrationPlan(createDefaultScenario(8), "full");
+    const full = createCalibrationPlan(createDefaultScenario(8), "qualification");
     expect(quick.localOnly).toBe(true);
     expect(quick.inferenceProvider).toBe("aiq_local");
     expect(quick.targetHardwareTemplateId).toBe("target-c");
-    expect(quick.phases.map((phase) => phase.durationSeconds)).toEqual([120, 300, 180]);
+    expect(quick.phases.map((phase) => phase.durationSeconds)).toEqual([45, 75, 90, 60]);
     expect(full.phases.map((phase) => phase.durationSeconds)).toEqual([600, 1200, 1200, 600]);
     expect(quick.requestedInferenceFps).toEqual([1]);
     expect(quick.executionMode).toBe("readiness");
@@ -162,10 +162,10 @@ describe("local calibration and conservative extrapolation", () => {
     skewed.cameraGroups[0]!.count = 15;
     skewed.cameraGroups[1]!.count = 5;
 
-    expect(createCalibrationPlan(balanced, "full").workloadProfile.signature)
-      .toBe(createCalibrationPlan(scaled, "full").workloadProfile.signature);
-    expect(createCalibrationPlan(skewed, "full").workloadProfile.signature)
-      .not.toBe(createCalibrationPlan(scaled, "full").workloadProfile.signature);
+    expect(createCalibrationPlan(balanced, "qualification").workloadProfile.signature)
+      .toBe(createCalibrationPlan(scaled, "qualification").workloadProfile.signature);
+    expect(createCalibrationPlan(skewed, "qualification").workloadProfile.signature)
+      .not.toBe(createCalibrationPlan(scaled, "qualification").workloadProfile.signature);
   });
 
   it("requires three comparable anchors and uses the conservative per-stage reserve", () => {

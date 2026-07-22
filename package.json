@@ -1,18 +1,21 @@
 {
   "name": "@aiquimist/qual-hardware",
-  "version": "0.1.0",
-  "description": "Calculadora desktop de infraestrutura para cargas do Perceptrum",
+  "version": "0.3.0",
+  "description": "Aplicativo desktop multiplataforma para dimensionamento e qualificação autônoma de hardware",
   "desktopName": "qual-hardware.desktop",
   "author": "Aiquimist",
   "private": true,
   "type": "module",
   "main": "dist/server/desktop/main.js",
+  "packageManager": "npm@11.16.0",
   "engines": {
-    "node": ">=24"
+    "node": "24.18.0",
+    "npm": "11.16.0"
   },
   "scripts": {
     "dev": "npm run desktop:run",
-    "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
+    "build": "npm run clean && npm run typecheck && vite build && tsc -p tsconfig.server.json",
+    "clean": "tsx scripts/clean-build.ts",
     "desktop:run": "npm run build && electron .",
     "desktop:package": "npm run build && electron-builder --publish never",
     "desktop:package:dir": "npm run build && electron-builder --dir --publish never",
@@ -33,7 +36,8 @@
     "calibration:telemetry:test": "go -C tools/telemetry-probe test ./...",
     "calibration:telemetry:verify": "tsx scripts/verify-calibration-telemetry-probe.ts",
     "calibration:runtime:prepare": "tsx scripts/prepare-calibration-runtime.ts",
-    "reports:sample": "tsx scripts/generate-report-samples.ts"
+    "reports:sample": "tsx scripts/generate-report-samples.ts",
+    "runtime:package": "tsx scripts/build-runtime-package.ts"
   },
   "dependencies": {
     "@fontsource/noto-sans": "^5.3.0",
@@ -46,19 +50,23 @@
     "pdf-lib": "^1.17.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "yauzl": "3.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yazl": "3.3.1"
   },
   "overrides": {
     "fast-uri": "3.1.4",

@@ -3,7 +3,7 @@ import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { createDefaultScenario } from "../src/shared/schemas.js";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
-import type { BenchmarkManifest, CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
+import type { CapacityRecommendation, HardwareNodeTemplate, ScenarioRecord } from "../src/shared/types.js";
 import { WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
 import { REFERENCE_PDF_STRUCTURE, REFERENCE_PDF_TYPOGRAPHY } from "../src/server/referencePdfReport.js";
@@ -15,7 +15,7 @@ describe("Qual Hardware API and reports", () => {
     const store = new MemoryPlannerStore();
     const app = createApp(store);
     const health = await app.request("/api/health");
-    expect(await health.json()).toEqual({ status: "ok", storage: "memory" });
+    expect(await health.json()).toMatchObject({ status: "ok", storage: "memory", processId: expect.any(Number) });
     expect(health.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     expect(health.headers.get("referrer-policy")).toBe("no-referrer");
     const catalogStatus = await app.request("/api/catalog/status");
@@ -157,23 +157,12 @@ describe("Qual Hardware API and reports", () => {
     expect(annexDocx.status).toBe(200);
     expect(Array.from(new Uint8Array((await annexDocx.arrayBuffer()).slice(0, 2)))).toEqual([0x50, 0x4b]);
 
-    const manifestResponse = await app.request("/api/benchmarks/manifests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recommendationId: recommendation.id, gpuDriver: "test-driver", slaInferenceLatencyMs: 10000 }) });
-    const manifest = await manifestResponse.json() as BenchmarkManifest;
-    const metrics = {
-      cpuModel: recommendation.primary.hardware.cpuModel, gpuModel: recommendation.primary.hardware.gpuModel, gpuDriver: "test-driver",
-      perceptrumBuildHash: manifest.perceptrumBuildHash, workloadContractVersion: manifest.workloadContractVersion,
-      startedAt: "2026-07-17T10:00:00.000Z", completedAt: "2026-07-17T11:30:00.000Z",
-      p95InferenceLatencyMs: 1000, p99InferenceLatencyMs: 2000, peakCpuPercent: 50, peakRamBytes: 1000,
-      peakGpuPercent: 50, peakVramBytes: 1000, peakDecoderPercent: 30, gpuTelemetryAvailable: true,
-      peakHandleCount: 100, peakThreadCount: 50, peakProcessCount: 2, peakDiskWriteBytesPerSecond: 1000,
-      peakNetworkReceiveBytesPerSecond: 1000, captureReadP95Ms: 2, decodeP95Ms: 3, maxQueueDepth: 2,
-      queueGrowthPerMinute: 0, inferenceSuccessRate: 1, outOfMemoryCount: 0, mediaFieldCount: 0, credentialFieldCount: 0,
-      phases: manifest.phases.map((phase) => ({ ...phase, p95InferenceLatencyMs: 1000, maxQueueDepth: 2, queueGrowthPerMinute: 0, outOfMemoryCount: 0 })),
-    };
-    const firstUpload = await app.request(manifest.uploadUrl, { method: "POST", headers: { "content-type": "application/json", "x-benchmark-nonce": manifest.nonce }, body: JSON.stringify(metrics) });
-    expect(firstUpload.status).toBe(201);
-    const reusedChallenge = await app.request(manifest.uploadUrl, { method: "POST", headers: { "content-type": "application/json", "x-benchmark-nonce": manifest.nonce }, body: JSON.stringify(metrics) });
-    expect(reusedChallenge.status).toBe(409);
+    const removedExternalBenchmark = await app.request("/api/benchmarks/manifests", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recommendationId: recommendation.id }),
+    });
+    expect(removedExternalBenchmark.status).toBe(404);
   }, 30_000);
 
   it("exports a valid PDF when runtime normalization warnings contain Unicode arrows", async () => {

@@ -33,7 +33,7 @@ afterEach(async () => {
 function status(assets: CalibrationRuntimeStatus["assets"] = []): CalibrationRuntimeStatus {
   return {
     schemaVersion: "qual-hardware-calibration-runtime-status/1.0.0",
-    kernelVersion: "qual-hardware-calibration-kernel/1.0.0",
+    kernelVersion: "qual-hardware-calibration-kernel/2.0.0",
     authorityCommit: "d918faa0ecd6a9906b711039e5d89f78e0536c44",
     platform: process.platform,
     architecture: process.arch,
@@ -144,7 +144,7 @@ describe("offline Perceptrum-equivalent calibration pipeline", () => {
   });
 
   it("bounds temporary media storage with a circular window instead of the full phase duration", () => {
-    const profile = createCalibrationPlan(createDefaultScenario(4_096), "full").workloadProfile;
+    const profile = createCalibrationPlan(createDefaultScenario(4_096), "qualification").workloadProfile;
     const twoSeconds = estimateCalibrationMediaRingBytes(profile, 4_096, 2);
     const twentyMinutes = estimateCalibrationMediaRingBytes(profile, 4_096, 1_200);
     expect(twentyMinutes).toBe(twoSeconds);

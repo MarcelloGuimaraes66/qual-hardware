@@ -5,7 +5,7 @@ import { CalibrationProgressTracker, estimateCalibrationDuration } from "../src/
 
 describe("calibration progress v2", () => {
   it("uses monotonic elapsed time, never regresses and withholds 100% until cleanup", () => {
-    const plan = createCalibrationPlan(createDefaultScenario(4), "full", "hp-z2-g1i-ultra9-rtx4500ada");
+    const plan = createCalibrationPlan(createDefaultScenario(4), "qualification", "hp-z2-g1i-ultra9-rtx4500ada");
     const tracker = new CalibrationProgressTracker(plan, { epochMs: 1_000_000, monotonicMs: 100 });
     const first = tracker.update({ phase: "discovery", percent: 30, updatedAt: new Date().toISOString() },
       { epochMs: 1_010_000, monotonicMs: 10_100 });
@@ -25,7 +25,7 @@ describe("calibration progress v2", () => {
 
   it("publishes honest minimum, expected and worst-case estimates", () => {
     const quickPlan = createCalibrationPlan(createDefaultScenario(4), "quick");
-    const fullPlan = createCalibrationPlan(createDefaultScenario(4), "full");
+    const fullPlan = createCalibrationPlan(createDefaultScenario(4), "qualification");
     const quick = estimateCalibrationDuration(quickPlan);
     const full = estimateCalibrationDuration(fullPlan);
     const singleComputeQuickSeconds = quickPlan.discovery.stabilizationSeconds + quickPlan.discovery.sampleSeconds +

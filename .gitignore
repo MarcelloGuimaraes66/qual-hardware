@@ -13,3 +13,7 @@ artifacts/
 *.log
 auto.crt
 auto.key
+.tools/
+.archon/
+runtime-staging/
+*.qhruntime

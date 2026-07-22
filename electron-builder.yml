@@ -17,6 +17,8 @@ extraResources:
     to: resources/calibration/runtime-manifest.json
   - from: resources/calibration/asset-sources.lock.json
     to: resources/calibration/asset-sources.lock.json
+  - from: resources/calibration/runtime-trust.json
+    to: resources/calibration/runtime-trust.json
   - from: contracts/calibration-kernel-authority-v1.json
     to: contracts/calibration-kernel-authority-v1.json
   - from: contracts/calibration-pipeline-contract-v1.json
@@ -24,24 +26,23 @@ extraResources:
 
 win:
   icon: build/icon.ico
-  extraResources:
-    - from: resources/calibration
-      to: resources/calibration
-      filter:
-        - "win32-x64/**/*"
   target:
     - target: portable
       arch:
         - x64
   artifactName: Qual-Hardware-${version}-windows-${arch}-portable.${ext}
 
+portable:
+  # A per-launch extraction directory prevents a second portable bootstrap
+  # from replacing the resources (including icudtl.dat) used by the running
+  # instance. In electron-builder 26.15.x, `true` omits UNPACK_DIR_NAME and
+  # therefore selects NSIS $PLUGINSDIR, which is unique to each launcher.
+  # Electron's application lock still rejects the duplicate after extraction.
+  unpackDirName: true
+  requestExecutionLevel: user
+
 mac:
   icon: build/icon.icns
-  extraResources:
-    - from: resources/calibration
-      to: resources/calibration
-      filter:
-        - "darwin-arm64/**/*"
   category: public.app-category.business
   identity: null
   target:
@@ -61,14 +62,9 @@ mac:
 linux:
   icon: build/icon.png
   syncDesktopName: true
-  extraResources:
-    - from: resources/calibration
-      to: resources/calibration
-      filter:
-        - "linux-x64/**/*"
   category: Utility
   executableName: qual-hardware
-  synopsis: Calculadora desktop de infraestrutura para cargas do Perceptrum
+  synopsis: Qualificação autônoma de hardware para cargas de inteligência artificial
   maintainer: Marcello Guimarães <marcellogmf66@gmail.com>
   target:
     - target: AppImage

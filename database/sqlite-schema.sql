@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS calibration_sessions_v2 (
 CREATE TABLE IF NOT EXISTS calibration_session_events (
   event_id INTEGER PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES calibration_sessions_v2(id),
-  state TEXT NOT NULL CHECK (state IN ('pending','launching','preflight','discovering','qualifying','finalizing','running','cancelling','cancelled','completed','failed','interrupted','expired')),
+  state TEXT NOT NULL CHECK (state IN ('pending','preflight','discovering','validating','qualifying','finalizing','cancelled','completed','failed','interrupted','expired')),
   session_json TEXT NOT NULL CHECK (json_valid(session_json)),
   created_at TEXT NOT NULL
 ) STRICT;

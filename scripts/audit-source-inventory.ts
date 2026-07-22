@@ -18,6 +18,10 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function canonicalText(bytes: Uint8Array): Buffer {
+  return Buffer.from(Buffer.from(bytes).toString("utf8").replace(/\r\n?/g, "\n"), "utf8");
+}
+
 async function verifyContract(contract: { relativePath: string; sha256: string }): Promise<{
   relativePath: string;
   bytes: number;
@@ -29,7 +33,7 @@ async function verifyContract(contract: { relativePath: string; sha256: string }
     throw new Error(`Calibration contract is outside the repository contract boundary: ${contract.relativePath}`);
   }
   const bytes = await readFile(path);
-  const digest = sha256(bytes);
+  const digest = sha256(canonicalText(bytes));
   if (digest !== contract.sha256) throw new Error(`Calibration contract hash mismatch: ${contract.relativePath}`);
   const parsed = JSON.parse(bytes.toString("utf8")) as { authority?: { commit?: string }; commit?: string };
   const declaredCommit = parsed.authority?.commit ?? parsed.commit;
@@ -46,7 +50,7 @@ const contracts = await Promise.all([
   verifyContract(manifest.pipelineContract),
 ]);
 const sourceLockBytes = await readFile(resolve(repository, manifest.sourceLock.relativePath));
-const sourceLockSha256 = sha256(sourceLockBytes);
+const sourceLockSha256 = sha256(canonicalText(sourceLockBytes));
 if (sourceLockSha256 !== manifest.sourceLock.sha256) throw new Error("Calibration asset source lock hash mismatch.");
 const sourceLock = parseCalibrationAssetSourceLock(JSON.parse(sourceLockBytes.toString("utf8")));
 console.log(JSON.stringify({

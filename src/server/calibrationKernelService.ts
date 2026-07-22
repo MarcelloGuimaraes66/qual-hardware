@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { lstat, mkdir, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { canonicalSha256 } from "../engine/calibrationProfile.js";
 import type {
@@ -24,6 +25,8 @@ import {
 } from "./calibrationTemporaryFiles.js";
 import type {
   CalibrationKernelWorkerInput,
+  CalibrationKernelBootstrapMessage,
+  CalibrationKernelControlMessage,
   CalibrationKernelDiagnosticPayload,
   CalibrationKernelWorkerMessage,
 } from "./calibrationKernelProtocol.js";
@@ -53,10 +56,19 @@ export interface CalibrationKernelStartInput {
   resumeCheckpoint?: CalibrationCheckpoint;
 }
 
+export interface CalibrationWorkerHandle {
+  postMessage(message: CalibrationKernelControlMessage | CalibrationKernelBootstrapMessage): void;
+  terminate(): Promise<number>;
+  on(event: "message", listener: (message: CalibrationKernelWorkerMessage) => void): this;
+  on(event: "error", listener: (error: Error) => void): this;
+  on(event: "exit", listener: (code: number) => void): this;
+}
+
 export interface CalibrationKernelPort {
   runtimeStatus(): Promise<CalibrationRuntimeStatus>;
   start(input: CalibrationKernelStartInput, handlers: CalibrationKernelHandlers): Promise<void>;
   cancel(sessionId: string): Promise<void>;
+  recoverInterruptedDiagnostic?(sessionId: string, plan: CalibrationPlan, progress: CalibrationSessionProgress | null): Promise<CalibrationDiagnosticArtifact>;
   retryCleanup(sessionId: string, interruptedRecovery?: boolean, previouslyRemovedBytes?: number): Promise<CalibrationCleanupStatus>;
   isActive(sessionId: string): boolean;
   hasActiveSession(): boolean;
@@ -81,8 +93,19 @@ async function wait(milliseconds: number): Promise<void> {
   await new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds));
 }
 
+async function writeAppendOnlyAtomically(directory: string, fileName: string, bytes: Uint8Array): Promise<void> {
+  const temporary = join(directory, `.pending-${randomUUID().replaceAll("-", "")}`);
+  const destination = join(directory, fileName);
+  await writeFile(temporary, bytes, { flag: "wx" });
+  try {
+    await link(temporary, destination);
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
+}
+
 export class CalibrationKernelService implements CalibrationKernelPort {
-  private readonly active = new Map<string, Worker>();
+  private readonly active = new Map<string, CalibrationWorkerHandle>();
   private readonly handlersBySession = new Map<string, CalibrationKernelHandlers>();
   private readonly completionBySession = new Map<string, Promise<void>>();
   private readonly resolveCompletionBySession = new Map<string, () => void>();
@@ -98,25 +121,38 @@ export class CalibrationKernelService implements CalibrationKernelPort {
     temporaryRoot: string;
     evidenceDirectory: string;
     resourceRoot: string;
+    resourceRootProvider?: () => Promise<string>;
+    runtimePackageProvider?: () => Promise<{ resourceRoot: string; manifestApproved: boolean; installed: boolean }>;
     appVersion: string;
     timeScale?: number;
     featureMode?: "disabled" | "diagnostic" | "full";
+    workerFactory?: () => CalibrationWorkerHandle;
   }) {}
 
   runtimeStatus(): Promise<CalibrationRuntimeStatus> {
-    this.statusPromise ??= inspectCalibrationRuntime({
-      resourceRoot: this.options.resourceRoot,
-      ...(this.options.featureMode ? { featureMode: this.options.featureMode } : {}),
-    });
+    this.statusPromise ??= (this.options.runtimePackageProvider
+      ? this.options.runtimePackageProvider()
+      : (this.options.resourceRootProvider?.() ?? Promise.resolve(this.options.resourceRoot))
+        .then((resourceRoot) => ({ resourceRoot, manifestApproved: false, installed: false })))
+      .then((runtime) => inspectCalibrationRuntime({
+        resourceRoot: runtime.resourceRoot,
+        ...(runtime.installed ? { featureMode: "full" as const, manifestApproved: runtime.manifestApproved }
+          : this.options.featureMode ? { featureMode: this.options.featureMode } : {}),
+      }));
     return this.statusPromise;
+  }
+
+  invalidateRuntimeStatus(): void {
+    if (this.hasActiveSession()) throw new Error("calibration_runtime_change_blocked_during_session");
+    this.statusPromise = null;
   }
 
   async start(input: CalibrationKernelStartInput, handlers: CalibrationKernelHandlers): Promise<void> {
     if (this.active.size > 0) throw new Error("calibration_kernel_already_running");
     const runtimeStatus = await this.runtimeStatus();
     if (!runtimeStatus.readyForQuickTest) throw new Error("calibration_feature_disabled");
-    if (input.plan.mode === "full" && !runtimeStatus.readyForFullQualification) {
-      throw new Error(`calibration_runtime_not_ready_for_full:${runtimeStatus.reasons.join(",")}`);
+    if (input.plan.mode === "qualification" && !runtimeStatus.readyForFullQualification) {
+      throw new Error(`calibration_runtime_not_ready_for_qualification:${runtimeStatus.reasons.join(",")}`);
     }
     const runId = randomUUID();
     const timeScale = this.options.timeScale ?? Number(process.env.QUAL_HARDWARE_CALIBRATION_TIME_SCALE ?? "1");
@@ -132,10 +168,28 @@ export class CalibrationKernelService implements CalibrationKernelPort {
       timeScale: Number.isFinite(timeScale) && timeScale > 0 ? timeScale : 1,
       ...(input.resumeCheckpoint ? { resumeCheckpoint: input.resumeCheckpoint } : {}),
     };
-    const worker = new Worker(new URL("./calibrationKernelWorker.js", import.meta.url), {
-      workerData: workerInput,
-      execArgv: process.execArgv.filter((argument) => !argument.startsWith("--input-type")),
+    const worker = this.options.workerFactory
+      ? this.options.workerFactory()
+      : new Worker(new URL("./calibrationKernelWorker.js", import.meta.url), {
+        workerData: workerInput,
+        execArgv: process.execArgv.filter((argument) => !argument.startsWith("--input-type")),
+      });
+    if (this.options.workerFactory) worker.postMessage({ type: "start", input: workerInput });
+    let workerExited = false;
+    let resolveWorkerExit = (_code: number): void => undefined;
+    const workerExit = new Promise<number>((resolveExit) => { resolveWorkerExit = resolveExit; });
+    worker.on("exit", (code) => {
+      workerExited = true;
+      resolveWorkerExit(code);
     });
+    const awaitGracefulWorkerExit = async (): Promise<void> => {
+      if (workerExited) return;
+      const graceful = await Promise.race([
+        workerExit.then(() => true),
+        wait(5_000).then(() => false),
+      ]);
+      if (!graceful) await worker.terminate();
+    };
     this.active.set(input.sessionId, worker);
     this.childProcessesBySession.set(input.sessionId, new Map());
     this.handlersBySession.set(input.sessionId, handlers);
@@ -213,7 +267,7 @@ export class CalibrationKernelService implements CalibrationKernelPort {
         if (message.action === "started") {
           children?.set(message.pid, message.kind);
           if (this.closingSessions.has(input.sessionId)) {
-            try { process.kill(message.pid, "SIGTERM"); } catch { /* It exited before shutdown reached it. */ }
+            void this.stopProcessTree(message.pid, false);
           }
         }
         else children?.delete(message.pid);
@@ -249,7 +303,7 @@ export class CalibrationKernelService implements CalibrationKernelPort {
         const cancellationRequested = this.cancellationRequested.has(input.sessionId);
         if (message.type === "result" && cancellationRequested) {
           settled = true;
-          await worker.terminate();
+          await awaitGracefulWorkerExit();
           await this.stopReportedChildProcesses(input.sessionId);
           const diagnostic = await this.persistDiagnostic(
             fallbackDiagnostic("cancelled", "calibration_cancelled_before_result_commit"),
@@ -259,7 +313,7 @@ export class CalibrationKernelService implements CalibrationKernelPort {
           return;
         }
         settled = true;
-        await worker.terminate();
+        await awaitGracefulWorkerExit();
         await this.stopReportedChildProcesses(input.sessionId);
         if (message.type === "result") {
           const result = await this.persistEvidence(message.result);
@@ -390,13 +444,56 @@ export class CalibrationKernelService implements CalibrationKernelPort {
   private async stopReportedChildProcesses(sessionId: string): Promise<void> {
     const children = [...(this.childProcessesBySession.get(sessionId)?.keys() ?? [])];
     for (const pid of children) {
-      try { process.kill(pid, "SIGTERM"); } catch { /* The calibration child already exited. */ }
+      await this.stopProcessTree(pid, false);
     }
     if (children.length > 0) await wait(250);
     for (const pid of children) {
-      try { process.kill(pid, 0); process.kill(pid, "SIGKILL"); } catch { /* The calibration child exited after SIGTERM. */ }
+      await this.stopProcessTree(pid, true);
     }
     this.childProcessesBySession.get(sessionId)?.clear();
+  }
+
+  async recoverInterruptedDiagnostic(
+    sessionId: string,
+    plan: CalibrationPlan,
+    progress: CalibrationSessionProgress | null,
+  ): Promise<CalibrationDiagnosticArtifact> {
+    const runtime = await this.runtimeStatus();
+    return this.persistDiagnostic({
+      schemaVersion: "qual-hardware-calibration-diagnostic/1.0.0",
+      sessionId,
+      runId: randomUUID(),
+      planId: plan.id,
+      createdAt: plan.createdAt,
+      completedAt: new Date().toISOString(),
+      status: "interrupted",
+      error: "calibration_process_interrupted_before_terminal_message",
+      kernelVersion: runtime.kernelVersion,
+      runtimeManifestHash: runtime.manifestHash,
+      workloadProfileId: plan.workloadProfile.id,
+      workloadProfileSignature: plan.workloadProfile.signature,
+      compatiblePerceptrumCommit: runtime.authorityCommit,
+      lastProgress: progress,
+      fingerprint: null,
+      runtimeSummary: null,
+      tierResults: [],
+      repetitions: [],
+      measurements: [],
+    });
+  }
+
+  private async stopProcessTree(pid: number, force: boolean): Promise<void> {
+    if (!Number.isSafeInteger(pid) || pid <= 0) return;
+    if (process.platform === "win32") {
+      await new Promise<void>((resolveStop) => {
+        execFile("taskkill.exe", ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])], { windowsHide: true }, () => resolveStop());
+      });
+      return;
+    }
+    try { process.kill(-pid, force ? "SIGKILL" : "SIGTERM"); }
+    catch {
+      try { process.kill(pid, force ? "SIGKILL" : "SIGTERM"); } catch { /* The process group already exited. */ }
+    }
   }
 
   private async persistEvidence(result: LocalCalibrationRun): Promise<LocalCalibrationRun> {
@@ -409,7 +506,7 @@ export class CalibrationKernelService implements CalibrationKernelPort {
       payloadSha256,
     }), "utf8"), { level: 9 });
     if (compressed.byteLength > MAX_EVIDENCE_BYTES) throw new Error("calibration_evidence_exceeds_10mb");
-    await writeFile(join(this.options.evidenceDirectory, fileName), compressed, { flag: "wx" });
+    await writeAppendOnlyAtomically(this.options.evidenceDirectory, fileName, compressed);
     return {
       ...result,
       artifact: {
@@ -424,14 +521,18 @@ export class CalibrationKernelService implements CalibrationKernelPort {
   private async persistDiagnostic(payload: CalibrationKernelDiagnosticPayload): Promise<CalibrationDiagnosticArtifact> {
     await mkdir(this.options.evidenceDirectory, { recursive: true });
     const payloadSha256 = canonicalSha256(payload);
-    const fileName = `${payload.runId}.${payload.status}.qhcal-diagnostic.json.gz`;
-    const compressed = gzipSync(Buffer.from(JSON.stringify({
+    const envelope = Buffer.from(`${JSON.stringify({
       schemaVersion: "qual-hardware-calibration-diagnostic-envelope/1.0.0",
       diagnostic: payload,
       payloadSha256,
-    }), "utf8"), { level: 9 });
-    if (compressed.byteLength > MAX_EVIDENCE_BYTES) throw new Error("calibration_diagnostic_exceeds_10mb");
-    await writeFile(join(this.options.evidenceDirectory, fileName), compressed, { flag: "wx" });
+    })}\n`, "utf8");
+    const interrupted = payload.status === "cancelled";
+    const fileName = interrupted
+      ? `${payload.runId}-interrompido.partial.json`
+      : `${payload.runId}.${payload.status}.qhcal-diagnostic.json.gz`;
+    const bytes = interrupted ? envelope : gzipSync(envelope, { level: 9 });
+    if (bytes.byteLength > MAX_EVIDENCE_BYTES) throw new Error("calibration_diagnostic_exceeds_10mb");
+    await writeAppendOnlyAtomically(this.options.evidenceDirectory, fileName, bytes);
     return {
       schemaVersion: "qual-hardware-calibration-diagnostic-artifact/1.0.0",
       fileName,

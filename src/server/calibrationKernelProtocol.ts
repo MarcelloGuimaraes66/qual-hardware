@@ -63,6 +63,8 @@ export type CalibrationKernelControlMessage =
   | { type: "checkpoint_committed"; checkpointId: string }
   | { type: "checkpoint_failed"; checkpointId: string; error: string };
 
+export type CalibrationKernelBootstrapMessage = { type: "start"; input: CalibrationKernelWorkerInput };
+
 export function calibrationFailureWasCancelled(cancellationRequested: boolean, detail: string): boolean {
   return cancellationRequested || detail === "calibration_cancelled";
 }

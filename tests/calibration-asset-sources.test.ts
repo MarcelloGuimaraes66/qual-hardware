@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   auditCalibrationAssetSources,
@@ -7,7 +8,7 @@ import {
 } from "../src/server/calibrationAssetSources.js";
 import { REQUIRED_RUNTIME_ASSET_IDS, SUPPORTED_RUNTIME_TARGETS } from "../src/server/calibrationRuntime.js";
 
-const projectRoot = new URL("..", import.meta.url).pathname;
+const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 
 async function sourceLockFixture(): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(new URL("../resources/calibration/asset-sources.lock.json", import.meta.url), "utf8"));

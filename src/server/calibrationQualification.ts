@@ -1,10 +1,10 @@
-import type { CalibrationPhaseMetric, CalibrationRepetitionResult } from "../shared/types.js";
+import type { CalibrationMode, CalibrationPhaseMetric, CalibrationRepetitionResult } from "../shared/types.js";
 import { REQUIRED_CALIBRATION_STAGES } from "../engine/calibration.js";
 import type { PipelinePhaseMeasurement } from "./calibrationPipeline.js";
 import { REQUIRED_CALIBRATION_COMPUTE_MODES } from "./calibrationCompute.js";
 
 export interface CalibrationQualificationInput {
-  mode: "quick" | "full";
+  mode: CalibrationMode;
   runtimeReady: boolean;
   authorityAndProfileExact: boolean;
   timeScale: number;
@@ -136,7 +136,7 @@ export function evaluateCalibrationQualification(
     qualifiedMeasurements.every((item) =>
       item.physicalNetworkUsableMbps !== null && item.networkIngressMbps <= item.physicalNetworkUsableMbps);
   const failures = [...new Set([
-    ...(input.mode !== "full" ? ["quick_test_is_diagnostic"] : []),
+    ...(input.mode !== "qualification" ? [`${input.mode}_is_not_commercial_evidence`] : []),
     ...(!input.runtimeReady ? ["packaged_runtime_not_qualified"] : []),
     ...(!input.authorityAndProfileExact ? ["authority_or_workload_profile_mismatch"] : []),
     ...(!input.mediaAvailable || !input.rtspAvailable ? ["approved_offline_media_runtime_unavailable"] : []),

@@ -47,7 +47,7 @@ export class CalibrationProgressTracker {
   private readonly startedMonotonicMs: number;
   private phaseStartedEpochMs: number;
   private phaseStartedMonotonicMs: number;
-  private currentPhase = "launching";
+  private currentPhase = "preflight";
   private overallPercent = 0;
   private previousEstimatedRemaining: number | null = null;
   private lastRaw: CalibrationSessionProgress = { percent: 0, updatedAt: new Date().toISOString() };
@@ -127,7 +127,7 @@ export class CalibrationProgressTracker {
       estimatedCompletionAt,
       minimumDurationSeconds: this.duration.minimumSeconds,
       maximumDurationSeconds: this.duration.maximumSeconds,
-      estimateConfidence: this.plan.mode === "full" && this.overallPercent < 30 ? "low" : this.overallPercent < 70 ? "medium" : "high",
+      estimateConfidence: this.plan.mode === "qualification" && this.overallPercent < 30 ? "low" : this.overallPercent < 70 ? "medium" : "high",
       estimateAdjusted,
       bytesTemporary,
       bytesRemoved,
@@ -145,7 +145,7 @@ export class CalibrationProgressTracker {
   private phaseDuration(phase: string): number {
     if (phase === "discovery") return this.plan.discovery.stabilizationSeconds + this.plan.discovery.sampleSeconds;
     return this.plan.phases.find((item) => item.name === phase)?.durationSeconds ??
-      (phase === "preflight" || phase === "launching" || phase === "cleanup" ? 15 : 60);
+      (phase === "preflight" || phase === "cleanup" ? 15 : 60);
   }
 
   private segmentBudget(phase: string): number {
@@ -153,6 +153,6 @@ export class CalibrationProgressTracker {
     if (["warmup", "ramp", "sustained", "surge"].includes(phase)) {
       return 65 / Math.max(1, this.plan.phases.length * this.plan.qualification.repetitions * REQUIRED_COMPUTE_MODE_COUNT);
     }
-    return phase === "preflight" || phase === "launching" ? 1 : 0;
+    return phase === "preflight" ? 1 : 0;
   }
 }

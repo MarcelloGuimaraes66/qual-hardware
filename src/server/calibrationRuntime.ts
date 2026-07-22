@@ -128,6 +128,11 @@ export async function sha256File(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
+async function sha256CanonicalTextFile(path: string): Promise<string> {
+  const raw = await readFile(path);
+  return createHash("sha256").update(raw.toString("utf8").replace(/\r\n?/g, "\n")).digest("hex");
+}
+
 async function referencedEvidenceVerified(
   root: string,
   reference: { relativePath: string; sha256: string } | null,
@@ -136,7 +141,7 @@ async function referencedEvidenceVerified(
   const path = safeChildPath(root, reference.relativePath);
   try {
     await access(path, constants.R_OK);
-    return await sha256File(path) === reference.sha256;
+    return await sha256CanonicalTextFile(path) === reference.sha256;
   } catch {
     return false;
   }
@@ -162,6 +167,8 @@ export async function inspectCalibrationRuntime(options: {
   architecture?: string;
   env?: NodeJS.ProcessEnv;
   featureMode?: "disabled" | "diagnostic" | "full";
+  executableAccess?: (path: string, platform: NodeJS.Platform) => Promise<boolean>;
+  manifestApproved?: boolean;
 }): Promise<CalibrationRuntimeStatus> {
   const platform = options.platform ?? process.platform;
   const architecture = options.architecture ?? process.arch;
@@ -170,9 +177,9 @@ export async function inspectCalibrationRuntime(options: {
   const raw = await readFile(manifestPath, "utf8");
   const manifest = runtimeManifestSchema.parse(JSON.parse(raw));
   assertExactManifestInventory(manifest);
-  const manifestHash = createHash("sha256").update(raw).digest("hex");
+  const manifestHash = createHash("sha256").update(raw.replace(/\r\n?/g, "\n")).digest("hex");
   const manifestApprovalKey = selectedTarget ?? `${platform}-${architecture}`;
-  const manifestApproved = APPROVED_RUNTIME_MANIFEST_HASHES[manifestApprovalKey] === manifestHash;
+  const manifestApproved = options.manifestApproved ?? APPROVED_RUNTIME_MANIFEST_HASHES[manifestApprovalKey] === manifestHash;
   const packagedRoot = selectedTarget
     ? safeChildPath(options.resourceRoot, `resources/calibration/${selectedTarget}`)
     : null;
@@ -189,7 +196,7 @@ export async function inspectCalibrationRuntime(options: {
   ] as const) {
     const path = safeChildPath(options.resourceRoot, definition.relativePath);
     try {
-      const actualHash = await sha256File(path);
+      const actualHash = await sha256CanonicalTextFile(path);
       contracts.push({
         id,
         status: actualHash === definition.sha256 ? "verified" : "mismatch",
@@ -208,7 +215,10 @@ export async function inspectCalibrationRuntime(options: {
       : null;
     if (packagedPath && artifact && packagedRoot) {
       try {
-        const accessMode = definition.kind === "executable" && platform !== "win32"
+        const executableAllowed = definition.kind !== "executable" || !options.executableAccess ||
+          await options.executableAccess(packagedPath, platform);
+        if (!executableAllowed) throw new Error("calibration_runtime_executable_permission_missing");
+        const accessMode = definition.kind === "executable" && platform !== "win32" && process.platform !== "win32"
           ? constants.R_OK | constants.X_OK : constants.R_OK;
         await access(packagedPath, accessMode);
         const info = await stat(packagedPath);

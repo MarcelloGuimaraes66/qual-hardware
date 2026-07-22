@@ -10,8 +10,6 @@ import { isPublicObservationEligible } from "../engine/evidence.js";
 import { fieldDefinitionsForKind, withTechnicalSpecification } from "../engine/technicalSpecifications.js";
 import { calibrationHardwareDigest } from "./calibrationHardware.js";
 import type {
-  BenchmarkManifest,
-  BenchmarkResultRecord,
   ComponentBuild,
   CapacityPrediction,
   CapacityRecommendation,
@@ -51,11 +49,6 @@ export class RevisionConflictError extends Error {
   }
 }
 
-export interface BenchmarkEvidence {
-  manifest: BenchmarkManifest;
-  result: BenchmarkResultRecord;
-}
-
 export interface ClaimedJob {
   id: number;
   jobType: string;
@@ -73,11 +66,6 @@ export interface PlannerStore {
   saveRecommendations(recommendations: CapacityRecommendation[]): Promise<void>;
   listRecommendations(scenarioId: string): Promise<CapacityRecommendation[]>;
   getRecommendation(id: string): Promise<CapacityRecommendation | null>;
-  saveManifest(manifest: BenchmarkManifest): Promise<void>;
-  getManifest(id: string): Promise<BenchmarkManifest | null>;
-  saveBenchmarkResult(result: BenchmarkResultRecord): Promise<void>;
-  getBenchmarkResult(manifestId: string): Promise<BenchmarkResultRecord | null>;
-  listBenchmarkEvidence(scenarioId: string, revision: number): Promise<BenchmarkEvidence[]>;
   saveCalibrationRun(run: LocalCalibrationRun): Promise<void>;
   commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void>;
   listCalibrationRuns(): Promise<LocalCalibrationRun[]>;
@@ -171,8 +159,6 @@ export class MemoryPlannerStore implements PlannerStore {
   readonly calibrationExtensionReady = true;
   private scenarios = new Map<string, ScenarioRecord>();
   private recommendations = new Map<string, CapacityRecommendation>();
-  private manifests = new Map<string, BenchmarkManifest>();
-  private results = new Map<string, BenchmarkResultRecord>();
   private calibrationRuns = new Map<string, LocalCalibrationRun>();
   private calibrationSessions = new Map<string, CalibrationSessionRecord>();
   private calibrationCheckpoints = new Map<string, CalibrationCheckpoint[]>();
@@ -234,18 +220,6 @@ export class MemoryPlannerStore implements PlannerStore {
       .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
   }
   async getRecommendation(id: string): Promise<CapacityRecommendation | null> { return this.recommendations.get(id) ?? null; }
-  async saveManifest(manifest: BenchmarkManifest): Promise<void> { this.manifests.set(manifest.id, manifest); }
-  async getManifest(id: string): Promise<BenchmarkManifest | null> { return this.manifests.get(id) ?? null; }
-  async saveBenchmarkResult(result: BenchmarkResultRecord): Promise<void> { this.results.set(result.manifestId, result); }
-  async getBenchmarkResult(manifestId: string): Promise<BenchmarkResultRecord | null> { return this.results.get(manifestId) ?? null; }
-  async listBenchmarkEvidence(scenarioId: string, revision: number): Promise<BenchmarkEvidence[]> {
-    const evidence: BenchmarkEvidence[] = [];
-    for (const manifest of this.manifests.values()) {
-      const result = this.results.get(manifest.id);
-      if (result && manifest.scenarioId === scenarioId && manifest.scenarioRevision === revision) evidence.push({ manifest, result });
-    }
-    return evidence;
-  }
   async saveCalibrationRun(run: LocalCalibrationRun): Promise<void> {
     if (this.calibrationRuns.has(run.id)) throw new Error("duplicate_calibration_run");
     this.calibrationRuns.set(run.id, structuredClone(run));
@@ -484,6 +458,41 @@ function verifiedSqliteBackup(database: DatabaseSync, databasePath: string, labe
   return backupPath;
 }
 
+function migrateCalibrationSessionEventStates(database: DatabaseSync): void {
+  const table = database.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='calibration_session_events'",
+  ).get() as { sql?: string } | undefined;
+  if (!table?.sql || table.sql.includes("'validating'")) return;
+  database.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE calibration_session_events RENAME TO calibration_session_events_legacy_states;
+    CREATE TABLE calibration_session_events (
+      event_id INTEGER PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES calibration_sessions_v2(id),
+      state TEXT NOT NULL CHECK (state IN ('pending','preflight','discovering','validating','qualifying','finalizing','cancelled','completed','failed','interrupted','expired')),
+      session_json TEXT NOT NULL CHECK (json_valid(session_json)),
+      created_at TEXT NOT NULL
+    ) STRICT;
+    INSERT INTO calibration_session_events(event_id,session_id,state,session_json,created_at)
+      SELECT event_id,session_id,
+        CASE state
+          WHEN 'launching' THEN 'preflight'
+          WHEN 'running' THEN CASE
+            WHEN json_extract(session_json,'$.mode') IN ('full','qualification') THEN 'qualifying'
+            ELSE 'validating'
+          END
+          WHEN 'cancelling' THEN 'finalizing'
+          ELSE state
+        END,
+        session_json,created_at
+      FROM calibration_session_events_legacy_states;
+    DROP TABLE calibration_session_events_legacy_states;
+    CREATE INDEX calibration_session_events_latest_idx
+      ON calibration_session_events(session_id,event_id DESC);
+    COMMIT;
+  `);
+}
+
 function catalogPublication(bundle: CatalogBundle, keyId: string, bundleSha256: string, etag: string | null): CatalogPublication {
   return {
     sequence: bundle.sequence, publicationId: bundle.publicationId, catalogVersion: bundle.catalogVersion,
@@ -518,20 +527,29 @@ export class SqlitePlannerStore implements PlannerStore {
     const calibrationExtensionVersion = hasCalibrationExtension
       ? Number((this.database.prepare("SELECT extension_version FROM calibration_extension_metadata WHERE singleton=1").get() as { extension_version?: number } | undefined)?.extension_version ?? 0)
       : 0;
-    if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && calibrationExtensionVersion < 2) {
+    const eventTableSql = (this.database.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='calibration_session_events'",
+    ).get() as { sql?: string } | undefined)?.sql;
+    const calibrationStateMigrationRequired = Boolean(eventTableSql && !eventTableSql.includes("'validating'"));
+    if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && (calibrationExtensionVersion < 2 || calibrationStateMigrationRequired)) {
       verifiedSqliteBackup(this.database, dedicatedPath,
-        calibrationExtensionVersion === 0 ? "qual-hardware-pre-calibration-extension" : "qual-hardware-pre-calibration-extension-v2");
+        calibrationExtensionVersion === 0
+          ? "qual-hardware-pre-calibration-extension"
+          : calibrationStateMigrationRequired
+            ? "qual-hardware-pre-autonomous-state-migration"
+            : "qual-hardware-pre-calibration-extension-v2");
     }
     const resourceRoot = process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
     const schemaSql = readFileSync(schemaPath ?? resolve(resourceRoot, "database", "sqlite-schema.sql"), "utf8");
     let calibrationExtensionReady = true;
     try {
+      migrateCalibrationSessionEventStates(this.database);
       this.database.exec(schemaSql);
       const integrity = this.database.prepare("PRAGMA integrity_check").get() as Record<string, unknown> | undefined;
       if (!integrity || Object.values(integrity)[0] !== "ok") throw new Error("calibration_extension_post_migration_integrity_check_failed");
     } catch (error) {
       if (this.database.isTransaction) this.database.exec("ROLLBACK");
-      if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && calibrationExtensionVersion < 2) {
+      if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && (calibrationExtensionVersion < 2 || calibrationStateMigrationRequired)) {
         calibrationExtensionReady = false;
       } else {
         this.database.close();
@@ -945,32 +963,6 @@ export class SqlitePlannerStore implements PlannerStore {
   async getRecommendation(id: string): Promise<CapacityRecommendation | null> {
     const row = this.database.prepare("SELECT recommendation_json FROM recommendations WHERE id=?").get(id) as Record<string, unknown> | undefined;
     return row ? parseJson<CapacityRecommendation>(row.recommendation_json) : null;
-  }
-  async saveManifest(manifest: BenchmarkManifest): Promise<void> {
-    this.database.prepare(
-      "INSERT INTO benchmark_manifests(id,scenario_id,scenario_revision,manifest_json,expires_at,created_at) VALUES(?,?,?,?,?,?)",
-    ).run(manifest.id, manifest.scenarioId, manifest.scenarioRevision, JSON.stringify(manifest), manifest.expiresAt, manifest.createdAt);
-  }
-  async getManifest(id: string): Promise<BenchmarkManifest | null> {
-    const row = this.database.prepare("SELECT manifest_json FROM benchmark_manifests WHERE id=?").get(id) as Record<string, unknown> | undefined;
-    return row ? parseJson<BenchmarkManifest>(row.manifest_json) : null;
-  }
-  async saveBenchmarkResult(result: BenchmarkResultRecord): Promise<void> {
-    this.database.prepare(
-      "INSERT INTO benchmark_results(manifest_id,result_json,received_at) VALUES(?,?,?) ON CONFLICT(manifest_id) DO UPDATE SET result_json=excluded.result_json,received_at=excluded.received_at",
-    ).run(result.manifestId, JSON.stringify(result), result.receivedAt);
-  }
-  async getBenchmarkResult(manifestId: string): Promise<BenchmarkResultRecord | null> {
-    const row = this.database.prepare("SELECT result_json FROM benchmark_results WHERE manifest_id=?").get(manifestId) as Record<string, unknown> | undefined;
-    return row ? parseJson<BenchmarkResultRecord>(row.result_json) : null;
-  }
-  async listBenchmarkEvidence(scenarioId: string, revision: number): Promise<BenchmarkEvidence[]> {
-    return rows(this.database.prepare(
-      "SELECT m.manifest_json,r.result_json FROM benchmark_manifests m JOIN benchmark_results r ON r.manifest_id=m.id WHERE m.scenario_id=? AND m.scenario_revision=?",
-    ).all(scenarioId, revision)).map((row) => ({
-      manifest: parseJson<BenchmarkManifest>(row.manifest_json),
-      result: parseJson<BenchmarkResultRecord>(row.result_json),
-    }));
   }
   async saveCalibrationRun(run: LocalCalibrationRun): Promise<void> {
     if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");

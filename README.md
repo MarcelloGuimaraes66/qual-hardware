@@ -19,7 +19,14 @@ See `database/README.md` for locations, backup and migration rules.
 
 ## Desenvolvimento do aplicativo desktop
 
-Use Node.js 24 LTS on Windows 11 x64, macOS 26 Apple Silicon or Ubuntu 24.04 x64. The repository has one npm lockfile and the same commands on every system:
+Use Node.js `24.18.0`, npm `11.16.0` and Go `1.26.5` on Windows 11 x64, macOS 26 Apple Silicon or Ubuntu 24.04 x64. On Windows, the project-local launcher provisions the exact toolchain without replacing the machine's global Node.js:
+
+```powershell
+.\scripts\qual-hardware.ps1 setup
+.\scripts\qual-hardware.ps1 run
+```
+
+The launcher resolves portable tools from `QUAL_HARDWARE_NODE_HOME`, `.tools` or `C:\dev\tools` and changes `PATH` only for its child process. The equivalent direct commands are:
 
 ```sh
 npm ci
@@ -43,13 +50,13 @@ npm ci
 npm run desktop:package
 ```
 
-Cada artefato é compilado no sistema operacional de destino. A versão `0.1.0` produz:
+Cada artefato é compilado no sistema operacional de destino. A versão `0.3.0` produz:
 
-- Windows: `release/Qual-Hardware-0.1.0-windows-x64-portable.exe`.
-- macOS: `release/Qual-Hardware-0.1.0-macos-arm64.dmg`.
-- Ubuntu: `release/Qual-Hardware-0.1.0-linux-x64.AppImage` e `release/qual-hardware_0.1.0_amd64.deb`.
+- Windows: `release/Qual-Hardware-0.3.0-windows-x64-portable.exe`.
+- macOS: `release/Qual-Hardware-0.3.0-macos-arm64.dmg`.
+- Ubuntu: `release/Qual-Hardware-0.3.0-linux-x64.AppImage` e `release/qual-hardware_0.3.0_amd64.deb`.
 
-Os pacotes contêm o runtime necessário, abrem uma janela própria e iniciam a API somente em uma porta aleatória de `127.0.0.1`. O usuário final não precisa instalar Node.js. Os pacotes internos não são assinados e podem exibir SmartScreen ou Gatekeeper; a publicação de cada GitHub Release é manual.
+Os pacotes desktop contêm Electron, fontes e dependências dos relatórios, abrem uma janela própria e iniciam a API somente em uma porta aleatória de `127.0.0.1`. O usuário final não precisa instalar Node.js. O runtime pesado de calibração é um arquivo assinado `.qhruntime`, instalado separadamente pelo seletor nativo do próprio aplicativo. Os pacotes desktop internos não são assinados e podem exibir SmartScreen ou Gatekeeper; a publicação de cada GitHub Release é manual.
 
 O sistema onde o Qual Hardware é executado não limita o alvo da recomendação: qualquer um dos três desktops pode planejar equipamentos Windows, Ubuntu ou macOS. A plataforma selecionada descreve onde o Perceptrum será executado, não onde o cálculo está sendo feito.
 
@@ -59,7 +66,7 @@ O botão **Atualizar hardware** permanece visível no rodapé como painel inform
 
 O publicador verifica diariamente se já passaram 15 dias desde a última Release `catalog-*`. No dia devido, pesquisa fontes públicas aprovadas no Brasil, Estados Unidos e Alemanha e publica um histórico append-only mesmo quando não existem novidades. O Qwen local gratuito só auxilia a classificação de páginas ambíguas; nunca decide preço, capacidade ou publicação e nenhuma chamada OpenAI é realizada.
 
-O catálogo ativo aparece nessa mesma janela e inclui faixas econômicas. A versão embarcada `hardware-reference/2026-07-18.5` contém 21 perfis completos: ASUS, Apple, Dell, HP e Lenovo; CPUs Intel, AMD e Apple; GPUs NVIDIA, AMD, Intel e Apple; notebooks, mini PCs, workstations e racks. Na primeira etapa, **Avaliar equipamento existente** força o cálculo a usar uma máquina específica; o resultado mostra a capacidade estimada máxima de câmeras para o perfil de Agents escolhido.
+O catálogo ativo aparece nessa mesma janela e inclui faixas econômicas. A versão embarcada `hardware-reference/2026-07-22.1` contém 22 perfis, incluindo a configuração exata ASUS G835LX / Core Ultra 9 275HX / RTX 5090 Laptop usada na qualificação do Windows. Na primeira etapa, **Avaliar equipamento existente** força o cálculo a usar uma máquina específica; o resultado mostra a capacidade estimada máxima de câmeras para o perfil de Agents escolhido.
 
 Apple Silicon é uma opção explícita de plataforma. Os Macs usam memória unificada e não são tratados como se possuíssem VRAM NVIDIA dedicada. O Perceptrum macOS e o AiQ/Qwen local participam com CPU decode até uma calibração comprovar aceleração diferente. O catálogo inclui o MacBook Pro M4 Max de 36 GB deste laboratório como perfil de âncora, sem atribuir seus resultados a outro Mac.
 
@@ -86,4 +93,6 @@ npm run audit:source
 
 See `docs/ARCHITECTURE.md`, `docs/VALIDATION.md`, `docs/PUBLIC_EVIDENCE_CURATION.md`, and `contracts/perceptrum-workload-v3.json`.
 
-A área permanente **Calibração de capacidade** inicia testes locais de 10 ou 60 minutos no Perceptrum desktop em macOS, Windows ou Ubuntu. O fluxo de um clique usa uma sessão descartável autenticada em `127.0.0.1`, abre `perceptrum://calibration/run`, acompanha o progresso, importa o resultado e recalcula as previsões. O Perceptrum salva antes o `.qhcal.json` em **Documentos/Qual Hardware/Calibracoes**, de forma append-only. A tela separa FPS de leitura RTSP de FPS de inferência AiQ e mostra CPU, GPU, RAM, SSD, rede, quatro fases, quinze etapas, Jobs, Steps, Agents, Intelligence, banco/dashboard, gargalo, sensores indisponíveis, caminho, checksum e JSON completo. O teste usa MediaMTX, FFmpeg, sondas nativas de memória/SSD e AiQ/Qwen locais, sem câmeras físicas, OpenAI ou APIs externas. `.qhplan.json` e importação manual permanecem como recuperação.
+A área permanente **Calibração de capacidade** é o único executor de calibração suportado. Ela oferece diagnóstico de 10 minutos, validação de engenharia de 60 minutos e qualificação adaptativa de aproximadamente 6–7 horas. O próprio aplicativo cria a sessão, inicia o worker isolado, conduz MediaMTX, FFmpeg, a sonda de telemetria e o Qwen local, mostra o progresso, persiste o resultado atômico e encerra todos os processos e temporários pertencentes à sessão.
+
+O Qual Hardware nunca abre nem altera o Perceptrum, não usa protocolo `perceptrum://`, porta fixa ou callback externo e bloqueia OpenAI e qualquer comunicação externa durante a calibração. Instale o `.qhruntime` assinado da plataforma em **Calibração de capacidade → Instalar runtime de arquivo**. Um runtime candidato pode executar todas as fases físicas, mas permanece diagnóstico; somente uma chave de produção aprovada após homologação nativa nos três sistemas habilita evidência comercial. Novos resultados usam `qual-hardware-local-calibration/4.0.0`; leitores anteriores permanecem somente para intercâmbio diagnóstico histórico.

@@ -135,6 +135,11 @@ export interface CalibrationRepositorySourceDigest {
   fileCount: number;
 }
 
+function canonicalRepositoryText(bytes: Buffer): Buffer {
+  if (bytes.includes(0)) return bytes;
+  return Buffer.from(bytes.toString("utf8").replace(/\r\n?/g, "\n"), "utf8");
+}
+
 export async function hashCalibrationRepositorySource(
   repositoryRootInput: string,
   repositoryPath: string,
@@ -166,13 +171,14 @@ export async function hashCalibrationRepositorySource(
   const hash = createHash("sha256");
   let sizeBytes = 0;
   for (const file of files.sort((left, right) => left.relativePath.localeCompare(right.relativePath))) {
-    sizeBytes += file.sizeBytes;
+    const content = canonicalRepositoryText(await readFile(file.absolutePath));
+    sizeBytes += content.byteLength;
     if (sizeBytes > 100 * 1024 * 1024) throw new Error("calibration_repository_source_size_limit");
     hash.update(file.relativePath, "utf8");
     hash.update("\0");
-    hash.update(String(file.sizeBytes), "utf8");
+    hash.update(String(content.byteLength), "utf8");
     hash.update("\0");
-    hash.update(await readFile(file.absolutePath));
+    hash.update(content);
     hash.update("\0");
   }
   return { sha256: hash.digest("hex"), sizeBytes, fileCount: files.length };

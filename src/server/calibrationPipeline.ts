@@ -42,6 +42,22 @@ export const CALIBRATION_PIPELINE_CONTRACT_VERSION = "qual-hardware-calibration-
 const CALIBRATION_MEDIA_RING_SECONDS = 2;
 const CALIBRATION_MEDIA_RING_SEGMENTS = 2;
 
+async function terminateProcessTree(child: ChildProcess, force: boolean): Promise<void> {
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    await new Promise<void>((resolveStop) => {
+      const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", ...(force ? ["/F"] : [])], {
+        shell: false, windowsHide: true, stdio: "ignore",
+      });
+      killer.once("error", () => resolveStop());
+      killer.once("exit", () => resolveStop());
+    });
+    return;
+  }
+  try { process.kill(-child.pid, force ? "SIGKILL" : "SIGTERM"); }
+  catch { try { child.kill(force ? "SIGKILL" : "SIGTERM"); } catch { /* The process group already exited. */ } }
+}
+
 export function estimateCalibrationMediaRingBytes(
   profile: CalibrationWorkloadProfile,
   tier: number,
@@ -567,10 +583,10 @@ export class OfflineCalibrationPipeline {
       void diskStatusProvider(this.input.workspace.directory, 0).then((current) => {
         if (current.freeBytes >= current.reserveBytes) return;
         this.diskPressureError = "calibration_disk_reserve_violated";
-        for (const child of this.children) child.kill("SIGTERM");
+        for (const child of this.children) void terminateProcessTree(child, false);
       }).catch(() => {
         this.diskPressureError = "calibration_disk_capacity_monitor_failed";
-        for (const child of this.children) child.kill("SIGTERM");
+        for (const child of this.children) void terminateProcessTree(child, false);
       }).finally(() => { diskCheckBusy = false; });
     }, this.input.diskCheckIntervalMs ?? 2_000);
     diskMonitor.unref?.();
@@ -1082,6 +1098,7 @@ export class OfflineCalibrationPipeline {
       const child = spawn(command, args, {
         shell: false,
         windowsHide: true,
+        detached: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"],
       });
       this.children.add(child);
@@ -1109,12 +1126,12 @@ export class OfflineCalibrationPipeline {
         else resolveProcess({ stdout, stderr, durationMs: performance.now() - started });
       };
       const timeout = setTimeout(() => {
-        child.kill("SIGKILL");
+        void terminateProcessTree(child, true);
         finish(new Error(`calibration_process_timeout:${basename(command)}`));
       }, timeoutMs);
       const cancelPoll = setInterval(() => {
         if (!this.input.cancelled() && !this.diskPressureError) return;
-        child.kill("SIGTERM");
+        void terminateProcessTree(child, false);
         finish(new Error(this.diskPressureError ?? "calibration_cancelled"));
       }, 50);
       child.once("error", (error) => finish(error));
@@ -1126,7 +1143,9 @@ export class OfflineCalibrationPipeline {
   }
 
   private startBackground(command: string, args: string[]): ChildProcess {
-    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
+    const child = spawn(command, args, {
+      shell: false, windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "ignore", "ignore"],
+    });
     this.children.add(child);
     const kind = childProcessKind(command);
     if (child.pid) this.input.onChildProcess?.({ action: "started", pid: child.pid, kind });
@@ -1150,19 +1169,19 @@ export class OfflineCalibrationPipeline {
       const index = this.llamaServers.indexOf(runtime);
       if (index >= 0) this.llamaServers.splice(index, 1);
     }
-    for (const runtime of runtimes) runtime.child.kill("SIGTERM");
+    await Promise.all(runtimes.map((runtime) => terminateProcessTree(runtime.child, false)));
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
     for (const runtime of runtimes) {
-      if (runtime.child.exitCode === null) runtime.child.kill("SIGKILL");
+      if (runtime.child.exitCode === null) await terminateProcessTree(runtime.child, true);
       this.children.delete(runtime.child);
     }
   }
 
   private async stopBackgroundProcesses(): Promise<void> {
     const children = [...this.children];
-    for (const child of children) child.kill("SIGTERM");
+    await Promise.all(children.map((child) => terminateProcessTree(child, false)));
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-    for (const child of children) if (child.exitCode === null) child.kill("SIGKILL");
+    for (const child of children) if (child.exitCode === null) await terminateProcessTree(child, true);
     this.children.clear();
     this.mediaMtx = null;
     this.publishers.length = 0;

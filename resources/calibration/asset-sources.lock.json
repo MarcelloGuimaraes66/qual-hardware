@@ -12,8 +12,8 @@
       "id": "ffmpeg",
       "upstream": "FFmpeg/FFmpeg",
       "version": "8.1.2",
-      "revision": "n8.1.2",
-      "licenseSpdxCandidate": "GPL-2.0-or-later",
+      "revision": "autobuild-2026-07-22-13-36",
+      "licenseSpdxCandidate": "GPL-3.0-or-later",
       "licenseEvidenceUrl": "https://ffmpeg.org/legal.html",
       "approvalStatus": "blocked",
       "blockers": [
@@ -24,7 +24,7 @@
       ],
       "targets": {
         "darwin-arm64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffmpeg.c" },
-        "win32-x64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffmpeg.c" },
+        "win32-x64": { "sourceKind": "release_archive", "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-22-13-36/ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1.zip", "sha256": "f3c4d7c272390d18f57e5ee1e52466d28cbf728b923e188367e934456c061d51", "sizeBytes": 167402338, "archiveMember": "ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1/bin/ffmpeg.exe" },
         "linux-x64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffmpeg.c" }
       }
     },
@@ -32,8 +32,8 @@
       "id": "ffprobe",
       "upstream": "FFmpeg/FFmpeg",
       "version": "8.1.2",
-      "revision": "n8.1.2",
-      "licenseSpdxCandidate": "GPL-2.0-or-later",
+      "revision": "autobuild-2026-07-22-13-36",
+      "licenseSpdxCandidate": "GPL-3.0-or-later",
       "licenseEvidenceUrl": "https://ffmpeg.org/legal.html",
       "approvalStatus": "blocked",
       "blockers": [
@@ -44,7 +44,7 @@
       ],
       "targets": {
         "darwin-arm64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffprobe.c" },
-        "win32-x64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffprobe.c" },
+        "win32-x64": { "sourceKind": "release_archive", "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-22-13-36/ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1.zip", "sha256": "f3c4d7c272390d18f57e5ee1e52466d28cbf728b923e188367e934456c061d51", "sizeBytes": 167402338, "archiveMember": "ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1/bin/ffprobe.exe" },
         "linux-x64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffprobe.c" }
       }
     },

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   CalibrationConfidenceClass,
+  CalibrationMode,
   CalibrationPlan,
   CalibrationStage,
   CapacityPrediction,
@@ -77,7 +78,7 @@ function calibrationRunEligible(
     run.fingerprint.perceptrumBuildHash === PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT &&
     run.workloadProfileId === `workload:${run.workloadProfileSignature}` &&
     run.workloadContractVersion === WORKLOAD_CONTRACT_VERSION &&
-    run.mode === "full" && run.executionMode === "production_pipeline" &&
+    (run.mode === "qualification" || run.mode === "full") && run.executionMode === "production_pipeline" &&
     run.developmentOnly !== true &&
     run.runtimeProvenance?.manifestApproved === true &&
     pipelineProof?.complete === true &&
@@ -274,10 +275,11 @@ function leaveOneOutUnsafeCount(
 
 export function createCalibrationPlan(
   scenario: CapacityScenario,
-  mode: "quick" | "full",
+  mode: CalibrationMode,
   targetHardwareTemplateId: string | null = null,
 ): CalibrationPlan {
   const quick = mode === "quick";
+  const validation = mode === "validation";
   const workloadProfile = buildCalibrationWorkloadProfile(scenario);
   return {
     schemaVersion: CALIBRATION_PLAN_VERSION,
@@ -290,8 +292,16 @@ export function createCalibrationPlan(
     strategy: "adaptive",
     workloadProfile,
     cameraTiers: [1, 4, 8, 16, 32, 64, 128, 256, 512, 1_024, 2_048, 4_096],
-    discovery: { stabilizationSeconds: 30, sampleSeconds: 90 },
-    qualification: { repetitions: 3, cooldownSeconds: 600, maximumVariabilityPercent: 10 },
+    discovery: quick
+      ? { stabilizationSeconds: 10, sampleSeconds: 20 }
+      : validation
+        ? { stabilizationSeconds: 5, sampleSeconds: 10 }
+        : { stabilizationSeconds: 30, sampleSeconds: 90 },
+    qualification: {
+      repetitions: mode === "qualification" ? 3 : 1,
+      cooldownSeconds: mode === "qualification" ? 600 : 0,
+      maximumVariabilityPercent: 10,
+    },
     targetHardwareTemplateId,
     scenario: { ...scenario, workloadContractVersion: WORKLOAD_CONTRACT_VERSION },
     localOnly: true,
@@ -300,11 +310,19 @@ export function createCalibrationPlan(
     inferenceProvider: "aiq_local",
     phases: quick
       ? [
-          { name: "warmup", durationSeconds: 120, loadPercent: 100 },
-          { name: "sustained", durationSeconds: 300, loadPercent: 100 },
-          { name: "surge", durationSeconds: 180, loadPercent: 120 },
+          { name: "warmup", durationSeconds: 45, loadPercent: 80 },
+          { name: "ramp", durationSeconds: 75, loadPercent: 100 },
+          { name: "sustained", durationSeconds: 90, loadPercent: 100 },
+          { name: "surge", durationSeconds: 60, loadPercent: 120 },
         ]
-      : [
+      : validation
+        ? [
+          { name: "warmup", durationSeconds: 240, loadPercent: 80 },
+          { name: "ramp", durationSeconds: 480, loadPercent: 100 },
+          { name: "sustained", durationSeconds: 720, loadPercent: 100 },
+          { name: "surge", durationSeconds: 345, loadPercent: 120 },
+        ]
+        : [
           { name: "warmup", durationSeconds: 600, loadPercent: 100 },
           { name: "ramp", durationSeconds: 1200, loadPercent: 100 },
           { name: "sustained", durationSeconds: 1200, loadPercent: 100 },
@@ -320,6 +338,11 @@ export function createCalibrationPlan(
       "The kernel must use synthetic RTSP-equivalent streams and local AiQ/Qwen assets on 127.0.0.1 only.",
       "Do not include camera credentials, captured media, host names or personal data in the result.",
       "Persist aggregate evidence before deleting the session-owned temporary workspace.",
+      mode === "quick"
+        ? "This ten-minute diagnostic is not commercial purchase evidence."
+        : mode === "validation"
+          ? "This sixty-minute engineering validation is not commercial purchase evidence."
+          : "Commercial qualification requires three repetitions, full runtime trust and no accelerated time scale.",
     ],
   };
 }

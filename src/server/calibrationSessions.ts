@@ -1,12 +1,11 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { promisify } from "node:util";
 import {
   AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
-  CALIBRATION_HANDOFF_VERSION,
   CALIBRATION_KERNEL_VERSION,
   CALIBRATION_PROGRESS_VERSION,
   PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
@@ -57,14 +56,8 @@ export function assertAutonomousCalibrationSessionContract(
     throw new Error("calibration_runtime_manifest_not_approved_for_purchase_evidence");
   }
 }
-
 export interface DesktopCalibrationBridge {
-  openPerceptrumCalibration(uri: string): Promise<void>;
   openPath?(path: string): Promise<void>;
-}
-
-export function tokenSha256(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
 }
 
 export function calibrationPayloadSha256(result: LocalCalibrationRun): string {
@@ -88,52 +81,6 @@ export function legacyCalibrationPayloadSha256(result: LocalCalibrationRun): str
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
-function loopbackOrigin(value: string): string {
-  const parsed = new URL(value);
-  if (parsed.protocol !== "http:" || !parsed.hostname.startsWith("127.") || parsed.username || parsed.password) {
-    throw new Error("calibration_callback_must_use_loopback");
-  }
-  return parsed.origin;
-}
-
-export function createCalibrationSession(input: {
-  plan: CalibrationPlan;
-  recommendationId: string;
-  scenarioId: string;
-  advancedTelemetry: boolean;
-  callbackOrigin: string;
-  now?: Date;
-}): { record: CalibrationSessionRecord; token: string; uri: string } {
-  const createdAt = (input.now ?? new Date()).toISOString();
-  const expiresAt = new Date(Date.parse(createdAt) + SESSION_LIFETIME_MS).toISOString();
-  const token = randomBytes(32).toString("base64url");
-  const id = randomUUID();
-  const record: CalibrationSessionRecord = {
-    id,
-    planId: input.plan.id,
-    recommendationId: input.recommendationId,
-    scenarioId: input.scenarioId,
-    mode: input.plan.mode,
-    advancedTelemetry: input.advancedTelemetry,
-    state: "pending",
-    createdAt,
-    expiresAt,
-    launchedAt: null,
-    completedAt: null,
-    progress: null,
-    result: null,
-    error: null,
-    tokenHash: tokenSha256(token),
-    plan: structuredClone(input.plan),
-  };
-  const uri = new URL("perceptrum://calibration/run");
-  uri.searchParams.set("session", id);
-  uri.searchParams.set("origin", loopbackOrigin(input.callbackOrigin));
-  uri.searchParams.set("token", token);
-  uri.searchParams.set("expires", expiresAt);
-  uri.searchParams.set("plan", input.plan.id);
-  return { record, token, uri: uri.toString() };
-}
 
 export function createInternalCalibrationSession(input: {
   plan: CalibrationPlan;
@@ -176,21 +123,6 @@ export function createInternalCalibrationSession(input: {
 export function publicCalibrationSession(record: CalibrationSessionRecord): CalibrationSession {
   const { tokenHash: _tokenHash, plan: _plan, ...session } = record;
   return structuredClone({ ...session, progress: session.progress ? normalizeCalibrationProgress(session.progress) : null });
-}
-
-export function authorizeCalibrationSession(
-  session: CalibrationSessionRecord,
-  authorization: string | undefined,
-  now = Date.now(),
-): void {
-  if (Date.parse(session.expiresAt) <= now) throw new Error("calibration_session_expired");
-  if (session.state === "completed" || session.state === "cancelled") throw new Error("calibration_session_already_completed");
-  const token = authorization?.match(/^Bearer ([A-Za-z0-9_-]{43,128})$/)?.[1] ?? "";
-  const actual = Buffer.from(tokenSha256(token), "hex");
-  const expected = Buffer.from(session.tokenHash, "hex");
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-    throw new Error("invalid_calibration_session_token");
-  }
 }
 
 export function normalizeCalibrationProgress(input: unknown): CalibrationSessionProgress {
@@ -243,71 +175,14 @@ export function normalizeCalibrationProgress(input: unknown): CalibrationSession
   };
 }
 
-export async function deliverCalibrationSession(
-  uri: string,
-  advancedTelemetry: boolean,
-  bridge?: DesktopCalibrationBridge,
-  fetchImpl: typeof fetch = globalThis.fetch,
-): Promise<"running_instance" | "protocol_launch"> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2_500);
-  timeout.unref?.();
-  try {
-    const response = await fetchImpl("http://127.0.0.1:4000/api/runtime/calibration/handoff", {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ uri, advancedTelemetry }),
-      redirect: "error",
-      signal: controller.signal,
-    });
-    if (response.ok) return "running_instance";
-  } catch {
-    // A closed Perceptrum instance is the expected reason to use the native protocol.
-  } finally {
-    clearTimeout(timeout);
-  }
-  if (!bridge) throw new Error("perceptrum_desktop_bridge_unavailable");
-  await bridge.openPerceptrumCalibration(uri);
-  return "protocol_launch";
-}
-
-export async function cancelDeliveredCalibrationSession(
-  sessionId: string,
-  token: string,
-  fetchImpl: typeof fetch = globalThis.fetch,
-): Promise<void> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
-  timeout.unref?.();
-  try {
-    const response = await fetchImpl("http://127.0.0.1:4000/api/runtime/calibration/cancel", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ sessionId }),
-      redirect: "error",
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? `perceptrum_cancel_failed_http_${response.status}`);
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function windowsDocuments(home: string): Promise<string> {
   try {
     const { stdout } = await execFileAsync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command", "[Environment]::GetFolderPath('MyDocuments')",
     ], { encoding: "utf8", windowsHide: true, timeout: 8_000 });
-    return String(stdout).trim() || join(home, "Documents");
+    return String(stdout).trim() || win32.join(home, "Documents");
   } catch {
-    return join(home, "Documents");
+    return win32.join(home, "Documents");
   }
 }
 
@@ -324,17 +199,22 @@ export async function resolveCalibrationDirectory(options: {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   home?: string;
+  resolveWindowsDocuments?: (home: string) => Promise<string>;
 } = {}): Promise<string> {
-  if (options.documentsDirectory) return resolve(options.documentsDirectory, "Qual Hardware", "Calibracoes");
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();
+  const pathApi = platform === "win32" ? win32 : posix;
+  if (options.documentsDirectory) return pathApi.resolve(options.documentsDirectory, "Qual Hardware", "Calibracoes");
   const override = env.QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR?.trim();
-  if (override) return resolve(override, "Qual Hardware", "Calibracoes");
-  const documents = platform === "win32" ? await windowsDocuments(home)
+  if (override) return pathApi.resolve(override, "Qual Hardware", "Calibracoes");
+  const documents = platform === "win32"
+    ? await (options.resolveWindowsDocuments ?? (process.platform === "win32" && options.platform === undefined && options.home === undefined
+      ? windowsDocuments
+      : async (candidateHome: string) => win32.join(candidateHome, "Documents")))(home)
     : platform === "linux" ? await linuxDocuments(home, env)
-    : join(home, "Documents");
-  return resolve(documents, "Qual Hardware", "Calibracoes");
+    : posix.join(home, "Documents");
+  return pathApi.resolve(documents, "Qual Hardware", "Calibracoes");
 }
 
 export async function findPersistedCalibration(
@@ -356,18 +236,4 @@ export async function findPersistedCalibration(
     }
   }
   return null;
-}
-
-export function validatePerceptrumProtocolUri(candidate: string): string | null {
-  if (candidate.length > 4_096) return null;
-  try {
-    const parsed = new URL(candidate);
-    if (parsed.protocol !== "perceptrum:" || parsed.hostname !== "calibration" || parsed.pathname !== "/run" || parsed.username || parsed.password || parsed.hash) return null;
-    const required = ["session", "origin", "token", "expires", "plan"];
-    if (required.some((key) => !parsed.searchParams.get(key))) return null;
-    loopbackOrigin(parsed.searchParams.get("origin")!);
-    return parsed.toString();
-  } catch {
-    return null;
-  }
 }

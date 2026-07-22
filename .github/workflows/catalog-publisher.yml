@@ -33,8 +33,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
+      - run: npm install --global npm@11.16.0
       - run: npm ci
       - id: gate
         env:
@@ -79,8 +80,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
+      - run: npm install --global npm@11.16.0
       - run: npm ci
       - run: npm run catalog:publisher -- collect --output artifacts/collection
       - uses: actions/upload-artifact@v7
@@ -97,8 +99,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
+      - run: npm install --global npm@11.16.0
       - run: npm ci
       - uses: actions/download-artifact@v8
         with:
@@ -115,8 +118,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
+      - run: npm install --global npm@11.16.0
       - run: npm ci
       - uses: actions/download-artifact@v8
         with:
@@ -158,8 +162,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
+      - run: npm install --global npm@11.16.0
       - run: npm ci
       - uses: actions/download-artifact@v8
         with:
@@ -206,8 +211,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
+      - run: npm install --global npm@11.16.0
       - run: npm ci
       - uses: actions/download-artifact@v8
         with:

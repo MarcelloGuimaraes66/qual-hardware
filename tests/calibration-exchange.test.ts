@@ -38,7 +38,7 @@ describe("signed portable calibration exchange", () => {
     expect(exported.fileName.endsWith(".qhcal")).toBe(true);
     expect(exported.bytes.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
     const serialized = gunzipSync(exported.bytes).toString("utf8");
-    expect(serialized.startsWith('{"schemaVersion":"qual-hardware-calibration-package/1.0.0"')).toBe(true);
+    expect(serialized.startsWith('{"schemaVersion":"qual-hardware-calibration-package/2.0.0"')).toBe(true);
     const topLevelKeys = Object.keys(JSON.parse(serialized) as Record<string, unknown>);
     expect(topLevelKeys.slice(1)).toEqual([...topLevelKeys.slice(1)].sort());
     expect(collector.parseQhcal(exported.bytes).run.id).toBe(run.id);

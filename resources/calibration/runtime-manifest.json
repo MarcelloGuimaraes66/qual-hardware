@@ -1,6 +1,6 @@
 {
   "schemaVersion": "qual-hardware-calibration-runtime-manifest/2.0.0",
-  "kernelVersion": "qual-hardware-calibration-kernel/1.0.0",
+  "kernelVersion": "qual-hardware-calibration-kernel/2.0.0",
   "authorityCommit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
   "pipelineImplementation": "perceptrum-equivalent-v1",
   "supportedTargets": ["darwin-arm64", "win32-x64", "linux-x64"],
@@ -14,7 +14,7 @@
   },
   "sourceLock": {
     "relativePath": "resources/calibration/asset-sources.lock.json",
-    "sha256": "8ab591a075e8f25a58736ebf68a55292eb11bc338d3da43be73e4c462558aa4d"
+    "sha256": "fdf71b584d51b61edbe0ad37cc027f9d11a8f81d3de9a8eb0a4bab5365933b9a"
   },
   "assets": [
     {
@@ -50,11 +50,11 @@
       }
     },
     {
-      "id": "telemetry-probe", "kind": "executable", "version": "0.1.0", "licenseSpdx": "NOASSERTION", "sbomRef": "sbom/telemetry-probe.cdx.json", "requiredForFull": true,
+      "id": "telemetry-probe", "kind": "executable", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "bin/telemetry-probe", "sha256": "5a62d169acb3fe02221c8685547b8a0a4aeb57e75c0d3f4bc31d81b32fabf62e", "sizeBytes": 2385234, "licenseEvidence": { "relativePath": "licenses/telemetry-probe.txt", "sha256": "1ffe78102cfe18d15a9d7d3bd99613207b7d4f4b9cc1c2223fd48c69759252ce" }, "sbomEvidence": { "relativePath": "sbom/telemetry-probe.cdx.json", "sha256": "0eb6411a3fa26ea54b94792769b4188ca1ef052740dd8a5978ed386772032579" } },
-        "win32-x64": { "relativePath": "bin/telemetry-probe.exe", "sha256": "57a92ef8cd710595287dbc9e4d15a57a69716ed70fc38e613e2feb0ee649200b", "sizeBytes": 2704384, "licenseEvidence": { "relativePath": "licenses/telemetry-probe.txt", "sha256": "1ffe78102cfe18d15a9d7d3bd99613207b7d4f4b9cc1c2223fd48c69759252ce" }, "sbomEvidence": { "relativePath": "sbom/telemetry-probe.cdx.json", "sha256": "7710b15a08b6be0d40e9b3773ec1418466df71287c8d5d31686d46dc15433572" } },
-        "linux-x64": { "relativePath": "bin/telemetry-probe", "sha256": "cb31f34f09f82c94774dacf08960a306e9435e5c014576b68a43620ce49a3949", "sizeBytes": 2474110, "licenseEvidence": { "relativePath": "licenses/telemetry-probe.txt", "sha256": "1ffe78102cfe18d15a9d7d3bd99613207b7d4f4b9cc1c2223fd48c69759252ce" }, "sbomEvidence": { "relativePath": "sbom/telemetry-probe.cdx.json", "sha256": "790de8295e3cee7a912e665c08ea151be41b63f64187a79dda2a000ce974c7b6" } }
+        "darwin-arm64": { "relativePath": "bin/telemetry-probe", "sha256": null, "sizeBytes": null },
+        "win32-x64": { "relativePath": "bin/telemetry-probe.exe", "sha256": null, "sizeBytes": null },
+        "linux-x64": { "relativePath": "bin/telemetry-probe", "sha256": null, "sizeBytes": null }
       }
     },
     {

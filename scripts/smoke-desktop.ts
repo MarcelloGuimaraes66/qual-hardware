@@ -14,6 +14,7 @@ interface PackagePaths {
   executable: string;
   asar: string;
   bundle?: string;
+  bootstrap?: boolean;
 }
 
 interface RunningDesktop {
@@ -22,6 +23,8 @@ interface RunningDesktop {
   debuggerUrl: string;
   logs: string[];
   userData: string;
+  appProcessId: number;
+  bootstrap: boolean;
 }
 
 const projectRoot = resolve(import.meta.dirname, "..");
@@ -38,9 +41,14 @@ function packagePaths(): PackagePaths {
   }
   if (process.platform === "win32") {
     const application = join(releaseRoot, "win-unpacked");
+    const version = execFileSync(process.execPath, ["-e", "process.stdout.write(require('./package.json').version)"], {
+      cwd: projectRoot, encoding: "utf8",
+    });
+    const portable = join(releaseRoot, `Qual-Hardware-${version}-windows-x64-portable.exe`);
     return {
-      executable: join(application, "Qual Hardware.exe"),
+      executable: process.env.QUAL_HARDWARE_SMOKE_PORTABLE === "1" ? portable : join(application, "Qual Hardware.exe"),
       asar: join(application, "resources", "app.asar"),
+      bootstrap: process.env.QUAL_HARDWARE_SMOKE_PORTABLE === "1",
     };
   }
   const application = join(releaseRoot, "linux-unpacked");
@@ -78,7 +86,7 @@ async function waitFor<T>(description: string, action: () => Promise<T | null>, 
   throw new Error(`Timed out waiting for ${description}${lastError instanceof Error ? `: ${lastError.message}` : ""}`);
 }
 
-async function launchDesktop(executable: string, userData: string): Promise<RunningDesktop> {
+async function launchDesktop(executable: string, userData: string, bootstrap = false): Promise<RunningDesktop> {
   const debugPort = await freePort();
   const logs: string[] = [];
   const child = spawn(executable, [
@@ -113,7 +121,9 @@ async function launchDesktop(executable: string, userData: string): Promise<Runn
     throw new Error(`${error instanceof Error ? error.message : "desktop_start_failed"}; electron logs: ${logs.join("").slice(-4_000)}`);
   }
   assert.equal(new URL(page.origin).hostname, "127.0.0.1");
-  return { child, ...page, logs, userData };
+  const health = await fetch(`${page.origin}/api/health`, { signal: AbortSignal.timeout(10_000) }).then((response) => response.json()) as { processId: number };
+  assert(Number.isSafeInteger(health.processId) && health.processId > 0);
+  return { child, ...page, logs, userData, appProcessId: health.processId, bootstrap };
 }
 
 async function rendererValue<T>(debuggerUrl: string, expression: string): Promise<T> {
@@ -163,6 +173,15 @@ async function waitForExit(child: ChildProcess, timeoutMs = 15_000): Promise<voi
 }
 
 async function stopDesktop(application: RunningDesktop): Promise<void> {
+  if (application.bootstrap && process.platform === "win32") {
+    try {
+      execFileSync("taskkill.exe", ["/PID", String(application.appProcessId), "/T", "/F"], { stdio: "pipe", windowsHide: true });
+    } catch { /* The extracted Electron process may already have exited. */ }
+    await waitFor("the portable Electron process tree to exit", async () => {
+      try { process.kill(application.appProcessId, 0); return null; } catch { return true; }
+    }, 15_000);
+    return;
+  }
   if (application.child.exitCode !== null) return;
   application.child.kill("SIGTERM");
   try {
@@ -182,6 +201,22 @@ async function launchDuplicate(paths: PackagePaths, userData: string): Promise<v
     return;
   }
   const duplicate = spawn(paths.executable, [`--user-data-dir=${userData}`], { stdio: "ignore" });
+  if (process.platform === "win32" && paths.bootstrap) {
+    try {
+      // The portable bootstrap must finish extracting its own private copy,
+      // launch Electron, observe the application lock, and exit naturally.
+      // Killing NSIS mid-extraction does not exercise single-instance behavior
+      // and can leave Chromium resource handles in an indeterminate state.
+      await waitForExit(duplicate, 90_000);
+    } catch (error) {
+      if (duplicate.exitCode === null && duplicate.pid) {
+        try { execFileSync("taskkill.exe", ["/PID", String(duplicate.pid), "/T", "/F"], { stdio: "pipe", windowsHide: true }); }
+        catch { /* The duplicate completed between the checks. */ }
+      }
+      throw error;
+    }
+    return;
+  }
   await waitForExit(duplicate, 10_000);
 }
 
@@ -191,13 +226,15 @@ async function api<T>(origin: string, path: string, init?: RequestInit): Promise
   return response.json() as Promise<T>;
 }
 
-async function verifyBinaryArchitecture(file: string): Promise<void> {
+async function verifyBinaryArchitecture(file: string, allowWindowsBootstrap = false): Promise<void> {
   const binary = await readFile(file);
   if (process.platform === "win32") {
     assert.equal(binary.subarray(0, 2).toString("ascii"), "MZ");
     const peOffset = binary.readUInt32LE(0x3c);
     assert.equal(binary.subarray(peOffset, peOffset + 4).toString("binary"), "PE\0\0");
-    assert.equal(binary.readUInt16LE(peOffset + 4), 0x8664, "Windows package must be x64");
+    const machine = binary.readUInt16LE(peOffset + 4);
+    if (allowWindowsBootstrap) assert([0x014c, 0x8664].includes(machine), "NSIS bootstrap must be a valid x86 or x64 PE");
+    else assert.equal(machine, 0x8664, "Windows Electron executable must be AMD64");
   } else if (process.platform === "darwin") {
     assert.equal(binary.readUInt32LE(0), 0xfeedfacf, "macOS package must be 64-bit Mach-O");
     assert.equal(binary.readUInt32LE(4), 0x0100000c, "macOS package must be arm64");
@@ -221,7 +258,10 @@ async function fileExists(file: string): Promise<boolean> {
 async function verifyPackage(paths: PackagePaths): Promise<void> {
   await stat(paths.executable);
   await stat(paths.asar);
-  await verifyBinaryArchitecture(paths.executable);
+  await verifyBinaryArchitecture(paths.executable, paths.bootstrap);
+  if (paths.bootstrap && process.platform === "win32") {
+    await verifyBinaryArchitecture(join(releaseRoot, "win-unpacked", "Qual Hardware.exe"));
+  }
 
   const require = createRequire(import.meta.url);
   const asarCli = join(dirname(require.resolve("@electron/asar/package.json")), "bin", "asar.js");
@@ -288,7 +328,8 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
   for (const contract of [runtimeManifest.authorityContract, runtimeManifest.pipelineContract, runtimeManifest.sourceLock]) {
     assert(contract);
     const bytes = await readFile(join(dirname(paths.asar), contract.relativePath));
-    assert.equal(createHash("sha256").update(bytes).digest("hex"), contract.sha256);
+    const canonicalBytes = Buffer.from(bytes.toString("utf8").replace(/\r\n?/g, "\n"), "utf8");
+    assert.equal(createHash("sha256").update(canonicalBytes).digest("hex"), contract.sha256);
   }
   const sourceLock = JSON.parse(await readFile(join(dirname(paths.asar), runtimeManifest.sourceLock!.relativePath), "utf8")) as {
     schemaVersion?: string;
@@ -301,24 +342,28 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
   assert.equal(sourceLock.assets?.length, 9);
   const selectedTarget = process.platform === "darwin" ? "darwin-arm64" : process.platform === "win32" ? "win32-x64" : "linux-x64";
   const telemetryArtifact = runtimeManifest.assets?.find((asset) => asset.id === "telemetry-probe")?.artifacts?.[selectedTarget];
-  assert(telemetryArtifact?.sha256 && telemetryArtifact.sizeBytes && telemetryArtifact.licenseEvidence && telemetryArtifact.sbomEvidence,
-    "packaged telemetry probe must have complete candidate integrity evidence");
+  assert(telemetryArtifact && telemetryArtifact.sha256 === null && telemetryArtifact.sizeBytes === null,
+    "the main application must not embed a native telemetry probe");
   const selectedRuntimeRoot = join(dirname(paths.asar), "resources", "calibration", selectedTarget);
-  const telemetryPath = join(selectedRuntimeRoot, telemetryArtifact.relativePath);
-  const telemetryInfo = await stat(telemetryPath);
-  assert.equal(telemetryInfo.size, telemetryArtifact.sizeBytes);
-  assert.equal(createHash("sha256").update(await readFile(telemetryPath)).digest("hex"), telemetryArtifact.sha256);
-  if (process.platform !== "win32") assert(telemetryInfo.mode & 0o111, "packaged telemetry probe must be executable");
-  for (const evidence of [telemetryArtifact.licenseEvidence, telemetryArtifact.sbomEvidence]) {
-    assert.equal(createHash("sha256").update(await readFile(join(selectedRuntimeRoot, evidence.relativePath))).digest("hex"), evidence.sha256);
+  assert.equal(await fileExists(selectedRuntimeRoot), false, "native runtime files must be installed only from a signed .qhruntime");
+  const trust = JSON.parse(await readFile(join(dirname(paths.asar), "resources", "calibration", "runtime-trust.json"), "utf8")) as { keys?: unknown[] };
+  assert((trust.keys?.length ?? 0) > 0, "runtime public trust keys must be packaged");
+}
+
+async function removeSmokeData(path: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try { await rm(path, { recursive: true, force: true }); return; }
+    catch (error) { lastError = error; await new Promise((resolveWait) => setTimeout(resolveWait, 250)); }
   }
+  throw lastError;
 }
 
 async function verifyReleaseArtifacts(): Promise<void> {
   const metadata = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8")) as { version: string };
   if (process.platform === "win32") {
     const portable = join(releaseRoot, `Qual-Hardware-${metadata.version}-windows-x64-portable.exe`);
-    if (await fileExists(portable)) await verifyBinaryArchitecture(portable);
+    if (await fileExists(portable)) await verifyBinaryArchitecture(portable, true);
     return;
   }
   if (process.platform === "darwin") {
@@ -384,31 +429,34 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(openedCalibration, true, "the permanent calibration entry point must open");
   const calibrationText = await waitFor("calibration actions", async () => {
     const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
-    const fullActionVisible = text.includes("Calibração completa — 3 repetições") ||
-      text.includes("Validação física completa — diagnóstico");
-    return text.includes("Teste rápido interno — diagnóstico") && fullActionVisible ? text : null;
+    const fullActionVisible = text.includes("Qualificação comercial — 3 repetições") ||
+      text.includes("Qualificação física — diagnóstico");
+    return text.includes("Diagnóstico — 10 minutos") && text.includes("Validação — 60 minutos") && fullActionVisible ? text : null;
   });
   assert(calibrationText.includes("Medição avançada de CPU/GPU"));
   await rendererValue(application.debuggerUrl, "location.assign('data:text/html,blocked'); true");
   await new Promise((resolveWait) => setTimeout(resolveWait, 300));
   assert.equal(await rendererValue<string>(application.debuggerUrl, "location.origin"), application.origin, "non-loopback navigation must be blocked");
 
-  const health = await api<{ status: string; storage: string }>(application.origin, "/api/health");
-  assert.deepEqual(health, { status: "ok", storage: "sqlite" });
+  const health = await api<{ status: string; storage: string; processId: number }>(application.origin, "/api/health");
+  assert.equal(health.status, "ok");
+  assert.equal(health.storage, "sqlite");
+  assert.equal(health.processId, application.appProcessId);
   const catalog = await api<{ source: string; channel: string; automatic: boolean; hardwareCount: number }>(application.origin, "/api/catalog/status");
   assert(["bundled", "cached", "remote"].includes(catalog.source));
   assert.equal(catalog.channel, "official_public");
   assert.equal(catalog.automatic, true);
-  assert.equal(catalog.hardwareCount, 21);
+  assert.equal(catalog.hardwareCount, 22);
   const catalogSources = await api<Array<{ id: string }>>(application.origin, "/api/catalog/sources");
   assert(catalogSources.length >= 39);
   const catalogPublications = await api<Array<{ sequence: number }>>(application.origin, "/api/catalog/publications");
   if (catalog.source !== "bundled") assert(catalogPublications.length >= 1);
   const hardware = await api<HardwareNodeTemplate[]>(application.origin, "/api/catalog/hardware");
-  assert.equal(hardware.length, 21);
+  assert.equal(hardware.length, 22);
   assert.equal(hardware.filter((item) => item.operatingSystemFamily === "macos").length, 5);
   assert.ok(hardware.some((item) => item.id === "apple-macbook-pro-m4max-14c-32gpu-36gb"));
   assert(hardware.some((item) => item.id === "laptop-vivobook-s16-285h-32gb-user"));
+  assert(hardware.some((item) => item.id === "asus-g835lx-ultra9-275hx-rtx5090l"));
   const components = await api<Array<{ id: string; technicalSpecification?: { schemaVersion: string; completeness: { procurementReady: boolean } } }>>(application.origin, "/api/catalog/components");
   assert(components.length > 200);
   assert(components.every((item) => item.technicalSpecification?.schemaVersion === "qual-hardware-component-technical-specification/2.0.0"));
@@ -417,9 +465,11 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(specificationCoverage.procurementReadyCount, 3, "only the three reviewed exact-SKU CPU/GPU snapshots may satisfy the technical-specification gate");
   const specificationHistory = await api<unknown[]>(application.origin, `/api/catalog/components/${encodeURIComponent(components[0]!.id)}/specifications/history`);
   assert(specificationHistory.length >= 1);
-  const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();
+  const htmlResponse = await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) });
+  const html = await htmlResponse.text();
   assert(html.includes("Qual Hardware"));
-  assert(html.includes("Content-Security-Policy"));
+  assert(htmlResponse.headers.get("content-security-policy")?.includes("frame-ancestors 'none'"));
+  assert(!/http-equiv=["']Content-Security-Policy/i.test(html), "CSP must have a single HTTP-header source");
 
   const scenario = createDefaultScenario(4);
   scenario.projectName = "Packaged desktop smoke test";
@@ -448,13 +498,13 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(runtime.readyForQuickTest, true);
   assert.equal(runtime.readyForFullQualification, false, "diagnostic runtime must fail closed for commercial qualification");
   assert.equal(runtime.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
-  assert.equal(runtime.assets.find((asset) => asset.id === "telemetry-probe")?.status, "verified");
+  assert.equal(runtime.assets.find((asset) => asset.id === "telemetry-probe")?.status, "missing");
   assert(runtime.reasons.length > 0);
 
   const fullAttempt = await fetch(`${application.origin}/api/calibration-sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ recommendationId: recommendation.id, mode: "full", targetHardwareTemplateId: null, advancedTelemetry: true }),
+    body: JSON.stringify({ recommendationId: recommendation.id, mode: "qualification", targetHardwareTemplateId: null, advancedTelemetry: true }),
     signal: AbortSignal.timeout(15_000),
   });
   assert.equal(fullAttempt.status, 503, "full qualification must remain blocked without verified packaged assets");
@@ -486,7 +536,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(completedCalibration.cleanup?.state, "completed");
   assert.equal(completedCalibration.cleanup?.remainingBytes, 0);
   assert.equal(completedCalibration.cleanup?.bytesRemoved, completedCalibration.cleanup?.bytesTemporary);
-  assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/3.0.0");
+  assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/4.0.0");
   assert.equal(completedCalibration.result?.developmentOnly, true);
   assert.equal(completedCalibration.result?.externalRequestCount, 0);
   assert.equal(completedCalibration.result?.openAiRequestCount, 0);
@@ -498,7 +548,8 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(await fileExists(completedEvidencePath), true, "the compact successful evidence must survive temporary cleanup");
   assert((await stat(completedEvidencePath)).size <= 10 * 1024 * 1024, "successful evidence must respect the 10 MB limit");
   assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "unavailable");
-  for (const stage of ["thermal_sustain", "job_scheduler", "intelligence_scheduler", "database_persistence", "dashboard_queries"] as const) {
+  assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "thermal_sustain")?.evidenceStatus, "unavailable");
+  for (const stage of ["job_scheduler", "intelligence_scheduler", "database_persistence", "dashboard_queries"] as const) {
     assert.equal(completedCalibration.result?.stages.find((item) => item.stage === stage)?.evidenceStatus, "measured");
   }
   assert.equal(completedCalibration.result?.pipelineEvidence?.jobSchedulerExecuted, true);
@@ -622,11 +673,13 @@ async function main(): Promise<void> {
   const userData = await mkdtemp(join(tmpdir(), "qual-hardware-desktop-smoke-"));
   let running: RunningDesktop | null = null;
   try {
-    running = await launchDesktop(paths.executable, userData);
+    running = await launchDesktop(paths.executable, userData, paths.bootstrap);
     const { scenarioId, recommendationId } = await exerciseApplication(running);
 
     await launchDuplicate(paths, userData);
-    assert.equal(running.child.exitCode, null, "second instance must not terminate the primary instance");
+    const primaryHealth = await api<{ status: string; processId: number }>(running.origin, "/api/health");
+    assert.equal(primaryHealth.status, "ok", "second instance must not terminate the primary instance");
+    assert.equal(primaryHealth.processId, running.appProcessId);
     const startedForShutdown = await api<{ delivery: string; session: { id: string } }>(running.origin, "/api/calibration-sessions", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -634,17 +687,34 @@ async function main(): Promise<void> {
     });
     assert.equal(startedForShutdown.delivery, "internal");
     const shutdownCalibrationSessionId = startedForShutdown.session.id;
+    await waitFor("calibration worker to become active before forced shutdown", async () => {
+      const current = await api<{ state: string; error?: string | null }>(
+        running!.origin,
+        `/api/calibration-sessions/${shutdownCalibrationSessionId}`,
+      );
+      if (["failed", "cancelled", "interrupted", "expired", "completed"].includes(current.state)) {
+        throw new Error(`calibration became terminal before forced shutdown: ${current.state}:${current.error ?? "no-error"}`);
+      }
+      return ["discovering", "validating", "qualifying", "finalizing"].includes(current.state) ? current : null;
+    }, 15_000);
     await stopDesktop(running);
     running = null;
 
-    running = await launchDesktop(paths.executable, userData);
+    running = await launchDesktop(paths.executable, userData, paths.bootstrap);
     const scenarios = await api<ScenarioRecord[]>(running.origin, "/api/scenarios");
     assert(scenarios.some((scenario) => scenario.id === scenarioId), "SQLite data did not persist across restarts");
-    const shutdownCalibration = await api<{
-      state: string;
-      cleanup: { state: string; remainingBytes: number } | null;
-      diagnostic?: { fileName: string; status: string };
-    }>(running.origin, `/api/calibration-sessions/${shutdownCalibrationSessionId}`);
+    const shutdownCalibration = await waitFor("interrupted-session reconciliation", async () => {
+      const current = await api<{
+        state: string;
+        cleanup: { state: string; remainingBytes: number } | null;
+        diagnostic?: { fileName: string; status: string };
+      }>(running!.origin, `/api/calibration-sessions/${shutdownCalibrationSessionId}`);
+      if (["failed", "expired", "completed"].includes(current.state)) {
+        throw new Error(`unexpected reconciled state ${current.state}`);
+      }
+      return ["cancelled", "interrupted"].includes(current.state) && current.cleanup?.state === "completed" && current.diagnostic
+        ? current : null;
+    }, 30_000);
     assert(["cancelled", "interrupted"].includes(shutdownCalibration.state));
     assert.equal(shutdownCalibration.cleanup?.state, "completed");
     assert.equal(shutdownCalibration.cleanup?.remainingBytes, 0);
@@ -668,7 +738,7 @@ async function main(): Promise<void> {
     if (process.env.QUAL_HARDWARE_KEEP_SMOKE_DATA === "1") {
       console.log(`Smoke data preserved by explicit request: ${userData}`);
     } else {
-      await rm(userData, { recursive: true, force: true });
+      await removeSmokeData(userData);
       console.log(`Temporary smoke data removed: ${userData}`);
     }
   }

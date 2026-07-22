@@ -40,13 +40,28 @@ import {
 } from "./calibrationTemporaryFiles.js";
 import type {
   CalibrationKernelControlMessage,
+  CalibrationKernelBootstrapMessage,
   CalibrationKernelDiagnosticPayload,
   CalibrationKernelWorkerInput,
   CalibrationKernelWorkerMessage,
 } from "./calibrationKernelProtocol.js";
 import { calibrationFailureWasCancelled } from "./calibrationKernelProtocol.js";
 
-const input = workerData as CalibrationKernelWorkerInput;
+type UtilityParentPort = {
+  on(event: "message", listener: (event: { data?: unknown } | unknown) => void): void;
+  postMessage(message: unknown): void;
+};
+const utilityParentPort = (process as NodeJS.Process & { parentPort?: UtilityParentPort }).parentPort;
+let input = workerData as CalibrationKernelWorkerInput;
+let started = Boolean(workerData);
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = ((resource: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(resource instanceof Request ? resource.url : resource.toString());
+  if (!new Set(["127.0.0.1", "localhost", "[::1]"]).has(url.hostname)) {
+    throw new Error(`calibration_external_network_blocked:${url.hostname}`);
+  }
+  return nativeFetch(resource, init);
+}) as typeof fetch;
 let cancelled = false;
 let activeWorkspace: CalibrationWorkspace | null = null;
 let activeDatabase: DatabaseSync | null = null;
@@ -61,7 +76,7 @@ const diagnosticTierResults: CalibrationTierResult[] = [];
 const diagnosticRepetitions: CalibrationRepetitionResult[] = [];
 const diagnosticMeasurements: PipelinePhaseMeasurement[] = [];
 const diagnosticCreatedAt = new Date().toISOString();
-parentPort?.on("message", (message: CalibrationKernelControlMessage) => {
+function controlMessage(message: CalibrationKernelControlMessage): void {
   if (message.type === "cancel") {
     cancelled = true;
     return;
@@ -72,11 +87,14 @@ parentPort?.on("message", (message: CalibrationKernelControlMessage) => {
   checkpointWaiters.delete(message.checkpointId);
   if (message.type === "checkpoint_committed") waiter.resolve();
   else waiter.reject(new Error(`calibration_checkpoint_persistence_failed:${message.error}`));
-});
+}
+
+parentPort?.on("message", controlMessage);
 
 function send(message: CalibrationKernelWorkerMessage): void {
   if (message.type === "progress") lastProgress = message.progress;
-  parentPort?.postMessage(message);
+  if (parentPort) parentPort.postMessage(message);
+  else utilityParentPort?.postMessage(message);
 }
 
 function terminalDiagnostic(
@@ -442,13 +460,15 @@ async function run(): Promise<void> {
     });
     if (!tierPassed) break;
   }
-  if (input.plan.mode === "full" && discoveryPassed) {
+  if (input.plan.mode !== "quick" && discoveryPassed) {
     selectedTier = highestPassedDiscoveryTier ?? 1;
+    const requiredRepetitions = input.plan.qualification.repetitions;
+    const progressStage = input.plan.mode === "qualification" ? "qualifying" : "validating";
     let qualified = false;
     while (!qualified) {
       repetitions.length = 0;
       const resultsAtTier: CalibrationTierResult[] = [];
-      for (let repetition = 1; repetition <= 3; repetition += 1) {
+      for (let repetition = 1; repetition <= requiredRepetitions; repetition += 1) {
         const repetitionStartedAt = new Date().toISOString();
         const failures: string[] = [];
         for (const phase of input.plan.phases) {
@@ -461,11 +481,11 @@ async function run(): Promise<void> {
             const operationIndex = ((repetition - 1) * input.plan.phases.length + input.plan.phases.indexOf(phase)) *
               REQUIRED_CALIBRATION_COMPUTE_MODES.length + modeIndex;
             const qualificationProgress = {
-              phase: phase.name, stage: "qualifying", tier: selectedTier, repetition, computeMode,
+              phase: phase.name, stage: progressStage, tier: selectedTier, repetition, computeMode,
               attempt,
               percent: 30 + operationIndex /
-                (3 * input.plan.phases.length * REQUIRED_CALIBRATION_COMPUTE_MODES.length) * 65,
-              message: `Repetição ${repetition}/3 · ${phase.name} · ${computeMode === "cpu_only" ? "CPU" : "GPU"} · ${selectedTier} câmeras.`,
+                (requiredRepetitions * input.plan.phases.length * REQUIRED_CALIBRATION_COMPUTE_MODES.length) * 65,
+              message: `Repetição ${repetition}/${requiredRepetitions} · ${phase.name} · ${computeMode === "cpu_only" ? "CPU" : "GPU"} · ${selectedTier} câmeras.`,
             };
             send({ type: "progress", progress: { ...qualificationProgress, updatedAt: new Date().toISOString() } });
             const measurement = await pipeline.executePhase({
@@ -478,10 +498,10 @@ async function run(): Promise<void> {
             failures.push(...metric.failures);
           }
           const qualificationProgress = {
-            phase: phase.name, stage: "qualifying", tier: selectedTier, repetition, attempt,
+            phase: phase.name, stage: progressStage, tier: selectedTier, repetition, attempt,
             percent: 30 + ((((repetition - 1) * input.plan.phases.length + input.plan.phases.indexOf(phase) + 1) /
-              (3 * input.plan.phases.length))) * 65,
-            message: `Repetição ${repetition}/3 · ${phase.name} · CPU e GPU concluídos.`,
+              (requiredRepetitions * input.plan.phases.length))) * 65,
+            message: `Repetição ${repetition}/${requiredRepetitions} · ${phase.name} · CPU e GPU concluídos.`,
           };
           await persistCheckpointAndReclaim({
             workspace, ownerPhase, checkpointPhase: "qualification", tier: selectedTier, repetition, attempt, fingerprint,
@@ -496,17 +516,17 @@ async function run(): Promise<void> {
         repetitions.push({ repetition: repetition as 1 | 2 | 3, tier: selectedTier, startedAt: repetitionStartedAt,
           completedAt: new Date().toISOString(), passed, safeCameraCapacity: passed ? selectedTier : 0, failures: [...new Set(failures)] });
         if (!passed) break;
-        if (repetition < 3) await delay(input.plan.qualification.cooldownSeconds * 1_000 * input.timeScale);
+        if (repetition < requiredRepetitions) await delay(input.plan.qualification.cooldownSeconds * 1_000 * input.timeScale);
       }
       tierResults.push(...resultsAtTier);
-      qualified = repetitions.length === 3 && repetitions.every((item) => item.passed);
+      qualified = repetitions.length === requiredRepetitions && repetitions.every((item) => item.passed);
       if (!qualified) {
         const currentIndex = input.plan.cameraTiers.indexOf(selectedTier);
         if (currentIndex <= 0) break;
         selectedTier = input.plan.cameraTiers[currentIndex - 1]!;
       }
     }
-  } else if (input.plan.mode !== "full") {
+  } else if (input.plan.mode === "quick") {
     for (const phase of input.plan.phases) {
       const attempt = checkpointSequence + 1;
       const ownerPhase = `quick-${selectedTier}-${phase.name}`;
@@ -886,10 +906,39 @@ async function run(): Promise<void> {
   send({ type: "result", result });
 }
 
-void run().catch(async (error: unknown) => {
-  await finalizeTemporaryManifest();
-  const detail = error instanceof Error ? error.message : String(error);
-  send(calibrationFailureWasCancelled(cancelled, detail)
-    ? { type: "cancelled", detail, diagnostic: terminalDiagnostic("cancelled", detail) }
-    : { type: "failed", error: detail, diagnostic: terminalDiagnostic("failed", detail) });
-});
+async function runWorker(): Promise<void> {
+  try {
+    await run();
+  } catch (error: unknown) {
+    await finalizeTemporaryManifest();
+    const detail = error instanceof Error ? error.message : String(error);
+    send(calibrationFailureWasCancelled(cancelled, detail)
+      ? { type: "cancelled", detail, diagnostic: terminalDiagnostic("cancelled", detail) }
+      : { type: "failed", error: detail, diagnostic: terminalDiagnostic("failed", detail) });
+  } finally {
+    // A terminal message is the ownership hand-off to the coordinator. Let the
+    // isolated worker leave cleanly instead of making the parent kill it from
+    // inside the message callback. Abruptly killing an Electron utility process
+    // here can invalidate the inherited ICU descriptor used by a later fork on
+    // Windows portable builds.
+    parentPort?.close();
+    if (utilityParentPort) setImmediate(() => process.exit(0));
+  }
+}
+
+if (started) {
+  void runWorker();
+} else if (utilityParentPort) {
+  utilityParentPort.on("message", (event) => {
+    const raw = event && typeof event === "object" && "data" in event ? event.data : event;
+    if (!started && raw && typeof raw === "object" && (raw as CalibrationKernelBootstrapMessage).type === "start") {
+      input = (raw as CalibrationKernelBootstrapMessage).input;
+      started = true;
+      void runWorker();
+      return;
+    }
+    if (started) controlMessage(raw as CalibrationKernelControlMessage);
+  });
+} else {
+  throw new Error("calibration_worker_parent_port_unavailable");
+}

@@ -88,7 +88,7 @@ function repetitions(): CalibrationRepetitionResult[] {
 
 function validInput() {
   return {
-    mode: "full" as const,
+    mode: "qualification" as const,
     runtimeReady: true,
     authorityAndProfileExact: true,
     timeScale: 1,

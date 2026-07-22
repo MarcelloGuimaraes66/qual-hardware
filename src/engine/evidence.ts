@@ -42,7 +42,7 @@ export function isPublicObservationEligible(observation: PublicBenchmarkObservat
 }
 
 export function isPhysicalAnchorEligible(run: LocalCalibrationRun): boolean {
-  if (run.workloadContractVersion !== WORKLOAD_CONTRACT_VERSION || run.mode !== "full") return false;
+  if (run.workloadContractVersion !== WORKLOAD_CONTRACT_VERSION || (run.mode !== "qualification" && run.mode !== "full")) return false;
   if (run.executionMode !== "production_pipeline" || run.developmentOnly === true) return false;
   if (run.externalRequestCount !== 0 || run.openAiRequestCount !== 0) return false;
   if (run.pipelineEvidence?.complete !== true || run.qualityGate?.eligibleForCapacityExtrapolation !== true) return false;

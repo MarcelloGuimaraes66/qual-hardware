@@ -67,7 +67,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
       advancedTelemetry: false,
     });
     await store.saveCalibrationSession(session);
-    await store.saveCalibrationSession({ ...session, state: "cancelling" });
+    await store.saveCalibrationSession({ ...session, state: "validating" });
     await store.saveCalibrationSession({ ...session, state: "cancelled", completedAt: new Date().toISOString() });
     expect((await store.getCalibrationSession(session.id))?.state).toBe("cancelled");
     await store.close();
@@ -84,6 +84,47 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
       expect(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)).toBeTruthy();
     }
     database.close();
+  });
+
+  it("backs up and transactionally migrates the legacy v2 session-state constraint", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-session-state-migration-"));
+    cleanupDirectories.push(directory);
+    const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
+    const firstStore = new SqlitePlannerStore(databasePath);
+    const session = createInternalCalibrationSession({
+      plan: createCalibrationPlan(createDefaultScenario(8), "qualification", HARDWARE_CATALOG[0]!.id),
+      recommendationId: "00000000-0000-4000-8000-000000000310",
+      scenarioId: "00000000-0000-4000-8000-000000000311",
+      advancedTelemetry: true,
+    });
+    await firstStore.saveCalibrationSession(session);
+    await firstStore.close();
+
+    const legacy = new DatabaseSync(databasePath);
+    const event = legacy.prepare("SELECT event_id,session_id,session_json,created_at FROM calibration_session_events").get() as Record<string, unknown>;
+    legacy.exec(`DROP TABLE calibration_session_events;
+      CREATE TABLE calibration_session_events (
+        event_id INTEGER PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES calibration_sessions_v2(id),
+        state TEXT NOT NULL CHECK (state IN ('pending','launching','running','cancelling','cancelled','completed','failed','interrupted','expired')),
+        session_json TEXT NOT NULL CHECK (json_valid(session_json)),
+        created_at TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX calibration_session_events_latest_idx ON calibration_session_events(session_id,event_id DESC);`);
+    legacy.prepare("INSERT INTO calibration_session_events(event_id,session_id,state,session_json,created_at) VALUES(?,?,?,?,?)")
+      .run(Number(event.event_id), String(event.session_id), "running", String(event.session_json), String(event.created_at));
+    legacy.close();
+
+    const migrated = new SqlitePlannerStore(databasePath);
+    expect(migrated.calibrationExtensionReady).toBe(true);
+    await migrated.close();
+    const reopened = new DatabaseSync(databasePath, { readOnly: true });
+    expect((reopened.prepare("SELECT state FROM calibration_session_events").get() as { state: string }).state).toBe("qualifying");
+    expect((reopened.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check).toBe("ok");
+    reopened.close();
+    const backups = await readdir(join(directory, "schema-backups"));
+    expect(backups).toHaveLength(1);
+    expect(backups[0]).toMatch(/^qual-hardware-pre-autonomous-state-migration-.*\.sqlite$/);
   });
 
   it("commits a consolidated import, provenance, predictions and assessments atomically", async () => {

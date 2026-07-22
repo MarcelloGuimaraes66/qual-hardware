@@ -51,7 +51,7 @@ describe("calibration hardware telemetry", () => {
       approvedThermalEvidence: true,
     });
     expect(parseApprovedTelemetryProbe(JSON.stringify(probePayload({ gpuUtilizationPercent: 101 })))).toBeNull();
-    expect(parseApprovedTelemetryProbe(JSON.stringify(probePayload({ platform: "windows" })))).toBe(
+    expect(parseApprovedTelemetryProbe(JSON.stringify(probePayload({ platform: "windows" })))).toEqual(
       process.platform === "win32" ? expect.any(Object) : null,
     );
   });

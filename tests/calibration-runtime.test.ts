@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CALIBRATION_RUNTIME_MANIFEST_VERSION,
   inspectCalibrationRuntime,
 } from "../src/server/calibrationRuntime.js";
 
-const projectRoot = new URL("..", import.meta.url).pathname;
+const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const temporaryRoots: string[] = [];
 const targetKeys = ["darwin-arm64", "win32-x64", "linux-x64"] as const;
 
@@ -84,7 +85,7 @@ afterEach(async () => {
 });
 
 describe("offline calibration runtime manifest", () => {
-  it("ships the candidate telemetry probe but blocks commercial qualification while the remaining runtime is absent", async () => {
+  it("ships no native runtime in the application and blocks commercial qualification", async () => {
     const status = await inspectCalibrationRuntime({
       resourceRoot: projectRoot,
       platform: "linux",
@@ -96,29 +97,23 @@ describe("offline calibration runtime manifest", () => {
     expect(status.readyForQuickTest).toBe(true);
     expect(status.readyForFullQualification).toBe(false);
     expect(status.contracts.every((contract) => contract.status === "verified")).toBe(true);
-    expect(status.assets.find((asset) => asset.id === "telemetry-probe")?.status).toBe("verified");
-    expect(status.assets.filter((asset) => asset.id !== "telemetry-probe").every((asset) => asset.status === "missing")).toBe(true);
+    expect(status.assets.every((asset) => asset.status === "missing")).toBe(true);
     expect(status.reasons).toContain("ffmpeg:missing");
     expect(status.reasons).toContain("runtime-manifest:linux-x64:not-approved");
   });
 
-  it("verifies the packaged telemetry-probe hash, size, license notice and SBOM for all targets", async () => {
+  it("keeps PE, Mach-O and ELF telemetry binaries outside the repository", async () => {
     const selected = [
       ["darwin", "arm64"],
       ["win32", "x64"],
       ["linux", "x64"],
     ] as const;
     for (const [selectedPlatform, architecture] of selected) {
-      const status = await inspectCalibrationRuntime({
-        resourceRoot: projectRoot,
-        platform: selectedPlatform,
-        architecture,
-        env: { PATH: "" },
-      });
-      const telemetry = status.assets.find((asset) => asset.id === "telemetry-probe");
-      expect(telemetry).toMatchObject({ status: "verified", version: "0.1.0", licenseSpdx: "NOASSERTION" });
-      expect(telemetry?.sizeBytes).toBeGreaterThan(2_000_000);
-      expect(status.readyForFullQualification).toBe(false);
+      const target = selectedPlatform === "darwin" ? "darwin-arm64" : selectedPlatform === "win32" ? "win32-x64" : "linux-x64";
+      const executable = selectedPlatform === "win32" ? "telemetry-probe.exe" : "telemetry-probe";
+      await expect(access(join(projectRoot, "resources", "calibration", target, "bin", executable))).rejects.toThrow();
+      const status = await inspectCalibrationRuntime({ resourceRoot: projectRoot, platform: selectedPlatform, architecture, env: { PATH: "" } });
+      expect(status.assets.find((asset) => asset.id === "telemetry-probe")?.status).toBe("missing");
     }
   });
 
@@ -140,7 +135,10 @@ describe("offline calibration runtime manifest", () => {
 
   it("requires execute permission for packaged Unix executables", async () => {
     const root = await makeRuntimeFixture("linux-x64", { nonExecutableId: "ffmpeg" });
-    const status = await inspectCalibrationRuntime({ resourceRoot: root, platform: "linux", architecture: "x64", env: { PATH: "" }, featureMode: "full" });
+    const status = await inspectCalibrationRuntime({
+      resourceRoot: root, platform: "linux", architecture: "x64", env: { PATH: "" }, featureMode: "full",
+      executableAccess: async (path) => !path.endsWith("/ffmpeg") && !path.endsWith("\\ffmpeg"),
+    });
     expect(status.assets.find((asset) => asset.id === "ffmpeg")?.status).toBe("missing");
     expect(status.readyForFullQualification).toBe(false);
   });
