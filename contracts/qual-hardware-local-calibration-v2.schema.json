@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qual-hardware-local-calibration-v2.schema.json",
+  "title": "Qual Hardware Local Calibration Result v2",
+  "type": "object",
+  "required": ["schemaVersion", "id", "planId", "createdAt", "startedAt", "completedAt", "workloadContractVersion", "mode", "fingerprint", "stages", "phases", "artifact", "telemetryCapabilities", "resourceSummaries", "processGroups", "notes"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-local-calibration/2.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "planId": { "type": "string", "format": "uuid" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "workloadContractVersion": { "const": "perceptrum-workload/3.1.0" },
+    "mode": { "enum": ["quick", "full"] },
+    "executionMode": { "enum": ["readiness", "production_pipeline"] },
+    "fingerprint": { "type": "object" },
+    "stages": { "type": "array", "minItems": 6 },
+    "phases": { "type": "array", "minItems": 3, "maxItems": 4 },
+    "qualityGate": { "type": "object" },
+    "artifact": { "type": "object" },
+    "telemetryCapabilities": { "type": "array", "minItems": 1 },
+    "resourceSummaries": { "type": "array", "minItems": 1 },
+    "processGroups": { "type": "array", "minItems": 1 },
+    "notes": { "type": "array" }
+  },
+  "additionalProperties": true
+}

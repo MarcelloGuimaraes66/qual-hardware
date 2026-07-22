@@ -32,6 +32,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS scenarios");
     expect(sql).toContain(") STRICT;");
     expect(sql).toContain(`PRAGMA user_version = ${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}`);
+    expect(sql).toContain("'cancelling','cancelled'");
     expect(sql.toLowerCase()).not.toContain("perceptrum");
     expect(sql.toLowerCase()).not.toContain("postgres");
   });

@@ -20,6 +20,8 @@ interface RunningDesktop {
   origin: string;
   debuggerUrl: string;
   logs: string[];
+  rendererIssues: string[];
+  debuggerSocket: WebSocket;
 }
 
 const projectRoot = resolve(import.meta.dirname, "..");
@@ -83,7 +85,7 @@ async function launchDesktop(executable: string, userData: string): Promise<Runn
     `--remote-debugging-port=${debugPort}`,
   ], {
     cwd: projectRoot,
-    env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" },
+    env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1", QUAL_HARDWARE_SMOKE_TEST: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
@@ -106,7 +108,51 @@ async function launchDesktop(executable: string, userData: string): Promise<Runn
     throw new Error(`${error instanceof Error ? error.message : "desktop_start_failed"}; electron logs: ${logs.join("").slice(-4_000)}`);
   }
   assert.equal(new URL(page.origin).hostname, "127.0.0.1");
-  return { child, ...page, logs };
+  const rendererIssues: string[] = [];
+  const debuggerSocket = await startRendererMonitor(page.debuggerUrl, rendererIssues);
+  return { child, ...page, logs, rendererIssues, debuggerSocket };
+}
+
+async function startRendererMonitor(debuggerUrl: string, issues: string[]): Promise<WebSocket> {
+  return new Promise<WebSocket>((resolveSocket, reject) => {
+    const socket = new WebSocket(debuggerUrl);
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("renderer monitor connection timed out"));
+    }, 5_000);
+    socket.addEventListener("open", () => {
+      socket.send(JSON.stringify({ id: 1, method: "Runtime.enable" }));
+      socket.send(JSON.stringify({ id: 2, method: "Log.enable" }));
+      socket.send(JSON.stringify({ id: 3, method: "Network.enable" }));
+      clearTimeout(timeout);
+      resolveSocket(socket);
+    });
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(String(event.data)) as {
+        method?: string;
+        params?: Record<string, unknown>;
+      };
+      if (message.method === "Runtime.exceptionThrown") {
+        issues.push(`renderer_exception:${JSON.stringify(message.params ?? {})}`);
+      }
+      if (message.method === "Log.entryAdded") {
+        const entry = message.params?.entry as { level?: string; text?: string; source?: string } | undefined;
+        if (entry?.level === "error") issues.push(`renderer_log:${entry.source ?? "unknown"}:${entry.text ?? "unknown"}`);
+      }
+      if (message.method === "Network.loadingFailed") {
+        const failure = message.params as { canceled?: boolean; errorText?: string; type?: string } | undefined;
+        if (!failure?.canceled) issues.push(`network_failure:${failure?.type ?? "unknown"}:${failure?.errorText ?? "unknown"}`);
+      }
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(new Error("renderer monitor connection failed"));
+    }, { once: true });
+  });
+}
+
+function assertRendererClean(application: RunningDesktop): void {
+  assert.deepEqual(application.rendererIssues, [], `unexpected renderer, network or security errors: ${application.rendererIssues.join("\n")}`);
 }
 
 async function rendererValue<T>(debuggerUrl: string, expression: string): Promise<T> {
@@ -156,8 +202,25 @@ async function waitForExit(child: ChildProcess, timeoutMs = 15_000): Promise<voi
 }
 
 async function stopDesktop(application: RunningDesktop): Promise<void> {
+  try {
+    const shutdownResponse = await fetch(`${application.origin}/api/desktop/smoke-shutdown`, {
+      method: "POST",
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!shutdownResponse.ok) throw new Error(`smoke shutdown returned ${shutdownResponse.status}`);
+    await waitFor("the desktop runtime to stop", async () => {
+      try {
+        await fetch(`${application.origin}/api/health`, { signal: AbortSignal.timeout(500) });
+        return null;
+      } catch {
+        return true;
+      }
+    }, 15_000);
+  } catch {
+    if (application.child.exitCode === null) application.child.kill("SIGTERM");
+  }
+  application.debuggerSocket.close();
   if (application.child.exitCode !== null) return;
-  application.child.kill("SIGTERM");
   try {
     await waitForExit(application.child);
   } catch (error) {
@@ -185,12 +248,21 @@ async function api<T>(origin: string, path: string, init?: RequestInit): Promise
 }
 
 async function verifyBinaryArchitecture(file: string): Promise<void> {
+  await verifyPortableBinaryArchitecture(file, process.platform === "win32" ? "payload" : "default");
+}
+
+async function verifyPortableBinaryArchitecture(file: string, mode: "default" | "payload" | "portable-launcher"): Promise<void> {
   const binary = await readFile(file);
   if (process.platform === "win32") {
     assert.equal(binary.subarray(0, 2).toString("ascii"), "MZ");
     const peOffset = binary.readUInt32LE(0x3c);
     assert.equal(binary.subarray(peOffset, peOffset + 4).toString("binary"), "PE\0\0");
-    assert.equal(binary.readUInt16LE(peOffset + 4), 0x8664, "Windows package must be x64");
+    const machine = binary.readUInt16LE(peOffset + 4);
+    if (mode === "portable-launcher") {
+      assert([0x014c, 0x8664].includes(machine), "Windows portable launcher must be x86 or x64 NSIS");
+    } else {
+      assert.equal(machine, 0x8664, "Windows Electron payload must be x64");
+    }
   } else if (process.platform === "darwin") {
     assert.equal(binary.readUInt32LE(0), 0xfeedfacf, "macOS package must be 64-bit Mach-O");
     assert.equal(binary.readUInt32LE(4), 0x0100000c, "macOS package must be arm64");
@@ -209,6 +281,21 @@ async function fileExists(file: string): Promise<boolean> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+async function cleanupTemporaryDirectory(directory: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await rm(directory, { recursive: true, force: true });
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!["EBUSY", "EPERM"].includes(code ?? "")) throw error;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+    }
+  }
+  console.warn(`Smoke data could not be removed after repeated retries: ${directory}`);
+  return false;
 }
 
 async function verifyPackage(paths: PackagePaths): Promise<void> {
@@ -232,8 +319,15 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
     "/contracts/qual-hardware-component-technical-specification-v1.schema.json",
     "/contracts/qual-hardware-procurement-neutral-specification-v1.schema.json",
     "/contracts/qual-hardware-tr-technical-annex-v1.schema.json",
+    "/contracts/qual-hardware-calibration-handoff-v1.schema.json",
+    "/contracts/qual-hardware-calibration-plan-v1.schema.json",
+    "/contracts/qual-hardware-local-calibration-v2.schema.json",
+    "/contracts/qual-hardware-local-calibration-partial-v2.schema.json",
     "/database/sqlite-schema.sql",
     "/node_modules/docx/dist/index.mjs",
+    "/node_modules/@pdf-lib/fontkit/dist/fontkit.es.js",
+    "/node_modules/notosans-fontface/fonts/NotoSans-Regular.ttf",
+    "/node_modules/notosans-fontface/fonts/NotoSans-Bold.ttf",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
   for (const forbidden of [
     "/dist/server/server/index.js",
@@ -245,7 +339,7 @@ async function verifyReleaseArtifacts(): Promise<void> {
   const metadata = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8")) as { version: string };
   if (process.platform === "win32") {
     const portable = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-windows-x64-portable.exe`);
-    if (await fileExists(portable)) await verifyBinaryArchitecture(portable);
+    if (await fileExists(portable)) await verifyPortableBinaryArchitecture(portable, "portable-launcher");
     return;
   }
   if (process.platform === "darwin") {
@@ -314,9 +408,13 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     return text.includes("Teste rápido local") && text.includes("Calibração completa local") ? text : null;
   });
   assert(calibrationText.includes("Medição avançada de CPU/GPU"));
+  const issueCountBeforeBlockedNavigation = application.rendererIssues.length;
   await rendererValue(application.debuggerUrl, "location.assign('data:text/html,blocked'); true");
   await new Promise((resolveWait) => setTimeout(resolveWait, 300));
   assert.equal(await rendererValue<string>(application.debuggerUrl, "location.origin"), application.origin, "non-loopback navigation must be blocked");
+  const blockedNavigationIssues = application.rendererIssues.splice(issueCountBeforeBlockedNavigation);
+  assert(blockedNavigationIssues.length >= 1, "blocked navigation must emit a renderer security event");
+  assert(blockedNavigationIssues.every((issue) => issue.includes("Not allowed to navigate top frame to data URL")), `unexpected blocked-navigation issue: ${blockedNavigationIssues.join("\n")}`);
 
   const health = await api<{ status: string; storage: string }>(application.origin, "/api/health");
   assert.deepEqual(health, { status: "ok", storage: "sqlite" });
@@ -343,8 +441,14 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   const specificationHistory = await api<unknown[]>(application.origin, `/api/catalog/components/${encodeURIComponent(components[0]!.id)}/specifications/history`);
   assert(specificationHistory.length >= 1);
   const html = await (await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) })).text();
+  const htmlResponse = await fetch(`${application.origin}/`, { signal: AbortSignal.timeout(10_000) });
+  const htmlHeaders = htmlResponse.headers;
+  const htmlWithHeaders = await htmlResponse.text();
   assert(html.includes("Qual Hardware"));
-  assert(html.includes("Content-Security-Policy"));
+  assert.equal(html, htmlWithHeaders);
+  assert(htmlHeaders.get("content-security-policy")?.includes("default-src 'self'"));
+  assert(htmlHeaders.get("content-security-policy")?.includes("frame-ancestors 'none'"));
+  assert(!/http-equiv=["']Content-Security-Policy["']/i.test(html), "renderer HTML must not ship a duplicate CSP meta tag");
 
   const scenario = createDefaultScenario(4);
   scenario.projectName = "Packaged desktop smoke test";
@@ -363,12 +467,12 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   }
   const recommendation = recommendations.find((item) => item.policy === "recommended");
   assert(recommendation);
-  for (const format of ["json", "pdf", "xlsx"] as const) {
+  for (const format of ["json", "pdf", "xlsx", "technical-pdf", "technical-docx"] as const) {
     const response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(15_000) });
     assert(response.ok, `${format} report returned ${response.status}`);
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
-    if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
+    if (format === "pdf" || format === "technical-pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
+    if (format === "xlsx" || format === "technical-docx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
     if (format === "json") {
       const report = JSON.parse(new TextDecoder().decode(bytes)) as { schemaVersion: string; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string } }> };
       assert.equal(report.schemaVersion, "capacity-recommendation-export/6.0.0");
@@ -434,6 +538,7 @@ async function main(): Promise<void> {
   try {
     running = await launchDesktop(paths.executable, userData);
     const scenarioId = await exerciseApplication(running);
+    assertRendererClean(running);
 
     await launchDuplicate(paths, userData);
     assert.equal(running.child.exitCode, null, "second instance must not terminate the primary instance");
@@ -443,8 +548,21 @@ async function main(): Promise<void> {
     running = await launchDesktop(paths.executable, userData);
     const scenarios = await api<ScenarioRecord[]>(running.origin, "/api/scenarios");
     assert(scenarios.some((scenario) => scenario.id === scenarioId), "SQLite data did not persist across restarts");
+    assertRendererClean(running);
     await stopDesktop(running);
     running = null;
+
+    if (process.platform === "win32" && process.env.QUAL_HARDWARE_SMOKE_PORTABLE === "1") {
+      const metadata = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8")) as { version: string };
+      const portable = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-windows-x64-portable.exe`);
+      if (await fileExists(portable)) {
+        running = await launchDesktop(portable, userData);
+        await api(running.origin, "/api/health");
+        assertRendererClean(running);
+        await stopDesktop(running);
+        running = null;
+      }
+    }
 
     const databasePath = join(userData, "qual-hardware.sqlite");
     const database = await readFile(databasePath);
@@ -459,8 +577,10 @@ async function main(): Promise<void> {
     if (process.env.QUAL_HARDWARE_KEEP_SMOKE_DATA === "1") {
       console.log(`Smoke data preserved by explicit request: ${userData}`);
     } else {
-      await rm(userData, { recursive: true, force: true });
-      console.log(`Temporary smoke data removed: ${userData}`);
+      const removed = await cleanupTemporaryDirectory(userData);
+      console.log(removed
+        ? `Temporary smoke data removed: ${userData}`
+        : `Temporary smoke data left in place after validation: ${userData}`);
     }
   }
 }

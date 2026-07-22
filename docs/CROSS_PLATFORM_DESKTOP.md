@@ -2,7 +2,7 @@
 
 ## Support contract
 
-The repository has one source tree, `package-lock.json` and build command for Windows 11 x64, macOS 26 Apple Silicon and Ubuntu 24.04 x64. Use Node.js 24 LTS and npm from that installation.
+The repository has one source tree, `package-lock.json` and build command for Windows 11 x64, macOS 26 Apple Silicon and Ubuntu 24.04 x64. Use Node.js `24.18.0` and npm `11.16.0`.
 
 ```sh
 npm ci
@@ -10,6 +10,13 @@ npm run desktop:package
 ```
 
 Build each platform on its native operating system. The project intentionally does not cross-compile all release packages from one machine.
+
+On Windows, the project-scoped launcher first honors an existing `QUAL_HARDWARE_NODE_HOME`, otherwise it provisions the exact official portable Node runtime into `QUAL_HARDWARE_TOOLS_DIR`, `.tools`, or `C:\dev\tools` without changing the machine-global Node installation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\qual-hardware.ps1 setup
+powershell -ExecutionPolicy Bypass -File .\scripts\qual-hardware.ps1 check
+```
 
 ## Outputs
 
@@ -20,7 +27,7 @@ Build each platform on its native operating system. The project intentionally do
 | Ubuntu 24.04 x64 | AppImage | `release/Qual-Hardware-${version}-linux-x64.AppImage` |
 | Ubuntu 24.04 x64 | Debian package | `release/qual-hardware_${version}_amd64.deb` |
 
-`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens that application with a temporary user directory and proves its runtime, official automatic catalog channel, 39-source registry, 21-item fallback catalog, Windows/Ubuntu/macOS recommendation targets, API, calculations, reports, single-instance protection and persistence.
+`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens that application with a temporary user directory and proves its runtime, official automatic catalog channel, 39-source registry, 21-item fallback catalog, Windows/Ubuntu/macOS recommendation targets, API, calculations, reports, single-instance protection and persistence. On Windows, `QUAL_HARDWARE_SMOKE_PORTABLE=1` additionally launches the real portable wrapper with temporary user data.
 
 ## Installation and first launch
 
@@ -46,11 +53,11 @@ All packages use the same public `catalog-*` GitHub Releases. They check automat
 
 The database filename remains `qual-hardware.sqlite` under Electron's native `userData` directory:
 
-- Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite` (expected from the preserved package name; confirm against the current portable before merge).
+- Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite` (confirmed with the packaged 0.2.0 application and restart validation).
 - macOS: `~/Library/Application Support/@aiquimist/qual-hardware/qual-hardware.sqlite` (confirmed by the final packaged app).
 - Ubuntu: `~/.config/@aiquimist/qual-hardware/qual-hardware.sqlite` (expected from the same package name; confirm on the native package).
 
-No build or launch flow migrates, copies or removes an existing database. Back up only while Qual Hardware is fully closed.
+Opening a persistent v1-v8 database migrates it additively to v9 only after SQLite creates a consistent `schema-backups/qual-hardware-pre-v9-*.sqlite` copy. The application never deletes or relocates the database. Back up only while Qual Hardware is fully closed; an older executable must use the preserved pre-v9 copy rather than open the migrated file.
 
 ## Validation commands
 
@@ -100,22 +107,25 @@ For all systems, verify that only loopback is listening, the package runs withou
 ## Local calibration
 
 The permanent **Capacity calibration** area uses the same authenticated handoff
-on macOS, Windows and Ubuntu. It opens `perceptrum://calibration/run`, transfers
-one exact plan over loopback, shows live progress and automatically imports the
-result after Perceptrum has saved it append-only under the operating system's
-real Documents folder at `Qual Hardware/Calibracoes`. `.qhplan.json` and manual
+on macOS, Windows and Ubuntu. It opens `perceptrum://calibration/run`, but the
+URI carries only the handoff version, loopback Qual Hardware origin, session
+UUID and a one-time 256-bit nonce. Perceptrum must first claim the session over
+loopback, then fetch control/plan data, show live progress and automatically
+import the result after saving it append-only under the operating system's real
+Documents folder at `Qual Hardware/Calibracoes`. `.qhplan.json` and manual
 `.qhcal.json` import remain recovery paths.
 
-The packaged runner uses MediaMTX, FFmpeg, the production Intelligence scheduler
-and local AiQ/Qwen. It exposes missing sensors as `unavailable` with a reason,
-never as zero. A 10-minute run is diagnostic; only the complete 60-minute run
-can become a physical anchor after every gate passes. macOS is homologated in
-this run; Windows and Ubuntu remain subject to their native CI plus future
-physical sensor/performance validation. The old PowerShell benchmark remains a
-legacy laboratory path only.
+The Windows protocol/control-plane adapter is packaged and smoke-tested, but its
+current runner is readiness/diagnostic-only. It exposes unavailable measurements
+as `null` with a reason and never turns executable discovery into capacity. Its
+`developmentOnly` and partial artifacts are rejected by Qual Hardware. The
+10/60-minute production gate remains blocked until pinned MediaMTX, ffprobe,
+FFmpeg and AiQ/Qwen payloads (architecture, license and SHA-256) are bundled and
+the real fifteen-stage pipeline is physically validated. macOS and Ubuntu retain
+their contract tests but have not received physical homologation in this run.
 
 While a run is active, **Stop and keep partial data** requests a protected
-loopback cancellation. Perceptrum stops its local workload processes and saves
+loopback cancellation. Perceptrum signals its isolated child and saves
 an append-only `-interrompido.partial.json` diagnostic before confirming the
 stop. Partial files are never imported as capacity anchors and never justify a
 purchase; only a new completed run can do that.

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { z } from "zod";
+import { bodyLimit } from "hono/body-limit";
 import { buildRecommendations, CapacityError } from "../engine/capacity.js";
 import { buildCapacityPredictions, createCalibrationPlan } from "../engine/calibration.js";
 import { buildHistoricalComponentBuilds, deriveComponentCatalog, validateBuildCompatibility } from "../engine/componentCatalog.js";
@@ -17,6 +18,7 @@ import {
   scenarioCreateSchema,
   scenarioUpdateSchema,
 } from "../shared/schemas.js";
+import { CALIBRATION_HANDOFF_VERSION } from "../shared/types.js";
 import type { BenchmarkMetrics, CapacityRecommendation, CalibrationSessionRecord, ComponentBuild, LocalCalibrationRun, RecommendationAlternative } from "../shared/types.js";
 import type { HardwareNodeTemplate } from "../shared/types.js";
 import { createBenchmarkManifest, evidenceValidatesRecommendation, nonceMatches, validateBenchmark } from "./benchmark.js";
@@ -29,6 +31,7 @@ import { findForbiddenBenchmarkData, findForbiddenCalibrationData, safeError } f
 import { RevisionConflictError, type PlannerStore } from "./store.js";
 import {
   authorizeCalibrationSession,
+  authorizeCalibrationClaim,
   calibrationPayloadSha256,
   cancelDeliveredCalibrationSession,
   createCalibrationSession,
@@ -47,6 +50,18 @@ const manifestRequestSchema = z.object({
   slaInferenceLatencyMs: z.number().positive().max(3_600_000).default(10_000),
 });
 const compareRequestSchema = z.object({ scenarioIds: z.array(z.string().uuid()).min(2).max(10) });
+const calibrationClaimSchema = z.object({
+  origin: z.string().url().max(240),
+  runtimeOrigin: z.string().url().max(240),
+  nonce: z.string().regex(/^[A-Za-z0-9_-]{43,128}$/),
+  capabilities: z.object({
+    protocolVersion: z.literal(CALIBRATION_HANDOFF_VERSION),
+    platform: z.string().min(1).max(40).optional(),
+    appVersion: z.string().min(1).max(80).optional(),
+    supportsCancellation: z.boolean(),
+    supportsAdvancedTelemetry: z.boolean(),
+  }).optional(),
+});
 const catalogConfigurationSchema = z.object({
   remoteUrl: z.string().max(2_048).nullable(),
   publicKeyPem: z.string().min(1).max(16_384),
@@ -93,6 +108,12 @@ async function refreshPredictions(store: PlannerStore) {
 function applicationResourcePath(...segments: string[]): string {
   const root = process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
   return resolve(root, ...segments);
+}
+
+async function packageVersion(): Promise<string> {
+  const file = applicationResourcePath("package.json");
+  const packageJson = JSON.parse(await readFile(file, "utf8")) as { version?: string };
+  return packageJson.version ?? process.env.QUAL_HARDWARE_APP_VERSION ?? "unknown";
 }
 
 function currentEvidence(
@@ -147,6 +168,7 @@ export interface ApplicationOptions {
   desktopBridge?: DesktopCalibrationBridge;
   documentsDirectory?: string;
   fetchImpl?: typeof fetch;
+  userDataPath?: string;
 }
 
 export function createApp(
@@ -157,6 +179,8 @@ export function createApp(
   const app = new Hono();
   const calibrationDirectoryOptions = options.documentsDirectory ? { documentsDirectory: options.documentsDirectory } : {};
   const volatileCalibrationTokens = new Map<string, string>();
+  const claimingCalibrationSessions = new Set<string>();
+  let calibrationLaunchInProgress = false;
   app.use("*", async (context, next) => {
     await next();
     context.header("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'");
@@ -172,6 +196,7 @@ export function createApp(
       throw new Error("calibration_artifact_checksum_mismatch");
     }
     const run = localCalibrationRunSchema.parse(raw) as LocalCalibrationRun;
+    assertCalibrationImportable(run);
     if (run.planId !== session.planId) throw new Error("calibration_plan_mismatch");
     if (run.fingerprint.hardwareTemplateId) {
       const target = (await store.getCatalog()).find((item) => item.id === run.fingerprint.hardwareTemplateId);
@@ -189,11 +214,26 @@ export function createApp(
       error: null,
     };
     await store.saveCalibrationSession(completed);
+    volatileCalibrationTokens.delete(session.id);
     return completed;
   }
 
+  function assertCalibrationImportable(run: LocalCalibrationRun): void {
+    if (
+      run.developmentOnly ||
+      run.artifact?.fileName.endsWith(".partial.json") ||
+      run.qualityGate?.eligibleForCapacityExtrapolation === false ||
+      run.qualityGate?.validationStatus === "diagnostic"
+    ) {
+      throw new Error("calibration_result_not_importable");
+    }
+  }
+
   async function reconcileCalibrationSession(session: CalibrationSessionRecord): Promise<CalibrationSessionRecord> {
-    if (["completed", "cancelled", "failed", "expired"].includes(session.state)) return session;
+    if (["completed", "cancelled", "failed", "expired"].includes(session.state)) {
+      volatileCalibrationTokens.delete(session.id);
+      return session;
+    }
     const persisted = await findPersistedCalibration(session.planId, calibrationDirectoryOptions);
     if (persisted) {
       try {
@@ -207,22 +247,75 @@ export function createApp(
     if (Date.parse(session.expiresAt) <= Date.now()) {
       const expired = { ...session, state: "expired" as const, error: "calibration_session_expired" };
       await store.saveCalibrationSession(expired);
+      volatileCalibrationTokens.delete(session.id);
       return expired;
     }
     return session;
   }
   app.use("/api/*", async (context, next) => {
-    const length = Number(context.req.header("content-length") ?? "0");
     const maximumLength = context.req.path === "/api/catalog/import" ||
       context.req.path === "/api/evidence/import" || context.req.path === "/api/calibrations/import"
       ? 10_500_000 : 2_000_000;
-    if (length > maximumLength) return context.json({ error: "payload_too_large" }, 413);
     context.header("Cache-Control", "no-store");
     context.header("X-Content-Type-Options", "nosniff");
-    return next();
+    return bodyLimit({
+      maxSize: maximumLength,
+      onError: () => context.json({ error: "payload_too_large" }, 413),
+    })(context, next);
   });
 
   app.get("/api/health", (context) => context.json({ status: "ok", storage: store.storageKind }));
+  app.post("/api/desktop/smoke-shutdown", async (context) => {
+    if (process.env.QUAL_HARDWARE_SMOKE_TEST !== "1" || !options.desktopBridge?.quitApplication) {
+      return context.json({ error: "not_found" }, 404);
+    }
+    await options.desktopBridge.quitApplication();
+    return context.json({ ok: true }, 202);
+  });
+  app.get("/api/desktop/diagnostics", async (context) => {
+    const dataPath = options.userDataPath ?? process.env.QUAL_HARDWARE_USER_DATA_PATH ?? null;
+    const calibrationDirectory = await resolveCalibrationDirectory(calibrationDirectoryOptions);
+    let perceptrum: { registered: boolean; handlerName: string | null; detail: string | null };
+    try {
+      const status = await options.desktopBridge?.getPerceptrumStatus?.();
+      perceptrum = status
+        ? { ...status, detail: status.registered ? "protocol_registered" : "protocol_not_registered" }
+        : { registered: false, handlerName: null, detail: "desktop_protocol_status_unavailable" };
+    } catch (error) {
+      perceptrum = { registered: false, handlerName: null, detail: safeError(error) };
+    }
+    return context.json({
+      appVersion: await packageVersion(),
+      runtime: {
+        node: process.versions.node,
+        electron: process.versions.electron ?? null,
+        chrome: process.versions.chrome ?? null,
+        platform: process.platform,
+        arch: process.arch,
+      },
+      data: {
+        path: dataPath,
+        schemaVersion: 9,
+        calibrationDirectory,
+        logDirectory: process.env.QUAL_HARDWARE_DESKTOP_LOG_DIR ?? null,
+      },
+      catalog: catalogUpdates.status,
+      perceptrum,
+      prerequisites: {
+        reports: {
+          json: true,
+          xlsx: true,
+          pdf: true,
+          technicalPdf: true,
+          technicalDocx: true,
+          neutralJson: true,
+          neutralPdf: true,
+          neutralDocx: true,
+        },
+        packagedContractsPresent: true,
+      },
+    });
+  });
   app.get("/api/contract", async (context) => {
     const file = applicationResourcePath("contracts", "perceptrum-workload-v2.json");
     return context.json(JSON.parse(await readFile(file, "utf8")) as unknown);
@@ -383,39 +476,108 @@ export function createApp(
     directory: await resolveCalibrationDirectory(calibrationDirectoryOptions),
   }));
   app.post("/api/calibration-sessions", async (context) => {
-    const request = calibrationSessionRequestSchema.parse(await context.req.json());
-    const recommendation = await store.getRecommendation(request.recommendationId);
-    if (!recommendation) return context.json({ error: "recommendation_not_found" }, 404);
-    const scenario = await store.getScenario(recommendation.scenarioId);
-    if (!scenario || scenario.revision !== recommendation.scenarioRevision) {
-      return context.json({ error: "recommendation_revision_is_not_current" }, 409);
-    }
-    if (request.targetHardwareTemplateId && !(await store.getCatalog()).some((item) => item.id === request.targetHardwareTemplateId)) {
-      return context.json({ error: "calibration_hardware_not_in_catalog" }, 422);
-    }
-    const plan = createCalibrationPlan(scenario.scenario, request.mode, request.targetHardwareTemplateId);
-    const created = createCalibrationSession({
-      plan,
-      recommendationId: recommendation.id,
-      scenarioId: scenario.id,
-      advancedTelemetry: request.advancedTelemetry,
-      callbackOrigin: new URL(context.req.url).origin,
-    });
-    const launching: CalibrationSessionRecord = {
-      ...created.record,
-      state: "launching",
-      launchedAt: new Date().toISOString(),
-      progress: { stage: "launching", percent: 0, message: "Abrindo o Perceptrum na calibração local.", updatedAt: new Date().toISOString() },
-    };
-    volatileCalibrationTokens.set(launching.id, created.token);
-    await store.saveCalibrationSession(launching);
+    if (calibrationLaunchInProgress) return context.json({ error: "calibration_session_launch_in_progress" }, 409);
+    calibrationLaunchInProgress = true;
     try {
-      const delivery = await deliverCalibrationSession(created.uri, request.advancedTelemetry, options.desktopBridge, options.fetchImpl);
-      return context.json({ session: publicCalibrationSession(launching), delivery }, 201);
+      const request = calibrationSessionRequestSchema.parse(await context.req.json());
+      const existingSessions = await Promise.all((await store.listCalibrationSessions()).map(reconcileCalibrationSession));
+      if (existingSessions.some((session) => ["pending", "launching", "running", "cancelling"].includes(session.state))) {
+        return context.json({ error: "calibration_session_already_active" }, 409);
+      }
+      const recommendation = await store.getRecommendation(request.recommendationId);
+      if (!recommendation) return context.json({ error: "recommendation_not_found" }, 404);
+      const scenario = await store.getScenario(recommendation.scenarioId);
+      if (!scenario || scenario.revision !== recommendation.scenarioRevision) {
+        return context.json({ error: "recommendation_revision_is_not_current" }, 409);
+      }
+      if (request.targetHardwareTemplateId && !(await store.getCatalog()).some((item) => item.id === request.targetHardwareTemplateId)) {
+        return context.json({ error: "calibration_hardware_not_in_catalog" }, 422);
+      }
+      const plan = createCalibrationPlan(scenario.scenario, request.mode, request.targetHardwareTemplateId);
+      const created = createCalibrationSession({
+        plan,
+        recommendationId: recommendation.id,
+        scenarioId: scenario.id,
+        advancedTelemetry: request.advancedTelemetry,
+        callbackOrigin: new URL(context.req.url).origin,
+      });
+      const launching: CalibrationSessionRecord = {
+        ...created.record,
+        state: "launching",
+        launchedAt: new Date().toISOString(),
+        progress: { stage: "launching", percent: 0, message: "Abrindo o Perceptrum e aguardando confirmação da sessão protegida.", updatedAt: new Date().toISOString() },
+      };
+      volatileCalibrationTokens.set(launching.id, created.token);
+      await store.saveCalibrationSession(launching);
+      try {
+        const delivery = await deliverCalibrationSession(created.uri, options.desktopBridge);
+        return context.json({ session: publicCalibrationSession(launching), delivery }, 201);
+      } catch (error) {
+        const pending: CalibrationSessionRecord = { ...launching, state: "pending", error: safeError(error) };
+        await store.saveCalibrationSession(pending);
+        return context.json({ error: "perceptrum_launch_failed", detail: safeError(error), session: publicCalibrationSession(pending) }, 503);
+      }
+    } finally {
+      calibrationLaunchInProgress = false;
+    }
+  });
+  app.post("/api/calibration-sessions/:id/claim", async (context) => {
+    const sessionId = context.req.param("id");
+    if (claimingCalibrationSessions.has(sessionId)) {
+      return context.json({ error: "calibration_claim_in_progress" }, 409);
+    }
+    claimingCalibrationSessions.add(sessionId);
+    try {
+      const session = await store.getCalibrationSession(sessionId);
+      if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+      const request = calibrationClaimSchema.parse(await context.req.json());
+      const claimed = authorizeCalibrationClaim(session, request);
+      const token = volatileCalibrationTokens.get(session.id);
+      if (!token) throw new Error("calibration_claim_requires_same_app_session");
+      const running: CalibrationSessionRecord = {
+        ...session,
+        state: "running",
+        launchedAt: session.launchedAt ?? new Date().toISOString(),
+        claimedAt: new Date().toISOString(),
+        claimOrigin: claimed.origin,
+        runtimeOrigin: claimed.runtimeOrigin,
+        claimCapabilities: claimed.capabilities,
+        progress: { stage: "claimed", percent: 1, message: "Perceptrum confirmou a sessão protegida.", updatedAt: new Date().toISOString() },
+        error: null,
+      };
+      await store.saveCalibrationSession(running);
+      const baseUrl = `${running.callbackOrigin}/api/calibration-sessions/${running.id}`;
+      return context.json({
+        schemaVersion: CALIBRATION_HANDOFF_VERSION,
+        sessionId: running.id,
+        token,
+        expiresAt: running.expiresAt,
+        advancedTelemetry: running.advancedTelemetry,
+        planUrl: `${baseUrl}/plan`,
+        controlUrl: `${baseUrl}/control`,
+        progressUrl: `${baseUrl}/progress`,
+        resultUrl: `${baseUrl}/result`,
+        cancelledUrl: `${baseUrl}/cancelled`,
+        session: publicCalibrationSession(running),
+      });
     } catch (error) {
-      const pending: CalibrationSessionRecord = { ...launching, state: "pending", error: safeError(error) };
-      await store.saveCalibrationSession(pending);
-      return context.json({ error: "perceptrum_launch_failed", detail: safeError(error), session: publicCalibrationSession(pending) }, 503);
+      return context.json({ error: safeError(error) }, /nonce/.test(safeError(error)) ? 403 : 422);
+    } finally {
+      claimingCalibrationSessions.delete(sessionId);
+    }
+  });
+  app.get("/api/calibration-sessions/:id/control", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    try {
+      authorizeCalibrationSession(session, context.req.header("authorization"));
+      return context.json({
+        session: publicCalibrationSession(session),
+        plan: session.plan,
+        advancedTelemetry: session.advancedTelemetry,
+      });
+    } catch (error) {
+      return context.json({ error: safeError(error) }, /token/.test(safeError(error)) ? 403 : 409);
     }
   });
   app.get("/api/calibration-sessions/:id", async (context) => {
@@ -426,24 +588,25 @@ export function createApp(
   app.post("/api/calibration-sessions/:id/cancel", async (context) => {
     const session = await store.getCalibrationSession(context.req.param("id"));
     if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
-    if (!["launching", "running", "cancelling"].includes(session.state)) {
+    if (!["pending", "launching", "running", "cancelling"].includes(session.state)) {
       return context.json({ error: "calibration_session_not_running" }, 409);
     }
+    const cancelling: CalibrationSessionRecord = {
+      ...session,
+      state: "cancelling",
+      progress: { ...(session.progress ?? {}), stage: "cancelling", message: "Interrompendo com segurança e salvando o diagnóstico parcial.", updatedAt: new Date().toISOString() },
+      error: null,
+    };
+    await store.saveCalibrationSession(cancelling);
     const token = volatileCalibrationTokens.get(session.id);
-    if (!token) return context.json({ error: "calibration_cancel_requires_same_app_session" }, 409);
-    try {
-      await cancelDeliveredCalibrationSession(session.id, token, options.fetchImpl);
-      const cancelling: CalibrationSessionRecord = {
-        ...session,
-        state: "cancelling",
-        progress: { ...(session.progress ?? {}), stage: "cancelling", message: "Interrompendo com segurança e salvando o diagnóstico parcial.", updatedAt: new Date().toISOString() },
-        error: null,
-      };
-      await store.saveCalibrationSession(cancelling);
-      return context.json(publicCalibrationSession(cancelling), 202);
-    } catch (error) {
-      return context.json({ error: safeError(error) }, 502);
+    if (token && session.runtimeOrigin) {
+      try {
+        await cancelDeliveredCalibrationSession(session.runtimeOrigin, session.id, token, options.fetchImpl);
+      } catch (error) {
+        console.warn("Direct Perceptrum cancellation failed; authenticated control polling remains active", safeError(error));
+      }
     }
+    return context.json(publicCalibrationSession(cancelling), 202);
   });
   app.get("/api/calibration-sessions/:id/plan", async (context) => {
     const session = await store.getCalibrationSession(context.req.param("id"));
@@ -469,13 +632,15 @@ export function createApp(
     try {
       authorizeCalibrationSession(session, context.req.header("authorization"));
       const raw = await context.req.json();
+      const progress = normalizeCalibrationProgress((raw as { progress?: unknown }).progress ?? raw);
       const running: CalibrationSessionRecord = {
         ...session,
-        state: "running",
-        progress: normalizeCalibrationProgress((raw as { progress?: unknown }).progress ?? raw),
-        error: null,
+        state: progress.stage === "failed" ? "failed" : "running",
+        progress,
+        error: progress.stage === "failed" ? (progress.message ?? "perceptrum_calibration_failed") : null,
       };
       await store.saveCalibrationSession(running);
+      if (progress.stage === "failed") volatileCalibrationTokens.delete(session.id);
       return context.json({ ok: true });
     } catch (error) {
       return context.json({ error: safeError(error) }, /token/.test(safeError(error)) ? 403 : 409);
@@ -486,6 +651,7 @@ export function createApp(
     if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
     try {
       authorizeCalibrationSession(session, context.req.header("authorization"));
+      if (session.state !== "running") throw new Error("calibration_session_not_accepting_result");
       const raw = await context.req.json();
       const completed = await acceptCalibrationResult(session, (raw as { result?: unknown }).result ?? raw);
       volatileCalibrationTokens.delete(session.id);
@@ -499,6 +665,7 @@ export function createApp(
     if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
     try {
       authorizeCalibrationSession(session, context.req.header("authorization"));
+      if (!["running", "cancelling"].includes(session.state)) throw new Error("calibration_session_not_accepting_cancellation");
       const raw = await context.req.json() as { progress?: unknown; artifact?: { fileName?: unknown; payloadSha256?: unknown } };
       const progress = normalizeCalibrationProgress(raw.progress);
       const fileName = typeof raw.artifact?.fileName === "string" ? raw.artifact.fileName.slice(0, 240) : "diagnóstico parcial";
@@ -532,6 +699,7 @@ export function createApp(
       return context.json({ error: "calibration_artifact_checksum_mismatch" }, 422);
     }
     const run = localCalibrationRunSchema.parse(raw) as LocalCalibrationRun;
+    assertCalibrationImportable(run);
     if (run.fingerprint.hardwareTemplateId) {
       const target = (await store.getCatalog()).find((item) => item.id === run.fingerprint.hardwareTemplateId);
       if (!target) return context.json({ error: "calibration_hardware_not_in_catalog" }, 422);
@@ -633,6 +801,9 @@ export function createApp(
     if (error instanceof RevisionConflictError) return context.json({ error: "revision_conflict", currentRevision: error.currentRevision }, 409);
     if (error instanceof CapacityError) return context.json({ error: "capacity_error", message: error.message, details: error.details }, 422);
     if (error instanceof SyntaxError) return context.json({ error: "invalid_json" }, 400);
+    if (safeError(error) === "calibration_result_not_importable") {
+      return context.json({ error: "calibration_result_not_importable" }, 422);
+    }
     console.error(error);
     return context.json({ error: "internal_error", message: safeError(error) }, 500);
   });

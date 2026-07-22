@@ -85,6 +85,14 @@ export type TelemetryEvidenceStatus = "measured" | "unavailable" | "failed" | "n
 export type CalibrationValidationStatus = "diagnostic" | "anchor_approved" | "invalid";
 export type CalibrationSessionState = "pending" | "launching" | "running" | "cancelling" | "cancelled" | "completed" | "failed" | "expired";
 
+export interface CalibrationClaimCapabilities {
+  protocolVersion: string;
+  platform?: string | undefined;
+  appVersion?: string | undefined;
+  supportsCancellation: boolean;
+  supportsAdvancedTelemetry: boolean;
+}
+
 export interface AgentFeatures {
   onlyCaptureOnMotion: boolean;
   temporal: boolean;
@@ -775,9 +783,8 @@ export interface CalibrationHandoff {
   schemaVersion: typeof CALIBRATION_HANDOFF_VERSION;
   sessionId: string;
   callbackOrigin: string;
-  token: string;
+  nonce: string;
   expiresAt: string;
-  planId: string;
 }
 
 export interface CalibrationSessionProgress {
@@ -797,9 +804,15 @@ export interface CalibrationSession {
   advancedTelemetry: boolean;
   state: CalibrationSessionState;
   createdAt: string;
+  claimExpiresAt: string;
   expiresAt: string;
   launchedAt: string | null;
+  claimedAt: string | null;
   completedAt: string | null;
+  callbackOrigin: string;
+  claimOrigin: string | null;
+  runtimeOrigin: string | null;
+  claimCapabilities: CalibrationClaimCapabilities | null;
   progress: CalibrationSessionProgress | null;
   result: LocalCalibrationRun | null;
   error: string | null;
@@ -807,6 +820,7 @@ export interface CalibrationSession {
 
 export interface CalibrationSessionRecord extends CalibrationSession {
   tokenHash: string;
+  nonceHash: string;
   plan: CalibrationPlan;
 }
 

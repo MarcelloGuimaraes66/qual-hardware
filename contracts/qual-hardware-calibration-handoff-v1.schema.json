@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qual-hardware-calibration-handoff-v1.schema.json",
+  "title": "Qual Hardware Calibration Handoff v1",
+  "type": "object",
+  "required": ["schemaVersion", "sessionId", "callbackOrigin", "nonce", "expiresAt"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-calibration-handoff/1.0.0" },
+    "sessionId": { "type": "string", "format": "uuid" },
+    "callbackOrigin": { "type": "string", "pattern": "^http://127\\.0\\.0\\.1:[0-9]+/?$" },
+    "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43,128}$" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qual-hardware-calibration-plan-v1.schema.json",
+  "title": "Qual Hardware Calibration Plan v1",
+  "type": "object",
+  "required": ["schemaVersion", "id", "createdAt", "mode", "executionMode", "workloadContractVersion", "scenario", "phases", "sourceProfiles", "requestedInferenceFps", "instructions"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-calibration-plan/1.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "mode": { "enum": ["quick", "full"] },
+    "executionMode": { "enum": ["readiness", "production_pipeline"] },
+    "workloadContractVersion": { "const": "perceptrum-workload/3.1.0" },
+    "targetHardwareTemplateId": { "type": ["string", "null"] },
+    "scenario": { "type": "object" },
+    "localOnly": { "const": true },
+    "rtspOrigin": { "const": "rtsp://127.0.0.1" },
+    "aiqOrigin": { "const": "http://127.0.0.1" },
+    "inferenceProvider": { "const": "aiq_local" },
+    "phases": { "type": "array", "minItems": 3 },
+    "sourceProfiles": { "type": "array", "minItems": 1 },
+    "requestedInferenceFps": { "type": "array", "minItems": 1 },
+    "instructions": { "type": "array", "minItems": 1 }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qual-hardware-local-calibration-partial-v2.schema.json",
+  "title": "Qual Hardware Interrupted Partial Result v2",
+  "type": "object",
+  "required": ["schemaVersion", "id", "planId", "mode", "qualityGate", "artifact", "notes"],
+  "properties": {
+    "schemaVersion": { "const": "qual-hardware-local-calibration/2.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "planId": { "type": "string", "format": "uuid" },
+    "mode": { "enum": ["quick", "full"] },
+    "qualityGate": {
+      "type": "object",
+      "properties": {
+        "eligibleForCapacityExtrapolation": { "const": false },
+        "validationStatus": { "const": "diagnostic" }
+      },
+      "required": ["eligibleForCapacityExtrapolation", "validationStatus"]
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "fileName": { "type": "string", "pattern": "partial\\.json$" }
+      },
+      "required": ["fileName"]
+    },
+    "notes": { "type": "array" }
+  },
+  "additionalProperties": true
+}

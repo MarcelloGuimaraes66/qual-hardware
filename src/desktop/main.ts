@@ -4,6 +4,7 @@ import { createApp } from "../server/app.js";
 import { CatalogUpdateService } from "../server/catalogUpdates.js";
 import { validatePerceptrumProtocolUri } from "../server/calibrationSessions.js";
 import { createStore, type PlannerStore } from "../server/store.js";
+import { installDesktopLogger } from "./logger.js";
 import {
   createIdempotentShutdown,
   DESKTOP_APP_ID,
@@ -27,6 +28,9 @@ app.enableSandbox();
 
 async function startLocalApplication(): Promise<string> {
   const paths = resolveDesktopPaths(app.getAppPath(), app.getPath("userData"));
+  process.env.QUAL_HARDWARE_APP_VERSION = app.getVersion();
+  process.env.QUAL_HARDWARE_USER_DATA_PATH = app.getPath("userData");
+  process.env.QUAL_HARDWARE_DESKTOP_LOG_DIR = installDesktopLogger(app.getPath("userData"));
   process.env.QUAL_HARDWARE_RESOURCE_ROOT = paths.resourceRoot;
   process.env.QUAL_HARDWARE_SQLITE_PATH = paths.databaseFile;
   delete process.env.QUAL_HARDWARE_IN_MEMORY;
@@ -50,6 +54,7 @@ async function startLocalApplication(): Promise<string> {
     localServer = serve({
       fetch: createApp(store!, updates, {
         documentsDirectory: app.getPath("documents"),
+        userDataPath: app.getPath("userData"),
         desktopBridge: {
           async openPerceptrumCalibration(uri: string): Promise<void> {
             const target = validatePerceptrumProtocolUri(uri);
@@ -59,6 +64,14 @@ async function startLocalApplication(): Promise<string> {
           async openPath(path: string): Promise<void> {
             const failure = await shell.openPath(path);
             if (failure) throw new Error(failure);
+          },
+          async getPerceptrumStatus(): Promise<{ registered: boolean; handlerName: string | null }> {
+            const handlerName = app.getApplicationNameForProtocol("perceptrum://calibration/run") || null;
+            return { registered: Boolean(handlerName), handlerName };
+          },
+          async quitApplication(): Promise<void> {
+            const timer = setTimeout(() => app.quit(), 25);
+            timer.unref();
           },
         },
       }).fetch,
@@ -158,9 +171,10 @@ if (!app.requestSingleInstanceLock()) {
   });
   void app.whenReady().then(bootstrap).catch(async (error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
+    const logDirectory = process.env.QUAL_HARDWARE_DESKTOP_LOG_DIR ?? `${app.getPath("userData")}\\logs`;
     console.error("Qual Hardware failed to start", error);
     await shutdown().catch((shutdownError: unknown) => console.error("Qual Hardware shutdown failed", shutdownError));
-    dialog.showErrorBox("Qual Hardware não pôde iniciar", detail);
+    dialog.showErrorBox("Qual Hardware não pôde iniciar", `${detail}\n\nConsulte os logs em: ${logDirectory}`);
     app.exit(1);
   });
 }

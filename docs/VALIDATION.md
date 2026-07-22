@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, 90+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v9, differentiated calculations, reconciled component costs, detailed PDF/XLSX/JSON 6.0 exports, neutral DOCX/PDF/JSON annexes, single-instance behavior and persistence after restart.
+Pull requests run the same typecheck, 100+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v9, differentiated calculations, reconciled component costs, detailed PDF/XLSX/JSON 6.0 exports, neutral DOCX/PDF/JSON annexes, single-instance behavior and persistence after restart. This is a control-plane/package gate, not evidence that the physical 10/60-minute calibration pipeline has been homologated.
 
 ```sh
 npm ci
@@ -31,7 +31,7 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases but never creates importable evidence.
 6. Import rejects a selected catalog profile when CPU, GPU or form factor does not match the measured fingerprint.
 7. Results 1.0 and 1.1 remain readable as historical/diagnostic evidence. Version 2.0 is required for purchase eligibility and additionally requires workload 3.1, production-pipeline proof concurrent with all four phases, fifteen-stage coverage and artifact SHA-256.
-8. Session tests cover token hashing, expiry, replay, callback authentication, protocol allowlisting, native Documents paths, live progress and automatic result persistence/recalculation.
+8. Session tests cover token and nonce hashing, 60-second nonce expiry, replay, loopback claim/control authentication, protocol allowlisting, native Documents paths, live progress and automatic result persistence/recalculation.
 
 ## Audited source baseline
 
