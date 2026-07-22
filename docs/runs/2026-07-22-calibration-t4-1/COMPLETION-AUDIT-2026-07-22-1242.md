@@ -15,18 +15,18 @@ Authoritative scope: the 624-line T4.1 plan supplied by the user. This audit dis
 | Idempotent cancellation and diagnostic preservation | API tests, packaged regression and forced-exit recovery; cancellation dominates killed-child errors and late results | Proven in automated native matrix; physical interruption still pending |
 | Scientifically safe resume/lineage | Compatibility, checkpoint and lineage tests; commercial repetitions restart | Proven in automated tests; physical resume pending |
 | Signed `.qhcal` and `.qhcalset`, trust, duplicate/conflict limits | Ed25519/gzip/adversarial tests and ten-machine fixture consolidation | Proven in automated tests |
-| Cross-platform package exchange | Desktop CI run `29938625358` generated one native signed fixture per OS; receiver jobs on all three OS verified all three packages and consolidated a collection | Proven in hosted native matrix |
+| Cross-platform package exchange | Desktop CI run `29940061181` generated one native signed fixture per OS; receiver jobs on all three OS verified all three packages and consolidated a collection | Proven in hosted native matrix |
 | SQLite v9 additive extension v2 and append-only consolidation | Database boundary, migration, rollback and import transaction tests | Proven locally |
 | Exact evidence before extrapolation/benchmark/theory | Capacity and recommendation tests, incompatible evidence rejection, distinct-system extrapolation gate | Proven in automated tests |
 | Fifteen-day signed public catalog without calibration interference | Publisher workflow, deferred-update coordination and catalog tests | Proven in automated tests; scheduled production execution remains operational evidence |
 | One multiplatform source tree | Shared code and one branch; platform adapters restricted to runtime/process/telemetry/packaging | Proven structurally |
 | Telemetry probe on three targets | Source-tree lock, Go 1.26.5, deterministic double-build for Mach-O/PE/ELF and execution in the hosted Windows, Ubuntu and macOS jobs | Proven for automated host diagnostics; physical sensor qualification pending |
-| Native installers and packaged smoke on all targets | Desktop CI run `29938625358` passed Windows 11 x64, Ubuntu 24.04 x64 and macOS arm64 producer jobs plus all receiver jobs | Proven in hosted native matrix |
-| Fail-closed runtime intake preparation | Deterministic target templates cover all nine IDs, immutable source guide and placeholders; planner accepts the completed wrapper, refuses placeholders and rejects incomplete CUDA/Metal/Vulkan companion groups before asset reads | Proven locally by 6 focused tests and CLI parsing on all targets; hosted revalidation of the current candidate pending |
+| Native installers and packaged smoke on all targets | Desktop CI run `29940061181` passed Windows 11 x64, Ubuntu 24.04 x64 and macOS arm64 producer jobs plus all receiver jobs | Proven in hosted native matrix |
+| Fail-closed runtime intake preparation | Intake v2 covers nine IDs and every locked source package, verifies hash/size, rejects v1/placeholders/substitution/incomplete groups, binds libraries to packages and persists compact provenance | Proven locally by 16 focused tests and CLI parsing on all targets; hosted revalidation of the provenance candidate pending |
 | Approved FFmpeg/ffprobe/MediaMTX/llama/Qwen runtime | Immutable candidate inventory exists, but legal/SBOM/package/physical approvals and installed artifacts are absent; disk reserve blocks acquisition | Incomplete |
 | Three full physical repetitions per reference platform | No approved full runtime or three physical environments available | Missing |
 | Physical zero-egress capture and cross-system exchange | Local counters/source audit prove no application egress path; physical capture not performed | Incomplete |
-| Candidate commit, push and hosted CI | Published commit `d62273a703beb0906469ea411f0ec59b88dbcb3a`; run `29938625358` passed all six jobs after the user expressly authorized publication | Proven; current intake-hardening candidate not yet published |
+| Candidate commit, push and hosted CI | Published commit `f0a1dd4388eaa0a035a6949c471436b2d20a4e71`; run `29940061181` passed all six jobs after the user expressly authorized publication | Proven; current provenance-v2 candidate not yet published |
 
 ## New native CI gate
 
@@ -36,7 +36,7 @@ Authoritative scope: the 624-line T4.1 plan supplied by the user. This audit dis
 
 ## Current local candidate
 
-The intake-hardening candidate passes 25 files / 204 tests, typecheck, production build, source audit with `externalSourceAccess:false`, asset audit and deterministic CLI-template parsing for `darwin-arm64`, `win32-x64` and `linux-x64`. The asset audit remains intentionally fail-closed because all nine candidates still carry legal/SBOM/package/physical blockers. The current Mac has about 15.9 GB free, below the mandatory 50 GiB reserve.
+The provenance-v2 candidate passes 25 files / 206 tests, typecheck, production build, source audit with `externalSourceAccess:false`, asset audit, reproducible telemetry verification and deterministic CLI-template parsing for `darwin-arm64`, `win32-x64` and `linux-x64`. The asset audit remains intentionally fail-closed because all nine candidates still carry legal/SBOM/package/physical blockers. The current Mac has about 15.9 GB free, below the mandatory 50 GiB reserve.
 
 ## Completion decision
 

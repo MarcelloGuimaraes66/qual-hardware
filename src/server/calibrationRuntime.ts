@@ -47,6 +47,11 @@ const runtimeCompanionFileSchema = z.object({
   relativePath: relativePathSchema,
   sha256: sha256Schema,
   sizeBytes: z.number().int().positive(),
+  sourcePackageSha256: sha256Schema.nullable().optional().default(null),
+}).strict();
+const runtimeSourcePackageSchema = z.object({
+  sha256: sha256Schema,
+  sizeBytes: z.number().int().positive(),
 }).strict();
 const runtimeArtifactSchema = z.object({
   relativePath: relativePathSchema,
@@ -54,11 +59,19 @@ const runtimeArtifactSchema = z.object({
   sizeBytes: z.number().int().nonnegative().nullable(),
   licenseEvidence: runtimeEvidenceReferenceSchema.nullable().optional().default(null),
   sbomEvidence: runtimeEvidenceReferenceSchema.nullable().optional().default(null),
+  sourcePackages: z.array(runtimeSourcePackageSchema).max(32).optional().default([]),
   companionFiles: z.array(runtimeCompanionFileSchema).max(256).optional().default([]),
 }).strict().superRefine((artifact, context) => {
   const paths = [artifact.relativePath, ...artifact.companionFiles.map((file) => file.relativePath)];
   if (new Set(paths.map((path) => path.toLowerCase())).size !== paths.length) {
     context.addIssue({ code: "custom", message: "runtime_artifact_companion_path_duplicate" });
+  }
+  const sourcePackageHashes = artifact.sourcePackages.map((sourcePackage) => sourcePackage.sha256);
+  if (new Set(sourcePackageHashes).size !== sourcePackageHashes.length) {
+    context.addIssue({ code: "custom", message: "runtime_artifact_source_package_duplicate" });
+  }
+  if (artifact.companionFiles.some((file) => file.sourcePackageSha256 && !sourcePackageHashes.includes(file.sourcePackageSha256))) {
+    context.addIssue({ code: "custom", message: "runtime_artifact_companion_source_package_unknown" });
   }
 });
 const runtimeAssetSchema = z.object({

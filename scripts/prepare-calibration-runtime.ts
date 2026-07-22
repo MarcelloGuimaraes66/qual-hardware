@@ -32,6 +32,7 @@ if (printTemplate) {
     target: result.target,
     manifestSha256: result.manifestSha256,
     fileCount: result.files.length,
+    verifiedSourcePackageCount: result.sourcePackages.length,
     stagingBytes: result.stagingBytes,
     ...("disk" in result ? { disk: result.disk } : {}),
     ...("backupPath" in result ? {

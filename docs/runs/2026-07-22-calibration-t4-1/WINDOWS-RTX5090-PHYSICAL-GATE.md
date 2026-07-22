@@ -40,7 +40,7 @@ Mandatory capability details:
 - Qwen3-VL Core 2B and Core Max 4B GGUF and `mmproj` files must match the pinned immutable hashes.
 - The packaged Windows telemetry probe must match its manifest hash and size.
 
-Prepare an absolute-path intake JSON conforming to `qual-hardware-calibration-asset-intake/1.0.0`. Dry-run it first, then apply it:
+Prepare an absolute-path intake JSON conforming to `qual-hardware-calibration-asset-intake/2.0.0`. Intake v1 is deliberately rejected because it cannot prove package provenance. Dry-run v2 first, then apply it:
 
 ```powershell
 npm run calibration:runtime:prepare -- --target win32-x64 --print-template | Set-Content -Encoding utf8 C:\qual-hardware-runtime\intake-win32-x64.json
@@ -48,7 +48,7 @@ npm run calibration:runtime:prepare -- --intake C:\qual-hardware-runtime\intake-
 npm run calibration:runtime:prepare -- --intake C:\qual-hardware-runtime\intake-win32-x64.json --apply
 ```
 
-Fill only the nested `intake` values in the generated file. Keep `sourceGuide` as immutable review context. The file remains deliberately invalid until every placeholder is replaced, the SPDX decision is reviewed and every CUDA companion-library group is represented; one entry may be expanded into as many DLL rows as the extracted bundle requires.
+Fill only the nested `intake` values in the generated file. Keep `sourceGuide` as immutable review context. Every `sourcePackages` row must point to the complete local archive/file matching its locked hash and size. Every CUDA DLL row must retain the `sourcePackageSha256` of the archive from which it was extracted. The file remains deliberately invalid until every placeholder is replaced, the SPDX decision is reviewed and every CUDA companion-library group is represented; one entry may be expanded into as many DLL rows as the extracted bundle requires.
 
 The preparer refuses insufficient disk, symlinks, placeholders, duplicate destinations, incomplete inventories, invalid SBOMs and identical reapplication. If a partial target already exists, it is preserved in a versioned backup before the candidate is installed.
 

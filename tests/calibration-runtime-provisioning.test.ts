@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,6 +16,80 @@ import { REQUIRED_RUNTIME_ASSET_IDS, inspectCalibrationRuntime } from "../src/se
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const roots: string[] = [];
 
+interface FixtureAsset {
+  id: string;
+  sourcePath: string;
+  version: string;
+  licenseSpdx: string;
+  licenseEvidencePath: string;
+  sbomEvidencePath: string;
+  sourcePackages?: Array<{ sourcePath: string; sha256: string; sizeBytes: number }>;
+  companionFiles: Array<{ sourcePath: string; relativePath: string; sourcePackageSha256?: string }>;
+}
+
+async function integrity(path: string): Promise<{ sha256: string; sizeBytes: number }> {
+  const bytes = await readFile(path);
+  return { sha256: createHash("sha256").update(bytes).digest("hex"), sizeBytes: bytes.length };
+}
+
+async function attachFixtureSourceProvenance(
+  root: string,
+  target: "darwin-arm64" | "win32-x64" | "linux-x64",
+  assets: FixtureAsset[],
+): Promise<void> {
+  const lockPath = join(root, "resources/calibration/asset-sources.lock.json");
+  const manifestPath = join(root, "resources/calibration/runtime-manifest.json");
+  const lock = JSON.parse(await readFile(lockPath, "utf8")) as {
+    assets: Array<{ id: string; targets: Record<string, {
+      sourceKind: string; url: string | null; sha256: string | null; sizeBytes: number | null;
+      companionSources?: Array<{ url: string; sha256: string; sizeBytes: number }>;
+    }> }>;
+  };
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    sourceLock: { sha256: string };
+    assets: Array<{ id: string; artifacts: Record<string, { sha256: string | null; sizeBytes: number | null }> }>;
+  };
+  for (const asset of assets) {
+    const lockedAsset = lock.assets.find((candidate) => candidate.id === asset.id)!;
+    const lockedSource = lockedAsset.targets[target]!;
+    const runtimeArtifact = manifest.assets.find((candidate) => candidate.id === asset.id)!.artifacts[target]!;
+    const assetIntegrity = await integrity(asset.sourcePath);
+    const packagesByUrl = new Map<string, { sourcePath: string; sha256: string; sizeBytes: number }>();
+    if (lockedSource.sourceKind === "repository_source") {
+      runtimeArtifact.sha256 = assetIntegrity.sha256;
+      runtimeArtifact.sizeBytes = assetIntegrity.sizeBytes;
+    } else {
+      const primaryPath = lockedSource.sourceKind === "direct_file"
+        ? asset.sourcePath : join(dirname(asset.sourcePath), `${asset.id}.source-package`);
+      if (primaryPath !== asset.sourcePath) await writeFile(primaryPath, `locked-package:${target}:${asset.id}`, "utf8");
+      const primary = { sourcePath: primaryPath, ...await integrity(primaryPath) };
+      lockedSource.sha256 = primary.sha256;
+      lockedSource.sizeBytes = primary.sizeBytes;
+      if (lockedSource.url) packagesByUrl.set(lockedSource.url, primary);
+      for (const [index, companionSource] of (lockedSource.companionSources ?? []).entries()) {
+        let sourcePackage = packagesByUrl.get(companionSource.url);
+        if (!sourcePackage) {
+          const sourcePath = join(dirname(asset.sourcePath), `${asset.id}.companion-package-${index}`);
+          await writeFile(sourcePath, `locked-companion-package:${target}:${asset.id}:${index}`, "utf8");
+          sourcePackage = { sourcePath, ...await integrity(sourcePath) };
+          packagesByUrl.set(companionSource.url, sourcePackage);
+        }
+        companionSource.sha256 = sourcePackage.sha256;
+        companionSource.sizeBytes = sourcePackage.sizeBytes;
+        const companionFile = asset.companionFiles[index];
+        if (!companionFile) throw new Error(`fixture_companion_missing:${asset.id}:${index}`);
+        companionFile.sourcePackageSha256 = sourcePackage.sha256;
+      }
+    }
+    asset.sourcePackages = [...new Map([...packagesByUrl.values()]
+      .map((sourcePackage) => [`${sourcePackage.sha256}:${sourcePackage.sizeBytes}`, sourcePackage])).values()];
+  }
+  const lockBytes = `${JSON.stringify(lock, null, 2)}\n`;
+  await writeFile(lockPath, lockBytes, "utf8");
+  manifest.sourceLock.sha256 = createHash("sha256").update(lockBytes).digest("hex");
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
@@ -25,7 +100,7 @@ describe("calibration runtime asset provisioning", () => {
     async (target) => {
       const template = await createCalibrationRuntimeIntakeTemplate({ repositoryRoot: projectRoot, target });
       expect(template).toMatchObject({
-        schemaVersion: "qual-hardware-calibration-asset-intake-template/1.0.0",
+        schemaVersion: "qual-hardware-calibration-asset-intake-template/2.0.0",
         target,
         readyToApply: false,
         runtimeNetworkAccess: "forbidden",
@@ -37,6 +112,8 @@ describe("calibration runtime asset provisioning", () => {
       const llamaIntake = template.intake.assets.find((asset) => asset.id === "llama-server")!;
       const llamaGuide = template.sourceGuide.find((asset) => asset.id === "llama-server")!;
       expect(llamaIntake.companionFiles).toHaveLength(llamaGuide.source.companionSources.length);
+      expect(new Set(llamaIntake.sourcePackages.map((sourcePackage) => sourcePackage.sha256)).size)
+        .toBe(new Set([llamaGuide.source.sha256, ...llamaGuide.source.companionSources.map((source) => source.sha256)]).size);
       await expect(planCalibrationRuntimeProvisioning({ repositoryRoot: projectRoot, intake: template }))
         .rejects.toThrow("absolute_source_path_required");
     },
@@ -57,7 +134,7 @@ describe("calibration runtime asset provisioning", () => {
     }
     const sourceRoot = join(root, "external-approved-input");
     await mkdir(sourceRoot, { recursive: true });
-    const assets = [];
+    const assets: FixtureAsset[] = [];
     for (const id of REQUIRED_RUNTIME_ASSET_IDS) {
       const sourcePath = join(sourceRoot, `${id}.bin`);
       const licenseEvidencePath = join(sourceRoot, `${id}.license.txt`);
@@ -81,6 +158,7 @@ describe("calibration runtime asset provisioning", () => {
         companionFiles,
       });
     }
+    await attachFixtureSourceProvenance(root, "linux-x64", assets);
     const intake = { schemaVersion: CALIBRATION_ASSET_INTAKE_VERSION, target: "linux-x64", assets };
     const planned = await planCalibrationRuntimeProvisioning({ repositoryRoot: root, intake });
     const wrappedPlan = await planCalibrationRuntimeProvisioning({
@@ -89,8 +167,40 @@ describe("calibration runtime asset provisioning", () => {
     });
     expect(wrappedPlan).toEqual(planned);
     expect(planned.files).toHaveLength(REQUIRED_RUNTIME_ASSET_IDS.length * 3 + 1);
+    expect(planned.sourcePackages).toHaveLength(8);
+    const plannedLlama = planned.manifest.assets.find((asset) => asset.id === "llama-server")!.artifacts["linux-x64"];
+    expect(plannedLlama.sourcePackages).toEqual([
+      expect.objectContaining({ sha256: assets.find((asset) => asset.id === "llama-server")!.sourcePackages![0]!.sha256 }),
+    ]);
+    expect(plannedLlama.companionFiles[0]?.sourcePackageSha256).toBe(plannedLlama.sourcePackages[0]?.sha256);
     expect(planned.stagingBytes).toBeGreaterThan(0);
     expect((await readdir(join(root, "resources/calibration"))).sort()).toEqual(["asset-sources.lock.json", "runtime-manifest.json"]);
+
+    const ffmpeg = assets.find((asset) => asset.id === "ffmpeg")!;
+    const ffmpegPackagePath = ffmpeg.sourcePackages![0]!.sourcePath;
+    const ffmpegPackageBytes = await readFile(ffmpegPackagePath);
+    await writeFile(ffmpegPackagePath, "tampered source archive", "utf8");
+    await expect(planCalibrationRuntimeProvisioning({ repositoryRoot: root, intake }))
+      .rejects.toThrow("calibration_asset_source_package_integrity_mismatch:ffmpeg:0");
+    await writeFile(ffmpegPackagePath, ffmpegPackageBytes);
+
+    const directModel = assets.find((asset) => asset.id === "qwen-core-gguf")!;
+    const directModelPath = directModel.sourcePath;
+    const substitutedModelPath = join(sourceRoot, "substituted-qwen-core.gguf");
+    await writeFile(substitutedModelPath, "substituted model", "utf8");
+    directModel.sourcePath = substitutedModelPath;
+    await expect(planCalibrationRuntimeProvisioning({ repositoryRoot: root, intake }))
+      .rejects.toThrow("calibration_asset_direct_file_integrity_mismatch:qwen-core-gguf");
+    directModel.sourcePath = directModelPath;
+
+    const telemetry = assets.find((asset) => asset.id === "telemetry-probe")!;
+    const telemetryPath = telemetry.sourcePath;
+    const substitutedTelemetryPath = join(sourceRoot, "substituted-telemetry-probe");
+    await writeFile(substitutedTelemetryPath, "substituted first-party binary", "utf8");
+    telemetry.sourcePath = substitutedTelemetryPath;
+    await expect(planCalibrationRuntimeProvisioning({ repositoryRoot: root, intake }))
+      .rejects.toThrow("calibration_asset_pinned_artifact_integrity_mismatch:telemetry-probe:linux-x64");
+    telemetry.sourcePath = telemetryPath;
 
     const ampleDiskStatus = async (_path: string, projectedPeakBytes: number) => ({
       totalBytes: 200_000,
@@ -137,7 +247,7 @@ describe("calibration runtime asset provisioning", () => {
     }
     const sourceRoot = join(root, "approved-input");
     await mkdir(sourceRoot, { recursive: true });
-    const assets = [];
+    const assets: FixtureAsset[] = [];
     for (const id of REQUIRED_RUNTIME_ASSET_IDS) {
       const sourcePath = join(sourceRoot, `${id}.bin`);
       const licenseEvidencePath = join(sourceRoot, `${id}.license.txt`);
@@ -161,6 +271,7 @@ describe("calibration runtime asset provisioning", () => {
         companionFiles,
       });
     }
+    await attachFixtureSourceProvenance(root, "darwin-arm64", assets);
     const manifestBefore = await readFile(join(root, "resources/calibration/runtime-manifest.json"), "utf8");
     await expect(applyCalibrationRuntimeProvisioning({
       repositoryRoot: root,
@@ -183,6 +294,7 @@ describe("calibration runtime asset provisioning", () => {
       asset.licenseSpdx = "MIT";
       asset.licenseEvidencePath = "/nonexistent/license";
       asset.sbomEvidencePath = "/nonexistent/sbom";
+      for (const sourcePackage of asset.sourcePackages) sourcePackage.sourcePath = "/nonexistent/package";
       for (const companion of asset.companionFiles) {
         companion.sourcePath = "/nonexistent/companion";
         companion.relativePath = "bin/companion.dll";
@@ -190,5 +302,12 @@ describe("calibration runtime asset provisioning", () => {
     }
     await expect(planCalibrationRuntimeProvisioning({ repositoryRoot: projectRoot, intake: template }))
       .rejects.toThrow("calibration_asset_companion_groups_incomplete:llama-server:2:1");
+  });
+
+  it("rejects legacy v1 intake before reading any external file", async () => {
+    await expect(planCalibrationRuntimeProvisioning({
+      repositoryRoot: projectRoot,
+      intake: { schemaVersion: "qual-hardware-calibration-asset-intake/1.0.0", target: "linux-x64", assets: [] },
+    })).rejects.toThrow("calibration_asset_intake_v1_source_provenance_required");
   });
 });

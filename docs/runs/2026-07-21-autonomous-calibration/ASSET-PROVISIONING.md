@@ -18,10 +18,12 @@ O primeiro comando imprime um modelo determinístico com o objeto `intake` preen
 
 ## Contrato de entrada
 
-- `schemaVersion`: `qual-hardware-calibration-asset-intake/1.0.0`.
+- `schemaVersion`: `qual-hardware-calibration-asset-intake/2.0.0`. A versão 1 é recusada explicitamente porque não comprova a origem dos arquivos.
 - `target`: `darwin-arm64`, `win32-x64` ou `linux-x64`.
 - `assets`: exatamente os nove IDs exigidos pelo manifesto.
-- Cada item informa `id`, `sourcePath`, `version`, `licenseSpdx`, `licenseEvidencePath` e `sbomEvidencePath`.
+- Cada item informa `id`, `sourcePath`, `version`, `licenseSpdx`, `licenseEvidencePath`, `sbomEvidencePath` e `sourcePackages`.
+- `sourcePackages` deve conter exatamente cada pacote remoto fixado para o alvo, com caminho absoluto local, SHA-256 e tamanho já copiados do guia.
+- Cada biblioteca auxiliar informa `sourcePackageSha256`, vinculando-a ao pacote fixado do qual foi extraída.
 - Todos os caminhos de origem são absolutos, regulares, não vazios e não podem ser links simbólicos.
 - O SBOM deve ser JSON CycloneDX com `bomFormat` e `specVersion`.
 - Quando a origem fixa bibliotecas auxiliares, o intake deve cobrir todos os grupos declarados e listar todos os arquivos necessários. O provisionador rejeita inventário de grupos incompleto antes de copiar qualquer arquivo.
@@ -34,7 +36,7 @@ IDs obrigatórios:
 
 Ao aplicar, a ferramenta:
 
-1. Revalida todo o inventário e todos os hashes.
+1. Revalida todo o inventário, o hash do source lock, todos os pacotes de origem e todos os arquivos extraídos.
 2. Recusa versões ou licenças conflitantes com outro alvo já preparado.
 3. Recusa aplicar sobre um diretório de alvo existente.
 4. Monta os arquivos em um diretório de staging com UUID dentro da raiz controlada.

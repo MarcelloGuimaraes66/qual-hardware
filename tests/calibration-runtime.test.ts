@@ -30,6 +30,10 @@ type MutableManifest = {
       sizeBytes: number | null;
       licenseEvidence?: { relativePath: string; sha256: string } | null;
       sbomEvidence?: { relativePath: string; sha256: string } | null;
+      sourcePackages?: Array<{ sha256: string; sizeBytes: number }>;
+      companionFiles?: Array<{
+        relativePath: string; sha256: string; sizeBytes: number; sourcePackageSha256?: string | null;
+      }>;
     }>;
   }>;
 };
@@ -167,6 +171,23 @@ describe("offline calibration runtime manifest", () => {
     });
     await expect(inspectCalibrationRuntime({ resourceRoot: duplicateRoot, platform: "linux", architecture: "x64", env: { PATH: "" } }))
       .rejects.toThrow("calibration_runtime_manifest_asset_inventory_invalid");
+  });
+
+  it("rejects companion provenance that does not reference a declared source package", async () => {
+    const root = await makeRuntimeFixture("linux-x64", {
+      mutate: (manifest) => {
+        const artifact = manifest.assets[0]!.artifacts["linux-x64"];
+        artifact.sourcePackages = [{ sha256: "a".repeat(64), sizeBytes: 10 }];
+        artifact.companionFiles = [{
+          relativePath: "bin/foreign-companion.so",
+          sha256: "b".repeat(64),
+          sizeBytes: 10,
+          sourcePackageSha256: "c".repeat(64),
+        }];
+      },
+    });
+    await expect(inspectCalibrationRuntime({ resourceRoot: root, platform: "linux", architecture: "x64", env: { PATH: "" } }))
+      .rejects.toThrow(/runtime_artifact_companion_source_package_unknown/);
   });
 
   it("blocks every launch on unsupported targets or when the rollback flag is set", async () => {

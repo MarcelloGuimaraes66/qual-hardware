@@ -15,8 +15,11 @@ import {
 import { parseCalibrationAssetSourceLock } from "./calibrationAssetSources.js";
 import { calibrationDiskStatus, type CalibrationDiskStatus } from "./calibrationTemporaryFiles.js";
 
-export const CALIBRATION_ASSET_INTAKE_VERSION = "qual-hardware-calibration-asset-intake/1.0.0" as const;
-export const CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION = "qual-hardware-calibration-asset-intake-template/1.0.0" as const;
+export const LEGACY_CALIBRATION_ASSET_INTAKE_VERSION = "qual-hardware-calibration-asset-intake/1.0.0" as const;
+export const CALIBRATION_ASSET_INTAKE_VERSION = "qual-hardware-calibration-asset-intake/2.0.0" as const;
+export const LEGACY_CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION = "qual-hardware-calibration-asset-intake-template/1.0.0" as const;
+export const CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION = "qual-hardware-calibration-asset-intake-template/2.0.0" as const;
+const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
 const absoluteExistingPathSchema = z.string().min(1).max(4_096).refine((value) => isAbsolute(value), "absolute_source_path_required");
 const intakeRelativePathSchema = z.string().min(1).max(500).superRefine((value, context) => {
   const segments = value.split(/[\\/]+/);
@@ -33,9 +36,15 @@ const intakeAssetSchema = z.object({
   licenseSpdx: z.string().min(1).max(160).refine((value) => !/^replace_/i.test(value), "license_placeholder_forbidden"),
   licenseEvidencePath: absoluteExistingPathSchema,
   sbomEvidencePath: absoluteExistingPathSchema,
+  sourcePackages: z.array(z.object({
+    sourcePath: absoluteExistingPathSchema,
+    sha256: sha256Schema,
+    sizeBytes: z.number().int().positive(),
+  }).strict()).max(32),
   companionFiles: z.array(z.object({
     sourcePath: absoluteExistingPathSchema,
     relativePath: intakeRelativePathSchema,
+    sourcePackageSha256: sha256Schema,
   }).strict()).max(256).optional().default([]),
 }).strict();
 export const calibrationAssetIntakeSchema = z.object({
@@ -67,7 +76,8 @@ export interface CalibrationAssetIntakeTemplate {
       licenseSpdx: string;
       licenseEvidencePath: string;
       sbomEvidencePath: string;
-      companionFiles: Array<{ sourcePath: string; relativePath: string }>;
+      sourcePackages: Array<{ sourcePath: string; sha256: string; sizeBytes: number }>;
+      companionFiles: Array<{ sourcePath: string; relativePath: string; sourcePackageSha256: string }>;
     }>;
   };
   sourceGuide: Array<{
@@ -94,21 +104,53 @@ interface PreparedFile {
   executable: boolean;
 }
 
+interface VerifiedSourcePackage {
+  id: typeof REQUIRED_RUNTIME_ASSET_IDS[number];
+  sourcePath: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
 export interface CalibrationRuntimeProvisioningPlan {
   target: SupportedRuntimeTarget;
   manifest: RuntimeManifest;
   manifestSha256: string;
   files: PreparedFile[];
+  sourcePackages: VerifiedSourcePackage[];
   stagingBytes: number;
 }
 
 function intakeFromInput(input: unknown): { intake: CalibrationAssetIntake; templateTarget: SupportedRuntimeTarget | null } {
   const template = calibrationAssetIntakeTemplateWrapperSchema.safeParse(input);
-  const intake = calibrationAssetIntakeSchema.parse(template.success ? template.data.intake : input);
+  const rawIntake = template.success ? template.data.intake : input;
+  const schemaVersion = rawIntake && typeof rawIntake === "object" && "schemaVersion" in rawIntake
+    ? (rawIntake as { schemaVersion?: unknown }).schemaVersion : null;
+  const wrapperVersion = input && typeof input === "object" && "schemaVersion" in input
+    ? (input as { schemaVersion?: unknown }).schemaVersion : null;
+  if (schemaVersion === LEGACY_CALIBRATION_ASSET_INTAKE_VERSION ||
+      wrapperVersion === LEGACY_CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION) {
+    throw new Error("calibration_asset_intake_v1_source_provenance_required");
+  }
+  const intake = calibrationAssetIntakeSchema.parse(rawIntake);
   if (template.success && template.data.target !== intake.target) {
     throw new Error("calibration_asset_intake_template_target_mismatch");
   }
   return { intake, templateTarget: template.success ? template.data.target : null };
+}
+
+type CalibrationLockedSource = ReturnType<typeof parseCalibrationAssetSourceLock>["assets"][number]["targets"][SupportedRuntimeTarget];
+
+function lockedSourcePackages(source: CalibrationLockedSource): Array<{ sha256: string; sizeBytes: number }> {
+  const packages = new Map<string, { sha256: string; sizeBytes: number }>();
+  const candidates = [
+    ...(source.sourceKind === "repository_source" || source.sourceKind === "unavailable" ? [] : [source]),
+    ...source.companionSources,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate.sha256 || candidate.sizeBytes === null) throw new Error("calibration_asset_locked_source_integrity_missing");
+    packages.set(`${candidate.sha256}:${candidate.sizeBytes}`, { sha256: candidate.sha256, sizeBytes: candidate.sizeBytes });
+  }
+  return [...packages.values()];
 }
 
 export async function createCalibrationRuntimeIntakeTemplate(input: {
@@ -129,6 +171,7 @@ export async function createCalibrationRuntimeIntakeTemplate(input: {
     const runtimeDefinition = manifest.assets.find((asset) => asset.id === id);
     if (!sourceDefinition || !runtimeDefinition) throw new Error(`calibration_asset_template_inventory_missing:${id}`);
     const source = sourceDefinition.targets[target];
+    const sourcePackages = lockedSourcePackages(source);
     return {
       intake: {
         id,
@@ -137,9 +180,15 @@ export async function createCalibrationRuntimeIntakeTemplate(input: {
         licenseSpdx: `REPLACE_WITH_APPROVED_SPDX_FOR_${id.toUpperCase().replaceAll("-", "_")}`,
         licenseEvidencePath: `REPLACE_WITH_ABSOLUTE_LICENSE_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}`,
         sbomEvidencePath: `REPLACE_WITH_ABSOLUTE_CYCLONEDX_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}`,
-        companionFiles: source.companionSources.map((_companion, index) => ({
+        sourcePackages: sourcePackages.map((sourcePackage, index) => ({
+          sourcePath: `REPLACE_WITH_ABSOLUTE_SOURCE_PACKAGE_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}_${index + 1}`,
+          sha256: sourcePackage.sha256,
+          sizeBytes: sourcePackage.sizeBytes,
+        })),
+        companionFiles: source.companionSources.map((companion, index) => ({
           sourcePath: `REPLACE_WITH_ABSOLUTE_COMPANION_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}_GROUP_${index + 1}`,
           relativePath: `REPLACE_WITH_RELATIVE_BIN_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}_GROUP_${index + 1}`,
+          sourcePackageSha256: companion.sha256,
         })),
       },
       guide: {
@@ -165,7 +214,8 @@ export async function createCalibrationRuntimeIntakeTemplate(input: {
       "Preencha somente com ativos obtidos e revisados fora da execução da calibração.",
       "Substitua todos os valores REPLACE_WITH; caminhos devem ser absolutos e apontar para arquivos regulares, nunca links simbólicos.",
       "O campo licenseSpdx exige decisão humana; licenseSpdxCandidate é apenas referência e não representa aprovação.",
-      "Para cada grupo auxiliar, liste todos os arquivos extraídos necessários e preserve o destino dentro da raiz do runtime.",
+      "sourcePackages deve apontar para cada pacote imutável completo; hash e tamanho já vêm fixados pelo inventário.",
+      "Para cada grupo auxiliar, liste todos os arquivos extraídos necessários, associe o hash do pacote e preserve o destino dentro da raiz do runtime.",
       "Use este mesmo arquivo com --intake após preencher o objeto intake; o guia de origem é informativo e não autoriza download em runtime.",
     ],
     intake: {
@@ -235,20 +285,52 @@ export async function planCalibrationRuntimeProvisioning(input: {
   const manifestPath = safeChildPath(repositoryRoot, "resources/calibration/runtime-manifest.json");
   const manifest = runtimeManifestSchema.parse(JSON.parse(await readFile(manifestPath, "utf8")));
   const sourceLockPath = safeChildPath(repositoryRoot, manifest.sourceLock.relativePath);
-  const sourceLock = parseCalibrationAssetSourceLock(JSON.parse(await readFile(sourceLockPath, "utf8")));
+  const sourceLockBytes = await readFile(sourceLockPath, "utf8");
+  if (createHash("sha256").update(sourceLockBytes).digest("hex") !== manifest.sourceLock.sha256) {
+    throw new Error("calibration_asset_source_lock_hash_mismatch");
+  }
+  const sourceLock = parseCalibrationAssetSourceLock(JSON.parse(sourceLockBytes));
   const sourceDefinitions = new Map(sourceLock.assets.map((asset) => [asset.id, asset]));
   for (const item of intake.assets) {
     const sourceDefinition = sourceDefinitions.get(item.id);
     if (!sourceDefinition) throw new Error(`calibration_asset_source_inventory_missing:${item.id}`);
-    const requiredCompanionGroups = sourceDefinition.targets[intake.target].companionSources.length;
-    if (item.companionFiles.length < requiredCompanionGroups) {
-      throw new Error(`calibration_asset_companion_groups_incomplete:${item.id}:${requiredCompanionGroups}:${item.companionFiles.length}`);
+    const lockedSource = sourceDefinition.targets[intake.target];
+    if (lockedSource.sourceKind === "unavailable") throw new Error(`calibration_asset_source_unavailable:${item.id}:${intake.target}`);
+    const expectedPackages = lockedSourcePackages(lockedSource);
+    const expectedPackageKeys = new Set(expectedPackages.map((sourcePackage) => `${sourcePackage.sha256}:${sourcePackage.sizeBytes}`));
+    const declaredPackageKeys = item.sourcePackages.map((sourcePackage) => `${sourcePackage.sha256}:${sourcePackage.sizeBytes}`);
+    if (new Set(declaredPackageKeys).size !== declaredPackageKeys.length) {
+      throw new Error(`calibration_asset_source_package_duplicate:${item.id}`);
+    }
+    if (declaredPackageKeys.length !== expectedPackageKeys.size ||
+        declaredPackageKeys.some((key) => !expectedPackageKeys.has(key))) {
+      throw new Error(`calibration_asset_source_package_inventory_mismatch:${item.id}:${expectedPackageKeys.size}:${declaredPackageKeys.length}`);
+    }
+    const expectedCompanionPackages = new Set(lockedSource.companionSources.map((companion) => companion.sha256));
+    if (item.companionFiles.some((companion) => !expectedCompanionPackages.has(companion.sourcePackageSha256))) {
+      throw new Error(`calibration_asset_companion_source_package_unknown:${item.id}`);
+    }
+    const providedCompanionPackages = new Set(item.companionFiles.map((companion) => companion.sourcePackageSha256));
+    const missingCompanionPackages = [...expectedCompanionPackages].filter((sha256) => !providedCompanionPackages.has(sha256));
+    if (missingCompanionPackages.length > 0) {
+      throw new Error(`calibration_asset_companion_groups_incomplete:${item.id}:${expectedCompanionPackages.size}:${providedCompanionPackages.size}`);
     }
   }
   const files: PreparedFile[] = [];
+  const verifiedSourcePackages: VerifiedSourcePackage[] = [];
   for (const item of intake.assets) {
     const definition = manifest.assets.find((asset) => asset.id === item.id);
+    const sourceDefinition = sourceDefinitions.get(item.id);
     if (!definition) throw new Error(`calibration_runtime_manifest_asset_missing:${item.id}`);
+    if (!sourceDefinition) throw new Error(`calibration_asset_source_inventory_missing:${item.id}`);
+    for (const [index, sourcePackage] of item.sourcePackages.entries()) {
+      const actual = await regularSource(sourcePackage.sourcePath, `${item.id}:source-package:${index}`);
+      if (actual.sha256 !== sourcePackage.sha256 || actual.size !== sourcePackage.sizeBytes) {
+        throw new Error(`calibration_asset_source_package_integrity_mismatch:${item.id}:${index}`);
+      }
+      verifiedSourcePackages.push({ id: item.id, sourcePath: sourcePackage.sourcePath,
+        sha256: actual.sha256, sizeBytes: actual.size });
+    }
     if (definition.version && definition.version !== item.version) throw new Error(`calibration_asset_version_conflict:${item.id}`);
     if (definition.licenseSpdx && definition.licenseSpdx !== item.licenseSpdx) throw new Error(`calibration_asset_license_conflict:${item.id}`);
     const asset = await regularSource(item.sourcePath, `${item.id}:asset`);
@@ -260,6 +342,17 @@ export async function planCalibrationRuntimeProvisioning(input: {
     })));
     await validateCycloneDx(item.sbomEvidencePath, item.id);
     const artifact = definition.artifacts[intake.target];
+    const lockedSource = sourceDefinition.targets[intake.target];
+    if (lockedSource.sourceKind === "direct_file" &&
+        (asset.sha256 !== lockedSource.sha256 || asset.size !== lockedSource.sizeBytes)) {
+      throw new Error(`calibration_asset_direct_file_integrity_mismatch:${item.id}`);
+    }
+    if (artifact.sha256 && (asset.sha256 !== artifact.sha256 || asset.size !== artifact.sizeBytes)) {
+      throw new Error(`calibration_asset_pinned_artifact_integrity_mismatch:${item.id}:${intake.target}`);
+    }
+    if (lockedSource.sourceKind === "repository_source" && (!artifact.sha256 || artifact.sizeBytes === null)) {
+      throw new Error(`calibration_asset_repository_artifact_unpinned:${item.id}:${intake.target}`);
+    }
     const licenseRelativePath = `licenses/${item.id}.txt`;
     const sbomRelativePath = `sbom/${item.id}.cdx.json`;
     definition.version = item.version;
@@ -268,10 +361,15 @@ export async function planCalibrationRuntimeProvisioning(input: {
     artifact.sizeBytes = asset.size;
     artifact.licenseEvidence = { relativePath: licenseRelativePath, sha256: license.sha256 };
     artifact.sbomEvidence = { relativePath: sbomRelativePath, sha256: sbom.sha256 };
+    artifact.sourcePackages = item.sourcePackages.map((sourcePackage) => ({
+      sha256: sourcePackage.sha256,
+      sizeBytes: sourcePackage.sizeBytes,
+    }));
     artifact.companionFiles = companions.map((file) => ({
       relativePath: file.relativePath,
       sha256: file.sha256,
       sizeBytes: file.size,
+      sourcePackageSha256: file.sourcePackageSha256,
     }));
     files.push(
       { id: item.id, kind: "asset", sourcePath: item.sourcePath, relativePath: artifact.relativePath,
@@ -296,6 +394,7 @@ export async function planCalibrationRuntimeProvisioning(input: {
     manifest,
     manifestSha256: createHash("sha256").update(manifestBytes).digest("hex"),
     files,
+    sourcePackages: verifiedSourcePackages,
     stagingBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0) + Buffer.byteLength(manifestBytes, "utf8"),
   };
 }
