@@ -2,13 +2,14 @@ import { createHash } from "node:crypto";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CALIBRATION_RUNTIME_MANIFEST_VERSION,
   inspectCalibrationRuntime,
 } from "../src/server/calibrationRuntime.js";
 
-const projectRoot = new URL("..", import.meta.url).pathname;
+const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const temporaryRoots: string[] = [];
 const targetKeys = ["darwin-arm64", "win32-x64", "linux-x64"] as const;
 

@@ -498,7 +498,15 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(await fileExists(completedEvidencePath), true, "the compact successful evidence must survive temporary cleanup");
   assert((await stat(completedEvidencePath)).size <= 10 * 1024 * 1024, "successful evidence must respect the 10 MB limit");
   assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "unavailable");
-  for (const stage of ["thermal_sustain", "job_scheduler", "intelligence_scheduler", "database_persistence", "dashboard_queries"] as const) {
+  const thermalEvidence = completedCalibration.result?.stages.find((item) => item.stage === "thermal_sustain")?.evidenceStatus;
+  assert(["measured", "unavailable"].includes(thermalEvidence ?? ""),
+    "thermal evidence must be measured on physical hardware or explicitly unavailable on a virtual runner");
+  if (thermalEvidence === "unavailable") {
+    assert.equal(completedCalibration.result?.qualityGate?.eligibleForCapacityExtrapolation, false);
+    assert(completedCalibration.result?.qualityGate?.failures.includes("thermal_throttling_sensor_unavailable"),
+      "missing thermal evidence must remain a blocking diagnostic failure");
+  }
+  for (const stage of ["job_scheduler", "intelligence_scheduler", "database_persistence", "dashboard_queries"] as const) {
     assert.equal(completedCalibration.result?.stages.find((item) => item.stage === stage)?.evidenceStatus, "measured");
   }
   assert.equal(completedCalibration.result?.pipelineEvidence?.jobSchedulerExecuted, true);

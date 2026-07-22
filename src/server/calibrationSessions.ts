@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { promisify } from "node:util";
 import {
   AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
@@ -305,18 +305,18 @@ async function windowsDocuments(home: string): Promise<string> {
     const { stdout } = await execFileAsync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command", "[Environment]::GetFolderPath('MyDocuments')",
     ], { encoding: "utf8", windowsHide: true, timeout: 8_000 });
-    return String(stdout).trim() || join(home, "Documents");
+    return String(stdout).trim() || win32.join(home, "Documents");
   } catch {
-    return join(home, "Documents");
+    return win32.join(home, "Documents");
   }
 }
 
 async function linuxDocuments(home: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const configured = env.XDG_CONFIG_HOME?.trim() || join(home, ".config");
-  const content = await readFile(join(configured, "user-dirs.dirs"), "utf8").catch(() => "");
+  const configured = env.XDG_CONFIG_HOME?.trim() || posix.join(home, ".config");
+  const content = await readFile(posix.join(configured, "user-dirs.dirs"), "utf8").catch(() => "");
   const match = content.match(/^XDG_DOCUMENTS_DIR=(?:"([^"]*)"|'([^']*)'|(.*))$/m);
   const value = String(match?.[1] || match?.[2] || match?.[3] || "").trim();
-  return value ? value.replace(/^\$HOME(?=\/|$)/, home) : join(home, "Documents");
+  return value ? value.replace(/^\$HOME(?=\/|$)/, home) : posix.join(home, "Documents");
 }
 
 export async function resolveCalibrationDirectory(options: {
@@ -325,16 +325,17 @@ export async function resolveCalibrationDirectory(options: {
   env?: NodeJS.ProcessEnv;
   home?: string;
 } = {}): Promise<string> {
-  if (options.documentsDirectory) return resolve(options.documentsDirectory, "Qual Hardware", "Calibracoes");
   const platform = options.platform ?? process.platform;
+  const pathApi = platform === "win32" ? win32 : posix;
+  if (options.documentsDirectory) return pathApi.resolve(options.documentsDirectory, "Qual Hardware", "Calibracoes");
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();
   const override = env.QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR?.trim();
-  if (override) return resolve(override, "Qual Hardware", "Calibracoes");
-  const documents = platform === "win32" ? (options.home === undefined ? await windowsDocuments(home) : join(home, "Documents"))
+  if (override) return pathApi.resolve(override, "Qual Hardware", "Calibracoes");
+  const documents = platform === "win32" ? (options.home === undefined ? await windowsDocuments(home) : win32.join(home, "Documents"))
     : platform === "linux" ? await linuxDocuments(home, env)
-    : join(home, "Documents");
-  return resolve(documents, "Qual Hardware", "Calibracoes");
+    : posix.join(home, "Documents");
+  return pathApi.resolve(documents, "Qual Hardware", "Calibracoes");
 }
 
 export async function findPersistedCalibration(

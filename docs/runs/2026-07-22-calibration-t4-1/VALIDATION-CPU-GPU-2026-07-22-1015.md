@@ -1,6 +1,6 @@
 # Validation addendum — mandatory CPU and GPU lanes
 
-Status: local Qual Hardware gates green; candidate commit published; corrective hosted CI and physical Windows/Ubuntu/macOS gates pending.
+Status: local Qual Hardware gates green; first corrective commit published; second corrective hosted CI and physical Windows/Ubuntu/macOS gates pending.
 
 ## Scope and invariants
 
@@ -33,6 +33,9 @@ Status: local Qual Hardware gates green; candidate commit published; corrective 
 - Smoke temporary data: removed; zero retained smoke workspace.
 - Telemetry probe: reproducible Mach-O arm64, PE x64 and ELF x64 binaries; local macOS contract/thermal execution passed; verifier temporaries ended at zero bytes.
 - Signed exchange self-test: three producer identities, one consolidated collection, zero temporary bytes.
+- Second hosted-correction critical set: 6 files / 51 tests passed.
+- Windows path portability: every repository-root URL uses `fileURLToPath`; Documents resolution is tested with native Windows and POSIX paths.
+- Virtual-runner thermal behavior: missing sensors remain explicit, diagnostic and ineligible; physical qualification still requires measured evidence.
 - Dependency audit: zero high-or-higher vulnerabilities.
 - Source audit: `externalSourceAccess:false`; source-lock SHA-256 `8ab591a075e8f25a58736ebf68a55292eb11bc338d3da43be73e4c462558aa4d`.
 - `git diff --check`: passed.

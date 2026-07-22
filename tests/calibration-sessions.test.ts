@@ -214,7 +214,7 @@ describe("secure cross-platform calibration handoff", () => {
 
   it("resolves the real Documents convention for macOS, Windows and Ubuntu", async () => {
     expect(await resolveCalibrationDirectory({ platform: "darwin", home: "/Users/test", env: {} })).toBe("/Users/test/Documents/Qual Hardware/Calibracoes");
-    expect(await resolveCalibrationDirectory({ platform: "win32", home: "/Users/test", env: {} })).toBe("/Users/test/Documents/Qual Hardware/Calibracoes");
+    expect(await resolveCalibrationDirectory({ platform: "win32", home: "C:\\Users\\test", env: {} })).toBe("C:\\Users\\test\\Documents\\Qual Hardware\\Calibracoes");
     expect(await resolveCalibrationDirectory({ platform: "linux", home: "/home/test", env: { QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR: "/mnt/docs" } })).toBe("/mnt/docs/Qual Hardware/Calibracoes");
   });
 

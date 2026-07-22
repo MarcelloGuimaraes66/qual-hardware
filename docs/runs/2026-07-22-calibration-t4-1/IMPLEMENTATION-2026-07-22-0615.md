@@ -1,6 +1,6 @@
 # Implementation — Calibration T4.1
 
-Update 2026-07-22 16:05: every tier/phase still requires isolated CPU and GPU lanes. The first hosted CI run additionally required deterministic LF attributes, corrected evidence hashes, host-independent Windows Documents tests and clearer disk-reserve diagnostics. Local proof is recorded in `CI-CORRECTION-2026-07-22-1605.md`.
+Update 2026-07-22 16:20: every tier/phase still requires isolated CPU and GPU lanes. Hosted native execution additionally required `fileURLToPath` for Windows repository roots, target-specific Windows/POSIX Documents semantics, Windows-safe test timeouts and diagnostic handling of unavailable thermal sensors on virtual Ubuntu. None of these changes weakens the physical evidence gate. Local proof is recorded in `CI-CORRECTION-2026-07-22-1605.md`.
 
 Status: corrective implementation complete and locally green; hosted native revalidation, approved runtime and physical gates pending.
 

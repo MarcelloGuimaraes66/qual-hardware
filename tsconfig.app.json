@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": ["src/web", "src/shared", "src/engine", "tests", "vite.config.ts"]
+  "include": ["src/web", "src/shared", "src/engine", "tests", "vite.config.ts", "vitest.config.ts"]
 }

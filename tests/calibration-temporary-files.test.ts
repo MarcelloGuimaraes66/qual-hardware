@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   cleanupCalibrationWorkspace,
@@ -16,6 +17,7 @@ import {
 import { CalibrationKernelService } from "../src/server/calibrationKernelService.js";
 
 const generatedRoots: string[] = [];
+const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 afterEach(async () => {
   for (const root of generatedRoots.splice(0)) {
     await rm(root, { recursive: true, force: true });
@@ -103,7 +105,7 @@ describe("session-owned calibration temporary files", () => {
     const service = new CalibrationKernelService({
       temporaryRoot: root,
       evidenceDirectory: join(root, "evidence"),
-      resourceRoot: new URL("..", import.meta.url).pathname,
+      resourceRoot: projectRoot,
       appVersion: "test",
     });
     const cleanup = await service.retryCleanup(sessionId);
@@ -163,7 +165,7 @@ describe("session-owned calibration temporary files", () => {
     const service = new CalibrationKernelService({
       temporaryRoot: created.root,
       evidenceDirectory: join(created.root, "evidence"),
-      resourceRoot: new URL("..", import.meta.url).pathname,
+      resourceRoot: projectRoot,
       appVersion: "test",
     });
     const normal = await service.retryCleanup(created.manifest.sessionId);
