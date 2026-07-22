@@ -1,9 +1,10 @@
 import { serve, type ServerType } from "@hono/node-server";
-import { app, BrowserWindow, dialog, Menu, session, shell } from "electron";
-import { createApp } from "../server/app.js";
+import { app, BrowserWindow, dialog, Menu, safeStorage, session, shell } from "electron";
+import { createApp, refreshPredictions } from "../server/app.js";
 import { CatalogUpdateService } from "../server/catalogUpdates.js";
-import { validatePerceptrumProtocolUri } from "../server/calibrationSessions.js";
 import { createStore, type PlannerStore } from "../server/store.js";
+import { CalibrationKernelService } from "../server/calibrationKernelService.js";
+import { join } from "node:path";
 import {
   createIdempotentShutdown,
   DESKTOP_APP_ID,
@@ -20,8 +21,17 @@ let localServer: ServerType | null = null;
 let store: PlannerStore | null = null;
 let catalogUpdates: CatalogUpdateService | null = null;
 let catalogRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let catalogDeferredRetryTimer: ReturnType<typeof setInterval> | null = null;
+let catalogRefreshDeferred = false;
 let localOrigin = "";
 let shutdownComplete = false;
+let calibrationKernel: CalibrationKernelService | null = null;
+
+async function refreshCalibrationEvidence(): Promise<void> {
+  if (!store || !calibrationKernel) return;
+  const runtime = await calibrationKernel.runtimeStatus();
+  await refreshPredictions(store, { kernelVersion: runtime.kernelVersion, runtimeManifestHash: runtime.manifestHash });
+}
 
 app.enableSandbox();
 
@@ -31,6 +41,12 @@ async function startLocalApplication(): Promise<string> {
   process.env.QUAL_HARDWARE_SQLITE_PATH = paths.databaseFile;
   delete process.env.QUAL_HARDWARE_IN_MEMORY;
   store = createStore();
+  calibrationKernel = new CalibrationKernelService({
+    temporaryRoot: join(app.getPath("temp"), "qual-hardware-calibration"),
+    evidenceDirectory: paths.calibrationEvidenceDirectory,
+    resourceRoot: app.isPackaged ? process.resourcesPath : app.getAppPath(),
+    appVersion: app.getVersion(),
+  });
   const updates = new CatalogUpdateService(store, {
     remoteUrl: process.env.QUAL_HARDWARE_CATALOG_URL,
     publicKeyPem: process.env.QUAL_HARDWARE_CATALOG_PUBLIC_KEY?.replaceAll("\\n", "\n"),
@@ -41,21 +57,45 @@ async function startLocalApplication(): Promise<string> {
   });
   catalogUpdates = updates;
   await updates.initialize();
+  await refreshCalibrationEvidence();
   catalogRefreshTimer = setInterval(() => {
-    void updates.refresh().catch((error: unknown) => console.error("Catalog refresh failed", error));
+    if (calibrationKernel?.hasActiveSession()) {
+      catalogRefreshDeferred = true;
+      return;
+    }
+    void updates.refresh().then(refreshCalibrationEvidence)
+      .catch((error: unknown) => console.error("Catalog refresh failed", error));
   }, CATALOG_REFRESH_INTERVAL_MILLISECONDS);
   catalogRefreshTimer.unref();
+  catalogDeferredRetryTimer = setInterval(() => {
+    if (!catalogRefreshDeferred || calibrationKernel?.hasActiveSession() || updates.refreshing) return;
+    catalogRefreshDeferred = false;
+    void updates.refresh().then(refreshCalibrationEvidence).catch((error: unknown) => {
+      catalogRefreshDeferred = true;
+      console.error("Deferred catalog refresh failed", error);
+    });
+  }, 1_000);
+  catalogDeferredRetryTimer.unref();
 
   return new Promise((resolveOrigin, reject) => {
     localServer = serve({
       fetch: createApp(store!, updates, {
         documentsDirectory: app.getPath("documents"),
-        desktopBridge: {
-          async openPerceptrumCalibration(uri: string): Promise<void> {
-            const target = validatePerceptrumProtocolUri(uri);
-            if (!target) throw new Error("invalid_perceptrum_calibration_uri");
-            await shell.openExternal(target);
+        resourceRoot: app.isPackaged ? process.resourcesPath : app.getAppPath(),
+        calibrationTemporaryRoot: join(app.getPath("temp"), "qual-hardware-calibration"),
+        calibrationEvidenceDirectory: paths.calibrationEvidenceDirectory,
+        calibrationIdentityDirectory: join(app.getPath("userData"), "calibration-identity"),
+        calibrationPrivateKeyProtection: {
+          isAvailable(): boolean {
+            if (!safeStorage.isEncryptionAvailable()) return false;
+            return process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text";
           },
+          encryptString(value: string): Uint8Array { return safeStorage.encryptString(value); },
+          decryptString(value: Uint8Array): string { return safeStorage.decryptString(Buffer.from(value)); },
+        },
+        appVersion: app.getVersion(),
+        calibrationKernel: calibrationKernel!,
+        desktopBridge: {
           async openPath(path: string): Promise<void> {
             const failure = await shell.openPath(path);
             if (failure) throw new Error(failure);
@@ -70,6 +110,7 @@ async function startLocalApplication(): Promise<string> {
 }
 
 function openExternalUrl(candidate: string): void {
+  if (calibrationKernel?.hasActiveSession()) return;
   const target = externalHttpUrl(candidate);
   if (target) void shell.openExternal(target);
 }
@@ -111,10 +152,15 @@ function createMainWindow(): BrowserWindow {
 
 const shutdown = createIdempotentShutdown(async (): Promise<void> => {
   if (catalogRefreshTimer) clearInterval(catalogRefreshTimer);
+  if (catalogDeferredRetryTimer) clearInterval(catalogDeferredRetryTimer);
   catalogRefreshTimer = null;
+  catalogDeferredRetryTimer = null;
+  catalogRefreshDeferred = false;
   if (localServer) await new Promise<void>((resolveClose) => localServer!.close(() => resolveClose()));
   localServer = null;
   catalogUpdates = null;
+  await calibrationKernel?.close();
+  calibrationKernel = null;
   await store?.close();
   store = null;
 });

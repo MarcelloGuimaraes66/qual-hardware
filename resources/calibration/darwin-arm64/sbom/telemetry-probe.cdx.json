@@ -1,0 +1,45 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-07-22T12:20:00.000Z",
+    "component": {
+      "type": "application",
+      "name": "qual-hardware-telemetry-probe",
+      "version": "0.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "5a62d169acb3fe02221c8685547b8a0a4aeb57e75c0d3f4bc31d81b32fabf62e"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "NOASSERTION — first-party licensing decision pending"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "aiquimist:runtime-target",
+          "value": "darwin-arm64"
+        },
+        {
+          "name": "aiquimist:source-sha256",
+          "value": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f"
+        },
+        {
+          "name": "aiquimist:go-toolchain",
+          "value": "go1.26.5"
+        },
+        {
+          "name": "aiquimist:third-party-modules",
+          "value": "none"
+        }
+      ]
+    }
+  },
+  "components": []
+}

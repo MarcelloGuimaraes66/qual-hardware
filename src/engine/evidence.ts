@@ -106,10 +106,11 @@ export function buildEvidenceCoverage(input: CoverageInput): EvidenceCoverageSum
     });
     const eligible = candidates.filter(isPublicObservationEligible);
     const anchors = eligibleRuns.filter((run) => run.stages.some((metric) => metric.stage === stage && metric.evidenceStatus === "measured"));
+    const distinctAnchorConfigurations = new Set(anchors.map((run) => run.fingerprint.hardwareTemplateId).filter(Boolean)).size;
     const publicRequired = !PHYSICAL_ONLY_STAGES.has(stage);
-    const covered = anchors.length >= 3 && (!publicRequired || eligible.length > 0);
+    const covered = distinctAnchorConfigurations >= 3 && (!publicRequired || eligible.length > 0);
     const reasons: string[] = [];
-    if (anchors.length < 3) reasons.push(`São necessárias 3 calibrações físicas comparáveis; existem ${anchors.length}.`);
+    if (distinctAnchorConfigurations < 3) reasons.push(`São necessárias 3 configurações físicas distintas; existem ${distinctAnchorConfigurations}.`);
     if (publicRequired && eligible.length === 0) reasons.push("Não existe benchmark público elegível e comparável para este estágio.");
     return {
       stage,
@@ -132,22 +133,23 @@ export function buildEvidenceCoverage(input: CoverageInput): EvidenceCoverageSum
     complete: coveredStageCount === stages.length,
     eligibleObservationCount: eligibleObservationIds.size,
     referenceObservationCount: referenceObservationIds.size,
-    physicalAnchorCount: new Set(eligibleRuns.map((run) => run.id)).size,
+    physicalAnchorCount: new Set(eligibleRuns.map((run) => run.fingerprint.hardwareTemplateId).filter(Boolean)).size,
     stages,
   };
 }
 
 export function buildProcurementGate(coverage: EvidenceCoverageSummary, status: CalibrationStatus = "reference_only"): ProcurementGate {
+  const exactComplete = status === "validated_local" && coverage.stages.every((stage) => stage.physicalAnchorRunIds.length >= 1);
   const highConfidence = status === "validated_local" || status === "extrapolated_high";
-  const eligible = coverage.complete && coverage.physicalAnchorCount >= 3 && highConfidence;
-  const reasons = coverage.stages.flatMap((stage) => stage.reasons.map((reason) => `${stage.stage}: ${reason}`));
+  const eligible = exactComplete || status === "extrapolated_high";
+  const reasons = eligible ? [] : coverage.stages.flatMap((stage) => stage.reasons.map((reason) => `${stage.stage}: ${reason}`));
   if (!highConfidence) reasons.unshift(`Estado de evidência '${status}' não libera aquisição.`);
   return {
     eligibility: eligible ? "eligible" : status === "extrapolated_medium" ? "planning_only" : "blocked",
     status: eligible ? "apt_for_procurement" : status === "extrapolated_medium" ? "planning" : "blocked",
     reasons: [...new Set(reasons)],
     comparablePhysicalAnchors: coverage.physicalAnchorCount,
-    requiredPhysicalAnchors: 3,
-    completeStageCoverage: coverage.complete,
+    requiredPhysicalAnchors: status === "validated_local" ? 1 : 3,
+    completeStageCoverage: eligible || coverage.complete,
   };
 }

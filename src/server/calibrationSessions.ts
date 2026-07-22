@@ -5,8 +5,13 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
+  AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
   CALIBRATION_HANDOFF_VERSION,
+  CALIBRATION_KERNEL_VERSION,
+  CALIBRATION_PROGRESS_VERSION,
+  PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
   type CalibrationPlan,
+  type CalibrationRuntimeStatus,
   type CalibrationSession,
   type CalibrationSessionProgress,
   type CalibrationSessionRecord,
@@ -16,6 +21,42 @@ import {
 const execFileAsync = promisify(execFile);
 const SESSION_LIFETIME_MS = 2 * 60 * 60 * 1_000;
 const MAX_RESULT_BYTES = 10 * 1024 * 1024;
+
+export function assertAutonomousCalibrationSessionContract(
+  run: LocalCalibrationRun,
+  session: CalibrationSessionRecord,
+  runtimeStatus: CalibrationRuntimeStatus,
+): void {
+  if (run.schemaVersion !== AUTONOMOUS_LOCAL_CALIBRATION_VERSION) return;
+  if (run.mode !== session.mode || run.workloadProfileId !== session.plan.workloadProfile.id ||
+      run.workloadProfileSignature !== session.plan.workloadProfile.signature) {
+    throw new Error("calibration_workload_profile_mismatch");
+  }
+  if (session.plan.targetHardwareTemplateId &&
+      run.fingerprint.hardwareTemplateId !== session.plan.targetHardwareTemplateId) {
+    throw new Error("calibration_hardware_fingerprint_mismatch");
+  }
+  if (run.kernelVersion !== CALIBRATION_KERNEL_VERSION || run.kernelVersion !== runtimeStatus.kernelVersion ||
+      run.runtimeManifestHash !== runtimeStatus.manifestHash) {
+    throw new Error("calibration_runtime_manifest_mismatch");
+  }
+  if (run.compatiblePerceptrumCommit !== PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT ||
+      run.fingerprint.perceptrumBuildHash !== session.plan.workloadProfile.targetBuildHash ||
+      (run.qualityGate?.eligibleForCapacityExtrapolation &&
+        run.fingerprint.perceptrumBuildHash !== PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT)) {
+    throw new Error("calibration_perceptrum_build_mismatch");
+  }
+  if (run.qualityGate?.eligibleForCapacityExtrapolation &&
+      (!run.computeEvidence?.cpu.measured || !run.computeEvidence.gpu.inferenceMeasured ||
+        !run.computeEvidence.gpu.mediaMeasured || !run.computeEvidence.gpu.utilizationMeasured ||
+        !run.computeEvidence.combined.measured)) {
+    throw new Error("calibration_cpu_gpu_evidence_incomplete");
+  }
+  if (run.qualityGate?.eligibleForCapacityExtrapolation &&
+      (!runtimeStatus.manifestApproved || run.runtimeProvenance?.manifestApproved !== true)) {
+    throw new Error("calibration_runtime_manifest_not_approved_for_purchase_evidence");
+  }
+}
 
 export interface DesktopCalibrationBridge {
   openPerceptrumCalibration(uri: string): Promise<void>;
@@ -94,9 +135,47 @@ export function createCalibrationSession(input: {
   return { record, token, uri: uri.toString() };
 }
 
+export function createInternalCalibrationSession(input: {
+  plan: CalibrationPlan;
+  recommendationId: string;
+  scenarioId: string;
+  advancedTelemetry: boolean;
+  now?: Date;
+}): CalibrationSessionRecord {
+  const createdAt = (input.now ?? new Date()).toISOString();
+  return {
+    id: randomUUID(),
+    planId: input.plan.id,
+    recommendationId: input.recommendationId,
+    scenarioId: input.scenarioId,
+    mode: input.plan.mode,
+    advancedTelemetry: input.advancedTelemetry,
+    state: "pending",
+    createdAt,
+    expiresAt: new Date(Date.parse(createdAt) + SESSION_LIFETIME_MS).toISOString(),
+    launchedAt: null,
+    completedAt: null,
+    progress: null,
+    result: null,
+    cleanup: {
+      schemaVersion: "qual-hardware-calibration-cleanup/1.0.0",
+      state: "not_started",
+      bytesTemporary: 0,
+      bytesRemoved: 0,
+      attempts: 0,
+      remainingBytes: 0,
+      updatedAt: createdAt,
+      error: null,
+    },
+    error: null,
+    tokenHash: "internal",
+    plan: structuredClone(input.plan),
+  };
+}
+
 export function publicCalibrationSession(record: CalibrationSessionRecord): CalibrationSession {
   const { tokenHash: _tokenHash, plan: _plan, ...session } = record;
-  return structuredClone(session);
+  return structuredClone({ ...session, progress: session.progress ? normalizeCalibrationProgress(session.progress) : null });
 }
 
 export function authorizeCalibrationSession(
@@ -117,12 +196,50 @@ export function authorizeCalibrationSession(
 export function normalizeCalibrationProgress(input: unknown): CalibrationSessionProgress {
   const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const percent = Number(value.percent);
+  const normalizedPercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+  const number = (key: string, fallback = 0): number => {
+    const candidate = Number(value[key]);
+    return Number.isFinite(candidate) ? Math.max(0, candidate) : fallback;
+  };
+  const iso = (key: string, fallback: string): string => {
+    const candidate = value[key];
+    return typeof candidate === "string" && Number.isFinite(Date.parse(candidate)) ? new Date(candidate).toISOString() : fallback;
+  };
+  const timestamp = new Date().toISOString();
+  const sessionStartedAt = iso("sessionStartedAt", iso("updatedAt", timestamp));
+  const phaseStartedAt = iso("phaseStartedAt", sessionStartedAt);
+  const estimatedRemainingSeconds = value.estimatedRemainingSeconds === null
+    ? null : number("estimatedRemainingSeconds", 0);
+  const estimatedCompletionAt = value.estimatedCompletionAt === null
+    ? null : iso("estimatedCompletionAt", new Date(Date.parse(timestamp) + (estimatedRemainingSeconds ?? 0) * 1_000).toISOString());
   return {
+    schemaVersion: CALIBRATION_PROGRESS_VERSION,
     ...(typeof value.phase === "string" ? { phase: value.phase.slice(0, 120) } : {}),
     ...(typeof value.stage === "string" ? { stage: value.stage.slice(0, 120) } : {}),
-    ...(Number.isFinite(percent) ? { percent: Math.max(0, Math.min(100, percent)) } : {}),
+    percent: normalizedPercent,
+    overallPercent: Math.min(100, number("overallPercent", normalizedPercent)),
+    phasePercent: Math.min(100, number("phasePercent", 0)),
     ...(typeof value.message === "string" ? { message: value.message.slice(0, 1_000) } : {}),
-    updatedAt: new Date().toISOString(),
+    ...(Number.isInteger(Number(value.tier)) ? { tier: Math.max(1, Math.min(4_096, Number(value.tier))) } : {}),
+    ...(Number.isInteger(Number(value.repetition)) ? { repetition: Math.max(1, Math.min(3, Number(value.repetition))) } : {}),
+    ...(Number.isInteger(Number(value.attempt)) ? { attempt: Math.max(1, Math.min(10_000, Number(value.attempt))) } : {}),
+    ...(value.computeMode === "cpu_only" || value.computeMode === "gpu_accelerated"
+      ? { computeMode: value.computeMode } : {}),
+    sessionStartedAt,
+    phaseStartedAt,
+    elapsedSeconds: number("elapsedSeconds", Math.max(0, (Date.parse(timestamp) - Date.parse(sessionStartedAt)) / 1_000)),
+    estimatedRemainingSeconds,
+    estimatedCompletionAt,
+    minimumDurationSeconds: number("minimumDurationSeconds"),
+    maximumDurationSeconds: number("maximumDurationSeconds"),
+    estimateConfidence: value.estimateConfidence === "high" || value.estimateConfidence === "medium" ? value.estimateConfidence : "low",
+    estimateAdjusted: value.estimateAdjusted === true,
+    bytesTemporary: number("bytesTemporary"),
+    bytesRemoved: number("bytesRemoved"),
+    bytesProjected: number("bytesProjected"),
+    diskFreeBytes: number("diskFreeBytes"),
+    diskReserveBytes: number("diskReserveBytes"),
+    updatedAt: timestamp,
   };
 }
 

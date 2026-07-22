@@ -3,6 +3,8 @@ PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA busy_timeout = 5000;
 
+BEGIN IMMEDIATE;
+
 CREATE TABLE IF NOT EXISTS scenarios (
   id TEXT PRIMARY KEY,
   revision INTEGER NOT NULL CHECK (revision > 0),
@@ -106,6 +108,165 @@ CREATE TABLE IF NOT EXISTS calibration_sessions (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS calibration_sessions_state_idx
   ON calibration_sessions (state, expires_at, updated_at DESC);
+
+-- Autonomous calibration is an additive extension. Legacy calibration tables
+-- remain untouched so binaries that understand schema v9 can still open the
+-- same database and ignore these records.
+CREATE TABLE IF NOT EXISTS calibration_extension_metadata (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  extension_version INTEGER NOT NULL CHECK (extension_version >= 1),
+  installed_at TEXT NOT NULL
+) STRICT;
+INSERT OR IGNORE INTO calibration_extension_metadata(singleton,extension_version,installed_at)
+  VALUES(1,2,datetime('now'));
+UPDATE calibration_extension_metadata SET extension_version=2 WHERE singleton=1 AND extension_version<2;
+
+CREATE TABLE IF NOT EXISTS calibration_runtime_manifests (
+  manifest_hash TEXT PRIMARY KEY,
+  manifest_json TEXT NOT NULL CHECK (json_valid(manifest_json)),
+  recorded_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_workload_profiles (
+  id TEXT PRIMARY KEY,
+  signature TEXT NOT NULL UNIQUE,
+  profile_json TEXT NOT NULL CHECK (json_valid(profile_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_sessions_v2 (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL UNIQUE,
+  base_json TEXT NOT NULL CHECK (json_valid(base_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_session_events (
+  event_id INTEGER PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES calibration_sessions_v2(id),
+  state TEXT NOT NULL CHECK (state IN ('pending','launching','preflight','discovering','qualifying','finalizing','running','cancelling','cancelled','completed','failed','interrupted','expired')),
+  session_json TEXT NOT NULL CHECK (json_valid(session_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_session_events_latest_idx
+  ON calibration_session_events(session_id,event_id DESC);
+
+CREATE TABLE IF NOT EXISTS calibration_runs_v2 (
+  id TEXT PRIMARY KEY,
+  hardware_template_id TEXT,
+  workload_profile_id TEXT,
+  run_digest TEXT NOT NULL UNIQUE,
+  run_json TEXT NOT NULL CHECK (json_valid(run_json)),
+  completed_at TEXT NOT NULL,
+  recorded_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_runs_v2_lookup_idx
+  ON calibration_runs_v2(hardware_template_id,workload_profile_id,completed_at DESC);
+
+CREATE TABLE IF NOT EXISTS calibration_tier_results (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES calibration_runs_v2(id),
+  tier INTEGER NOT NULL CHECK (tier BETWEEN 1 AND 4096),
+  repetition INTEGER CHECK (repetition BETWEEN 1 AND 3),
+  phase TEXT NOT NULL,
+  result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+  completed_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_tier_results_run_idx
+  ON calibration_tier_results(run_id,tier,repetition,phase);
+
+CREATE TABLE IF NOT EXISTS hardware_capacity_assessments (
+  id TEXT PRIMARY KEY,
+  hardware_template_id TEXT NOT NULL,
+  workload_profile_id TEXT NOT NULL,
+  assessment_json TEXT NOT NULL CHECK (json_valid(assessment_json)),
+  generated_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS hardware_capacity_assessments_lookup_idx
+  ON hardware_capacity_assessments(hardware_template_id,workload_profile_id,generated_at DESC);
+
+CREATE TABLE IF NOT EXISTS calibration_checkpoints (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES calibration_sessions_v2(id),
+  sequence INTEGER NOT NULL CHECK (sequence > 0),
+  checkpoint_json TEXT NOT NULL CHECK (json_valid(checkpoint_json)),
+  payload_sha256 TEXT NOT NULL CHECK (length(payload_sha256) = 64),
+  created_at TEXT NOT NULL,
+  UNIQUE(session_id,sequence),
+  UNIQUE(session_id,payload_sha256)
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_checkpoints_session_idx
+  ON calibration_checkpoints(session_id,sequence DESC);
+
+CREATE TABLE IF NOT EXISTS calibration_session_lineage (
+  id TEXT PRIMARY KEY,
+  parent_session_id TEXT NOT NULL REFERENCES calibration_sessions_v2(id),
+  child_session_id TEXT NOT NULL REFERENCES calibration_sessions_v2(id),
+  checkpoint_id TEXT NOT NULL REFERENCES calibration_checkpoints(id),
+  created_at TEXT NOT NULL,
+  UNIQUE(child_session_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_device_identities (
+  id TEXT PRIMARY KEY CHECK (length(id) = 64),
+  public_key_pem TEXT NOT NULL,
+  short_code TEXT NOT NULL,
+  trust_state TEXT NOT NULL CHECK (trust_state IN ('pending','trusted','revoked')),
+  protection TEXT NOT NULL CHECK (protection IN ('operating_system','filesystem','imported_public_key')),
+  first_seen_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS measured_system_identities (
+  id TEXT PRIMARY KEY CHECK (length(id) = 64),
+  hardware_digest TEXT NOT NULL CHECK (length(hardware_digest) = 64),
+  identity_json TEXT NOT NULL CHECK (json_valid(identity_json)),
+  first_seen_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_run_provenance (
+  run_id TEXT PRIMARY KEY REFERENCES calibration_runs_v2(id),
+  source TEXT NOT NULL CHECK (source IN ('local','qhcal','qhcalset')),
+  device_id TEXT NOT NULL REFERENCES calibration_device_identities(id),
+  package_digest TEXT NOT NULL CHECK (length(package_digest) = 64),
+  trusted_at_import INTEGER NOT NULL CHECK (trusted_at_import IN (0,1)),
+  imported_at TEXT
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_import_batches (
+  id TEXT PRIMARY KEY,
+  format TEXT NOT NULL CHECK (format IN ('qhcal','qhcalset')),
+  batch_json TEXT NOT NULL CHECK (json_valid(batch_json)),
+  created_at TEXT NOT NULL,
+  completed_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_import_items (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL REFERENCES calibration_import_batches(id),
+  run_id TEXT NOT NULL,
+  package_digest TEXT NOT NULL CHECK (length(package_digest) = 64),
+  status TEXT NOT NULL CHECK (status IN ('imported','diagnostic','duplicate','conflict','invalid','pending_trust')),
+  item_json TEXT NOT NULL CHECK (json_valid(item_json)),
+  recorded_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_import_items_batch_idx
+  ON calibration_import_items(batch_id,recorded_at);
+
+CREATE TABLE IF NOT EXISTS calibration_export_events (
+  id TEXT PRIMARY KEY,
+  format TEXT NOT NULL CHECK (format IN ('qhcal','qhcalset')),
+  event_json TEXT NOT NULL CHECK (json_valid(event_json)),
+  created_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_collection_snapshots (
+  id TEXT PRIMARY KEY,
+  package_digest TEXT NOT NULL UNIQUE CHECK (length(package_digest) = 64),
+  result_count INTEGER NOT NULL CHECK (result_count BETWEEN 0 AND 10000),
+  snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+  created_at TEXT NOT NULL
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS public_benchmark_observations (
   id TEXT PRIMARY KEY,
@@ -650,3 +811,4 @@ CREATE TABLE IF NOT EXISTS component_report_sections (
 ) STRICT;
 
 PRAGMA user_version = 9;
+COMMIT;

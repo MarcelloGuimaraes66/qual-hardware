@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildRecommendations, calculateScenarioDemand, CapacityError, normalizeAgent } from "../src/engine/capacity.js";
 import { HARDWARE_CATALOG, SEED_PRICE_QUOTES } from "../src/engine/catalog.js";
+import { buildCalibrationWorkloadProfile } from "../src/engine/calibrationProfile.js";
 import { capacityScenarioSchema, createDefaultAgent, createDefaultScenario } from "../src/shared/schemas.js";
-import type { PriceQuote } from "../src/shared/types.js";
+import { CAPACITY_PREDICTION_VERSION, type CapacityPrediction, type PriceQuote } from "../src/shared/types.js";
 
 describe("capacity engine", () => {
   it("defaults platform fields that are absent from legacy saved scenarios", () => {
@@ -192,6 +193,100 @@ describe("capacity engine", () => {
       "laptop_sustained_thermal_and_ac_power_benchmark_required",
       "wired_ethernet_adapter_required_for_production_rtsp",
     ]));
+  });
+
+  it("uses only the capacity prediction for the scenario's exact workload profile and build", () => {
+    const scenario = createDefaultScenario(4);
+    const baseline = buildRecommendations("00000000-0000-4000-8000-000000000051", 1, scenario, HARDWARE_CATALOG, [])[0]!;
+    scenario.constraints.requiredHardwareTemplateId = baseline.primary.hardware.id;
+    const profileId = buildCalibrationWorkloadProfile(scenario).id;
+    const prediction = (id: string, workloadProfileId: string, safeCameraMaximum: number): CapacityPrediction => ({
+      schemaVersion: CAPACITY_PREDICTION_VERSION,
+      id,
+      hardwareTemplateId: baseline.primary.hardware.id,
+      workloadProfileId,
+      targetBuildHash: scenario.perceptrumBuildHash,
+      kernelVersion: "qual-hardware-calibration-kernel/1.0.0",
+      runtimeManifestHash: "a".repeat(64),
+      generatedAt: new Date().toISOString(),
+      status: "validated_local",
+      procurementEligibility: "eligible",
+      confidenceClass: "A",
+      safeCameraMinimum: safeCameraMaximum,
+      safeCameraMaximum,
+      bottleneck: "local_inference",
+      reservePercent: 20,
+      exactCalibrationRunId: "00000000-0000-4000-8000-000000000052",
+      stagePredictions: [],
+      leaveOneOutUnsafeOverestimateCount: 0,
+      reasons: [],
+    });
+    const wrong = prediction("00000000-0000-4000-8000-000000000053", "workload:wrong", 1);
+    const exact = prediction("00000000-0000-4000-8000-000000000054", profileId, 256);
+    const recommendations = buildRecommendations("00000000-0000-4000-8000-000000000055", 1, scenario, HARDWARE_CATALOG, [], false, undefined, [wrong, exact]);
+    expect(recommendations.every((item) => item.primary.calibration?.id === exact.id)).toBe(true);
+  });
+
+  it("prioritizes an exactly tested compatible machine over a cheaper extrapolated alternative", () => {
+    const scenario = createDefaultScenario(4);
+    const workloadProfileId = buildCalibrationWorkloadProfile(scenario).id;
+    const prediction = (id: string, hardwareTemplateId: string, status: "validated_local" | "extrapolated_high"): CapacityPrediction => ({
+      schemaVersion: CAPACITY_PREDICTION_VERSION,
+      id, hardwareTemplateId, workloadProfileId, targetBuildHash: scenario.perceptrumBuildHash,
+      kernelVersion: "qual-hardware-calibration-kernel/1.0.0", runtimeManifestHash: "a".repeat(64),
+      generatedAt: new Date().toISOString(), status, procurementEligibility: "eligible", confidenceClass: "A",
+      safeCameraMinimum: 4, safeCameraMaximum: 256, bottleneck: "local_inference", reservePercent: 20,
+      exactCalibrationRunId: status === "validated_local" ? "00000000-0000-4000-8000-000000000070" : null,
+      stagePredictions: [], leaveOneOutUnsafeOverestimateCount: 0, reasons: [],
+    });
+    const exactHardwareId = "hp-z8-g5-dualxeon-2xrtx6000ada";
+    const cheaperHardwareId = "ws-rtx4070tis-7950x";
+    const recommendations = buildRecommendations(
+      "00000000-0000-4000-8000-000000000071", 1, scenario,
+      HARDWARE_CATALOG.filter((item) => item.id === exactHardwareId || item.id === cheaperHardwareId),
+      [], false, undefined, [
+        prediction("00000000-0000-4000-8000-000000000072", exactHardwareId, "validated_local"),
+        prediction("00000000-0000-4000-8000-000000000073", cheaperHardwareId, "extrapolated_high"),
+      ],
+    );
+    expect(recommendations.every((item) => item.primary.hardware.id === exactHardwareId)).toBe(true);
+    expect(recommendations.every((item) => item.primary.calibration?.status === "validated_local")).toBe(true);
+  });
+
+  it("does not multiply a per-machine calibration into commercial cluster approval", () => {
+    const scenario = createDefaultScenario(64);
+    const baseline = buildRecommendations("00000000-0000-4000-8000-000000000061", 1, scenario, HARDWARE_CATALOG, [])[0]!;
+    scenario.constraints.requiredHardwareTemplateId = baseline.primary.hardware.id;
+    const profileId = buildCalibrationWorkloadProfile(scenario).id;
+    const exact: CapacityPrediction = {
+      schemaVersion: CAPACITY_PREDICTION_VERSION,
+      id: "00000000-0000-4000-8000-000000000062",
+      hardwareTemplateId: baseline.primary.hardware.id,
+      workloadProfileId: profileId,
+      targetBuildHash: scenario.perceptrumBuildHash,
+      kernelVersion: "qual-hardware-calibration-kernel/1.0.0",
+      runtimeManifestHash: "a".repeat(64),
+      generatedAt: new Date().toISOString(),
+      status: "validated_local",
+      procurementEligibility: "eligible",
+      confidenceClass: "A",
+      safeCameraMinimum: 64,
+      safeCameraMaximum: 4_096,
+      bottleneck: "local_inference",
+      reservePercent: 20,
+      exactCalibrationRunId: "00000000-0000-4000-8000-000000000063",
+      stagePredictions: [],
+      leaveOneOutUnsafeOverestimateCount: 0,
+      reasons: [],
+    };
+    const recommendations = buildRecommendations(
+      "00000000-0000-4000-8000-000000000064", 1, scenario, HARDWARE_CATALOG, [], false, undefined, [exact],
+    );
+    const multiNode = recommendations.flatMap((item) => [item.primary, ...item.alternatives])
+      .filter((item) => item.nodeCount > 1);
+    expect(multiNode.length).toBeGreaterThan(0);
+    expect(multiNode.every((item) => item.procurementEligibility === "planning_only")).toBe(true);
+    expect(multiNode.every((item) => item.warnings.includes("multi_node_design_is_planning_only_until_cluster_validation"))).toBe(true);
   });
 
   it("offers distinct Apple Silicon designs only when macOS is explicitly selected", () => {

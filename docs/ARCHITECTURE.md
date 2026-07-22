@@ -4,7 +4,7 @@
 
 - Repository: `qual-hardware`
 - Product: standalone **Qual Hardware** specification calculator
-- Process authority: Archon global configuration; no repository-local Archon memory was available when this project was created.
+- Process authority: repository-local direct Codex protocol recorded in `AGENTS.md`; Archon is not invoked for this repository.
 - Risk: T4, because this adds persistence, hardware-cost calculations, background collection and a benchmark trust boundary.
 
 ## Invariants
@@ -24,9 +24,9 @@
 
 ## Blast radius and change budget
 
-- Allowed: this `qual-hardware` project and the isolated local-calibration adapter in the Perceptrum desktop runtime.
-- Excluded: production deployment scripts, normal camera bootstrap, command routing, billing and account authentication.
-- Change budget: targeted Qual Hardware session/UI work plus the isolated additive Perceptrum calibration, protocol-registration and packaging adapter.
+- Allowed: this `qual-hardware` project, including its internal calibration kernel, local SQLite extension, loopback API, UI, signed exchange, catalog coordination, packaging and tests.
+- Excluded: every Perceptrum repository, runtime, database, camera, credential, API and deployment surface.
+- Change budget: targeted redesign inside the standalone Qual Hardware calibration and evidence boundaries.
 
 ## Platform matrix
 

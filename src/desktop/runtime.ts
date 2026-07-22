@@ -8,6 +8,7 @@ export interface DesktopPaths {
   databaseFile: string;
   catalogCacheFile: string;
   catalogConfigFile: string;
+  calibrationEvidenceDirectory: string;
 }
 
 export function resolveDesktopPaths(appPath: string, userDataPath: string): DesktopPaths {
@@ -16,6 +17,7 @@ export function resolveDesktopPaths(appPath: string, userDataPath: string): Desk
     databaseFile: join(userDataPath, DESKTOP_SQLITE_FILENAME),
     catalogCacheFile: join(userDataPath, "catalog-snapshot.json"),
     catalogConfigFile: join(userDataPath, "catalog-update-config.json"),
+    calibrationEvidenceDirectory: join(userDataPath, "calibration-evidence"),
   };
 }
 

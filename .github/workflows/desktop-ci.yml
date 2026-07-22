@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - "codex/**"
   workflow_dispatch:
 
 permissions:
@@ -35,8 +36,16 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/telemetry-probe/go.mod
+          cache-dependency-path: tools/telemetry-probe/go.mod
       - run: npm ci
       - run: npm audit --audit-level=high
+      - run: npm run audit:source
+      - run: npm run calibration:assets:audit
+      - run: npm run calibration:telemetry:test
+      - run: npm run calibration:telemetry:verify
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -52,3 +61,40 @@ jobs:
       - name: Smoke test packaged desktop under Xvfb
         if: matrix.platform == 'linux'
         run: xvfb-run --auto-servernum npm run desktop:smoke
+      - name: Generate signed portable calibration fixture
+        run: npm run calibration:exchange:ci -- generate --platform ${{ matrix.platform }} --output artifacts/calibration-exchange/${{ matrix.platform }}.qhcal
+      - uses: actions/upload-artifact@v7
+        with:
+          name: calibration-exchange-${{ matrix.platform }}
+          path: artifacts/calibration-exchange/${{ matrix.platform }}.qhcal
+          if-no-files-found: error
+          retention-days: 7
+
+  portable-exchange:
+    name: Import Windows, Ubuntu and macOS packages on ${{ matrix.name }}
+    needs: native-desktop
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows 11 x64
+            os: windows-2025
+          - name: macOS 26 arm64
+            os: macos-26
+          - name: Ubuntu 24.04 x64
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: calibration-exchange-*
+          path: artifacts/calibration-exchange
+          merge-multiple: true
+      - name: Verify and consolidate every native package
+        run: npm run calibration:exchange:ci -- verify --input artifacts/calibration-exchange

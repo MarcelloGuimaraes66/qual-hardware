@@ -12,11 +12,14 @@ import type {
   StagePrediction,
 } from "../shared/types.js";
 import {
+  AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
   CALIBRATION_PLAN_VERSION,
+  CALIBRATION_KERNEL_VERSION,
+  PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
   CAPACITY_PREDICTION_VERSION,
-  LOCAL_CALIBRATION_VERSION,
   WORKLOAD_CONTRACT_VERSION,
 } from "../shared/types.js";
+import { buildCalibrationWorkloadProfile, runWorkloadProfileId } from "./calibrationProfile.js";
 import { isPublicObservationEligible, REQUIRED_EVIDENCE_STAGES } from "./evidence.js";
 
 export const REQUIRED_CALIBRATION_STAGES: CalibrationStage[] = REQUIRED_EVIDENCE_STAGES;
@@ -49,13 +52,34 @@ function benchmarkRatio(target: PublicBenchmarkObservation, anchor: PublicBenchm
   return target.higherIsBetter ? target.score / anchor.score : anchor.score / target.score;
 }
 
-function calibrationRunEligible(run: LocalCalibrationRun): boolean {
+export interface CalibrationPredictionCompatibility {
+  kernelVersion: string;
+  runtimeManifestHash: string;
+}
+
+function calibrationRunEligible(
+  run: LocalCalibrationRun,
+  compatibility?: CalibrationPredictionCompatibility,
+): boolean {
   const covered = new Map(run.stages.map((stage) => [stage.stage, stage]));
   const pipelineProof = run.pipelineEvidence;
-  return run.schemaVersion === LOCAL_CALIBRATION_VERSION &&
+  const compute = run.computeEvidence;
+  const repetitions = run.repetitions ?? [];
+  const capacities = repetitions.map((item) => item.safeCameraCapacity).filter((value) => value > 0);
+  const variability = capacities.length === 3
+    ? (Math.max(...capacities) - Math.min(...capacities)) / Math.max(1, [...capacities].sort((a, b) => a - b)[1]!) * 100
+    : Number.POSITIVE_INFINITY;
+  return run.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION &&
+    (!compatibility || (run.kernelVersion === compatibility.kernelVersion &&
+      run.runtimeManifestHash === compatibility.runtimeManifestHash)) &&
+    run.kernelVersion === CALIBRATION_KERNEL_VERSION &&
+    run.compatiblePerceptrumCommit === PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT &&
+    run.fingerprint.perceptrumBuildHash === PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT &&
+    run.workloadProfileId === `workload:${run.workloadProfileSignature}` &&
     run.workloadContractVersion === WORKLOAD_CONTRACT_VERSION &&
     run.mode === "full" && run.executionMode === "production_pipeline" &&
     run.developmentOnly !== true &&
+    run.runtimeProvenance?.manifestApproved === true &&
     pipelineProof?.complete === true &&
     pipelineProof.jobSchedulerExecuted === true &&
     pipelineProof.jobRuntimeExecuted === true &&
@@ -64,10 +88,22 @@ function calibrationRunEligible(run: LocalCalibrationRun): boolean {
     pipelineProof.intelligenceSchedulerExecuted === true &&
     pipelineProof.dashboardQueriesExecuted === true &&
     pipelineProof.concurrentWithLoad === true &&
+    compute?.requiredModes.join(",") === "cpu_only,gpu_accelerated" &&
+    compute.cpu.measured && compute.cpu.safeCameraCapacity !== null &&
+    compute.gpu.inferenceMeasured && compute.gpu.mediaMeasured && compute.gpu.utilizationMeasured &&
+    compute.gpu.inferenceBackend !== "unavailable" && compute.gpu.mediaBackend !== "unavailable" &&
+    compute.gpu.deviceId !== null && compute.gpu.safeCameraCapacity !== null &&
+    compute.combined.measured && compute.combined.safeCameraCapacity !== null &&
+    run.overallSafeCameraCapacity !== null && run.overallSafeCameraCapacity === Math.min(
+      compute.cpu.safeCameraCapacity, compute.gpu.safeCameraCapacity, compute.combined.safeCameraCapacity,
+    ) &&
     ["warmup", "ramp", "sustained", "surge"].every((phase) =>
       pipelineProof.phaseCoverage?.some((item) => item.phase === phase && item.completedProbeCount > 0)) &&
     run.qualityGate?.eligibleForCapacityExtrapolation === true &&
     run.externalRequestCount === 0 && run.openAiRequestCount === 0 &&
+    Boolean(run.workloadProfileId && run.workloadProfileSignature && run.kernelVersion && run.runtimeManifestHash) &&
+    repetitions.length === 3 && repetitions.every((item) => item.passed) && variability <= 10 &&
+    (run.repeatVariabilityPercent ?? Number.POSITIVE_INFINITY) <= 10 &&
     REQUIRED_CALIBRATION_STAGES.every((stage) => {
       const evidence = covered.get(stage);
       return evidence?.evidenceStatus === "measured" &&
@@ -113,11 +149,13 @@ function contributionsFor(
   runs: LocalCalibrationRun[],
   observations: PublicBenchmarkObservation[],
   excludedRunId?: string,
+  workloadProfileId?: string,
 ): Contribution[] {
   const targets = observations.filter((item) => item.hardwareTemplateId === target.id && item.stage === stage && isPublicObservationEligible(item));
   const contributions: Contribution[] = [];
   for (const run of runs) {
-    if (run.id === excludedRunId || !run.fingerprint.hardwareTemplateId || !calibrationRunEligible(run)) continue;
+    if (run.id === excludedRunId || !run.fingerprint.hardwareTemplateId || !calibrationRunEligible(run) ||
+      (workloadProfileId && runWorkloadProfileId(run) !== workloadProfileId)) continue;
     const measured = run.stages.find((item) => item.stage === stage);
     if (!measured || measured.safeCameraCapacity === null || measured.safeCameraCapacity <= 0) continue;
     const anchors = observations.filter((item) => item.hardwareTemplateId === run.fingerprint.hardwareTemplateId && item.stage === stage && isPublicObservationEligible(item));
@@ -167,15 +205,16 @@ function stageErrorProfile(
   catalog: HardwareNodeTemplate[],
   observations: PublicBenchmarkObservation[],
   stage: CalibrationStage,
+  workloadProfileId: string,
 ): StageErrorProfile {
-  const eligibleRuns = runs.filter(calibrationRunEligible);
+  const eligibleRuns = runs.filter((run) => calibrationRunEligible(run) && runWorkloadProfileId(run) === workloadProfileId);
   const absoluteErrors: number[] = [];
   const overpredictions: number[] = [];
   for (const heldOut of eligibleRuns) {
     const target = catalog.find((item) => item.id === heldOut.fingerprint.hardwareTemplateId);
     const measured = heldOut.stages.find((item) => item.stage === stage)?.safeCameraCapacity ?? 0;
     if (!target || measured <= 0) continue;
-    const contributions = contributionsFor(target, stage, eligibleRuns, observations, heldOut.id);
+    const contributions = contributionsFor(target, stage, eligibleRuns, observations, heldOut.id, workloadProfileId);
     if (!contributions.length) continue;
     const predicted = Math.min(...contributions.map((item) => item.rawCapacity));
     const errorPercent = Math.abs(predicted - measured) * 100 / measured;
@@ -214,17 +253,18 @@ function leaveOneOutUnsafeCount(
   runs: LocalCalibrationRun[],
   catalog: HardwareNodeTemplate[],
   observations: PublicBenchmarkObservation[],
+  workloadProfileId: string,
 ): number {
   let unsafe = 0;
-  for (const heldOut of runs.filter(calibrationRunEligible)) {
+  for (const heldOut of runs.filter((run) => calibrationRunEligible(run) && runWorkloadProfileId(run) === workloadProfileId)) {
     const hardwareId = heldOut.fingerprint.hardwareTemplateId;
     const target = catalog.find((item) => item.id === hardwareId);
     if (!target) continue;
     for (const metric of heldOut.stages) {
-      const contributions = contributionsFor(target, metric.stage, runs, observations, heldOut.id);
+      const contributions = contributionsFor(target, metric.stage, runs, observations, heldOut.id, workloadProfileId);
       if (contributions.length === 0) continue;
       const confidence = confidenceFor(target, contributions);
-      const profile = stageErrorProfile(runs, catalog, observations, metric.stage);
+      const profile = stageErrorProfile(runs, catalog, observations, metric.stage, workloadProfileId);
       const safe = Math.floor(Math.min(...contributions.map((item) => item.rawCapacity)) * (1 - effectiveReserve(confidence, profile) / 100));
       if (metric.safeCameraCapacity !== null && safe > metric.safeCameraCapacity) unsafe += 1;
     }
@@ -238,6 +278,7 @@ export function createCalibrationPlan(
   targetHardwareTemplateId: string | null = null,
 ): CalibrationPlan {
   const quick = mode === "quick";
+  const workloadProfile = buildCalibrationWorkloadProfile(scenario);
   return {
     schemaVersion: CALIBRATION_PLAN_VERSION,
     id: randomUUID(),
@@ -245,6 +286,12 @@ export function createCalibrationPlan(
     mode,
     executionMode: quick ? "readiness" : "production_pipeline",
     workloadContractVersion: WORKLOAD_CONTRACT_VERSION,
+    kernelVersion: CALIBRATION_KERNEL_VERSION,
+    strategy: "adaptive",
+    workloadProfile,
+    cameraTiers: [1, 4, 8, 16, 32, 64, 128, 256, 512, 1_024, 2_048, 4_096],
+    discovery: { stabilizationSeconds: 30, sampleSeconds: 90 },
+    qualification: { repetitions: 3, cooldownSeconds: 600, maximumVariabilityPercent: 10 },
     targetHardwareTemplateId,
     scenario: { ...scenario, workloadContractVersion: WORKLOAD_CONTRACT_VERSION },
     localOnly: true,
@@ -269,10 +316,10 @@ export function createCalibrationPlan(
     // each source profile. Future local backends may add further values here.
     requestedInferenceFps: [1],
     instructions: [
-      "Execute this plan with the Perceptrum desktop calibration runner on the computer being measured.",
-      "The runner must use synthetic RTSP streams and AiQ/Qwen on 127.0.0.1 only.",
+      "Execute this plan only with the internal Qual Hardware Calibration Kernel.",
+      "The kernel must use synthetic RTSP-equivalent streams and local AiQ/Qwen assets on 127.0.0.1 only.",
       "Do not include camera credentials, captured media, host names or personal data in the result.",
-      "Import the resulting .qhcal.json file into Qual Hardware on any supported desktop.",
+      "Persist aggregate evidence before deleting the session-owned temporary workspace.",
     ],
   };
 }
@@ -281,46 +328,68 @@ export function buildCapacityPredictions(
   catalog: HardwareNodeTemplate[],
   runs: LocalCalibrationRun[],
   observations: PublicBenchmarkObservation[],
+  compatibility?: CalibrationPredictionCompatibility,
 ): CapacityPrediction[] {
-  const unsafeCount = leaveOneOutUnsafeCount(runs, catalog, observations);
-  const errorProfiles = new Map(REQUIRED_CALIBRATION_STAGES.map((stage) => [stage, stageErrorProfile(runs, catalog, observations, stage)]));
-  return catalog.map((target) => {
-    const exactRuns = runs
+  const scopedRuns = compatibility
+    ? runs.filter((run) => run.kernelVersion === compatibility.kernelVersion &&
+      run.runtimeManifestHash === compatibility.runtimeManifestHash)
+    : runs;
+  const profiles = [...new Set(scopedRuns.filter((run) => Boolean(run.workloadProfileId)).map(runWorkloadProfileId))];
+  const profileIds = profiles.length ? profiles : ["legacy-unscoped"];
+  const unsafeCounts = new Map(profileIds.map((profileId) => [profileId, leaveOneOutUnsafeCount(scopedRuns, catalog, observations, profileId)]));
+  const errorProfiles = new Map(profileIds.map((profileId) => [profileId,
+    new Map(REQUIRED_CALIBRATION_STAGES.map((stage) => [stage, stageErrorProfile(scopedRuns, catalog, observations, stage, profileId)])),
+  ]));
+  return catalog.flatMap((target) => profileIds.map((workloadProfileId) => {
+    const unsafeCount = unsafeCounts.get(workloadProfileId) ?? 0;
+    const exactRuns = scopedRuns
       .filter((run) => run.fingerprint.hardwareTemplateId === target.id &&
         (run.overallSafeCameraCapacity ?? 0) > 0 &&
-        calibrationRunEligible(run))
+        calibrationRunEligible(run) && runWorkloadProfileId(run) === workloadProfileId)
       .sort((left, right) => right.completedAt.localeCompare(left.completedAt));
-    const exact = exactRuns[0];
+    const exact = [...exactRuns].sort((left, right) =>
+      (left.overallSafeCameraCapacity ?? Number.POSITIVE_INFINITY) -
+      (right.overallSafeCameraCapacity ?? Number.POSITIVE_INFINITY) ||
+      right.completedAt.localeCompare(left.completedAt))[0];
     if (exact) {
       return {
         schemaVersion: CAPACITY_PREDICTION_VERSION,
         id: randomUUID(),
         hardwareTemplateId: target.id,
+        workloadProfileId,
+        targetBuildHash: exact.fingerprint.perceptrumBuildHash,
+        kernelVersion: exact.kernelVersion ?? null,
+        runtimeManifestHash: exact.runtimeManifestHash ?? null,
         generatedAt: new Date().toISOString(),
         status: "validated_local",
         procurementEligibility: "eligible",
         confidenceClass: "A",
-        safeCameraMinimum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.8 * 0.9),
-        safeCameraMaximum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.8),
+        safeCameraMinimum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.9),
+        safeCameraMaximum: Math.floor(exact.overallSafeCameraCapacity ?? 0),
         bottleneck: exact.bottleneck,
         reservePercent: 20,
         exactCalibrationRunId: exact.id,
         stagePredictions: [],
         leaveOneOutUnsafeOverestimateCount: unsafeCount,
-        reasons: ["Exact hardware fingerprint has a completed local Perceptrum calibration."],
+        reasons: [
+          "Exact hardware fingerprint has a completed autonomous Qual Hardware calibration for this workload and build.",
+          exactRuns.length > 1
+            ? `The safe limit is the lowest observed across ${exactRuns.length} compatible exact runs.`
+            : "One complete exact run is sufficient for this exact configuration; the three-distinct-system rule applies only to extrapolation.",
+        ],
       } satisfies CapacityPrediction;
     }
 
     const stagePredictions: StagePrediction[] = [];
     let overallClass: Exclude<CalibrationConfidenceClass, "none"> = "A";
     for (const stage of REQUIRED_CALIBRATION_STAGES) {
-      const contributions = contributionsFor(target, stage, runs, observations);
+      const contributions = contributionsFor(target, stage, scopedRuns, observations, undefined, workloadProfileId);
       if (contributions.length === 0) continue;
       let confidence = confidenceFor(target, contributions);
       if (unsafeCount > 0 && confidence === "A") confidence = "B";
       if (confidence === "C") overallClass = "C";
       else if (confidence === "B" && overallClass === "A") overallClass = "B";
-      const errorProfile = errorProfiles.get(stage) ?? { maximumOverpredictionPercent: 0, repeatVariabilityPercent: 0, medianAbsoluteErrorPercent: null };
+      const errorProfile = errorProfiles.get(workloadProfileId)?.get(stage) ?? { maximumOverpredictionPercent: 0, repeatVariabilityPercent: 0, medianAbsoluteErrorPercent: null };
       const reservePercent = effectiveReserve(confidence, errorProfile);
       const rawCameraCapacity = Math.min(...contributions.map((item) => item.rawCapacity));
       stagePredictions.push({
@@ -360,6 +429,10 @@ export function buildCapacityPredictions(
       schemaVersion: CAPACITY_PREDICTION_VERSION,
       id: randomUUID(),
       hardwareTemplateId: target.id,
+      workloadProfileId,
+      targetBuildHash: scopedRuns.find((run) => runWorkloadProfileId(run) === workloadProfileId)?.fingerprint.perceptrumBuildHash ?? null,
+      kernelVersion: scopedRuns.find((run) => runWorkloadProfileId(run) === workloadProfileId)?.kernelVersion ?? null,
+      runtimeManifestHash: scopedRuns.find((run) => runWorkloadProfileId(run) === workloadProfileId)?.runtimeManifestHash ?? null,
       generatedAt: new Date().toISOString(),
       status,
       procurementEligibility,
@@ -384,5 +457,5 @@ export function buildCapacityPredictions(
             `Missing stage evidence: ${missingStages.join(", ") || "comparable physical anchors"}.`,
           ],
     } satisfies CapacityPrediction;
-  });
+  }));
 }

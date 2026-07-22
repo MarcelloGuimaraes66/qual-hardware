@@ -8,6 +8,7 @@ import { BUNDLED_SOURCE_REGISTRY } from "../engine/sourceRegistry.js";
 import { assertDedicatedSqlitePath, QUAL_HARDWARE_SQLITE_SCHEMA_VERSION } from "./database.js";
 import { isPublicObservationEligible } from "../engine/evidence.js";
 import { fieldDefinitionsForKind, withTechnicalSpecification } from "../engine/technicalSpecifications.js";
+import { calibrationHardwareDigest } from "./calibrationHardware.js";
 import type {
   BenchmarkManifest,
   BenchmarkResultRecord,
@@ -15,7 +16,16 @@ import type {
   CapacityPrediction,
   CapacityRecommendation,
   CapacityScenario,
+  CalibrationCheckpoint,
+  CalibrationCollectionSnapshot,
+  CalibrationDeviceIdentity,
+  CalibrationExportEvent,
+  CalibrationImportBatch,
+  CalibrationImportItem,
+  CalibrationRunProvenance,
+  CalibrationSessionLineage,
   CalibrationSessionRecord,
+  CalibrationWorkloadProfile,
   CatalogBundle,
   CatalogPublication,
   CatalogSource,
@@ -24,6 +34,7 @@ import type {
   HardwareComponent,
   ComponentTechnicalSpecification,
   HardwareNodeTemplate,
+  HardwareCapacityAssessment,
   LocalCalibrationRun,
   PriceQuote,
   PublicBenchmarkObservation,
@@ -53,6 +64,7 @@ export interface ClaimedJob {
 
 export interface PlannerStore {
   readonly storageKind: "memory" | "sqlite";
+  readonly calibrationExtensionReady: boolean;
   listScenarios(): Promise<ScenarioRecord[]>;
   getScenario(id: string): Promise<ScenarioRecord | null>;
   createScenario(scenario: CapacityScenario): Promise<ScenarioRecord>;
@@ -67,10 +79,29 @@ export interface PlannerStore {
   getBenchmarkResult(manifestId: string): Promise<BenchmarkResultRecord | null>;
   listBenchmarkEvidence(scenarioId: string, revision: number): Promise<BenchmarkEvidence[]>;
   saveCalibrationRun(run: LocalCalibrationRun): Promise<void>;
+  commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void>;
   listCalibrationRuns(): Promise<LocalCalibrationRun[]>;
   saveCalibrationSession(session: CalibrationSessionRecord): Promise<void>;
   getCalibrationSession(id: string): Promise<CalibrationSessionRecord | null>;
   listCalibrationSessions(): Promise<CalibrationSessionRecord[]>;
+  saveCalibrationCheckpoint(checkpoint: CalibrationCheckpoint): Promise<void>;
+  listCalibrationCheckpoints(sessionId: string): Promise<CalibrationCheckpoint[]>;
+  saveCalibrationSessionLineage(lineage: CalibrationSessionLineage): Promise<void>;
+  saveCalibrationDeviceIdentity(identity: CalibrationDeviceIdentity): Promise<void>;
+  listCalibrationDeviceIdentities(): Promise<CalibrationDeviceIdentity[]>;
+  listCalibrationRunProvenance(): Promise<CalibrationRunProvenance[]>;
+  setCalibrationDeviceTrust(id: string, trust: CalibrationDeviceIdentity["trust"]): Promise<CalibrationDeviceIdentity>;
+  commitCalibrationImport(input: {
+    batch: CalibrationImportBatch;
+    items: CalibrationImportItem[];
+    deviceIdentities: CalibrationDeviceIdentity[];
+    runs: Array<{ run: LocalCalibrationRun; provenance: CalibrationRunProvenance; workloadProfile: CalibrationWorkloadProfile }>;
+    predictions: CapacityPrediction[];
+  }): Promise<void>;
+  saveCalibrationExportEvent(event: CalibrationExportEvent): Promise<void>;
+  saveCalibrationCollectionSnapshot(snapshot: CalibrationCollectionSnapshot): Promise<void>;
+  listCalibrationExportEvents(): Promise<CalibrationExportEvent[]>;
+  listCapacityAssessments(): Promise<HardwareCapacityAssessment[]>;
   upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void>;
   listBenchmarkObservations(): Promise<PublicBenchmarkObservation[]>;
   saveEvidenceSnapshot(snapshot: EvidenceCatalogSnapshot): Promise<void>;
@@ -106,14 +137,53 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function capacityAssessmentForPrediction(
+  prediction: CapacityPrediction,
+  runs: LocalCalibrationRun[],
+): HardwareCapacityAssessment | null {
+  if (!prediction.workloadProfileId) return null;
+  const calibrationRunIds = prediction.exactCalibrationRunId ? [prediction.exactCalibrationRunId] :
+    [...new Set(prediction.stagePredictions.flatMap((stage) => stage.anchorRunIds))];
+  const exactRun = prediction.exactCalibrationRunId
+    ? runs.find((run) => run.id === prediction.exactCalibrationRunId)
+    : null;
+  return {
+    schemaVersion: "qual-hardware-capacity-assessment/1.0.0",
+    id: `assessment:${prediction.id}`,
+    hardwareTemplateId: prediction.hardwareTemplateId,
+    workloadProfileId: prediction.workloadProfileId,
+    targetBuildHash: prediction.targetBuildHash ?? "unknown",
+    kernelVersion: prediction.kernelVersion ?? "unknown",
+    runtimeManifestHash: prediction.runtimeManifestHash ?? "unknown",
+    calibrationRunIds,
+    generatedAt: prediction.generatedAt,
+    status: prediction.status,
+    procurementEligibility: prediction.procurementEligibility,
+    safeCameraMaximum: prediction.safeCameraMaximum,
+    capacityBound: exactRun?.capacityBound ?? null,
+    bottleneck: prediction.bottleneck,
+    reasons: structuredClone(prediction.reasons),
+  };
+}
+
 export class MemoryPlannerStore implements PlannerStore {
   readonly storageKind = "memory" as const;
+  readonly calibrationExtensionReady = true;
   private scenarios = new Map<string, ScenarioRecord>();
   private recommendations = new Map<string, CapacityRecommendation>();
   private manifests = new Map<string, BenchmarkManifest>();
   private results = new Map<string, BenchmarkResultRecord>();
   private calibrationRuns = new Map<string, LocalCalibrationRun>();
   private calibrationSessions = new Map<string, CalibrationSessionRecord>();
+  private calibrationCheckpoints = new Map<string, CalibrationCheckpoint[]>();
+  private calibrationLineage = new Map<string, CalibrationSessionLineage>();
+  private calibrationDevices = new Map<string, CalibrationDeviceIdentity>();
+  private calibrationProvenance = new Map<string, CalibrationRunProvenance>();
+  private calibrationImportBatches = new Map<string, CalibrationImportBatch>();
+  private calibrationImportItems = new Map<string, CalibrationImportItem>();
+  private calibrationExportEvents = new Map<string, CalibrationExportEvent>();
+  private calibrationCollectionSnapshots = new Map<string, CalibrationCollectionSnapshot>();
+  private capacityAssessments = new Map<string, HardwareCapacityAssessment>();
   private observations = new Map<string, PublicBenchmarkObservation>();
   private components = new Map<string, HardwareComponent>(deriveComponentCatalog(HARDWARE_CATALOG).components.map((item) => [item.id, item]));
   private activeObservationIds = new Set<string>();
@@ -176,7 +246,14 @@ export class MemoryPlannerStore implements PlannerStore {
     }
     return evidence;
   }
-  async saveCalibrationRun(run: LocalCalibrationRun): Promise<void> { this.calibrationRuns.set(run.id, run); }
+  async saveCalibrationRun(run: LocalCalibrationRun): Promise<void> {
+    if (this.calibrationRuns.has(run.id)) throw new Error("duplicate_calibration_run");
+    this.calibrationRuns.set(run.id, structuredClone(run));
+  }
+  async commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void> {
+    await this.saveCalibrationRun(run);
+    await this.savePredictions(predictions);
+  }
   async listCalibrationRuns(): Promise<LocalCalibrationRun[]> {
     return [...this.calibrationRuns.values()].sort((left, right) => right.completedAt.localeCompare(left.completedAt));
   }
@@ -190,6 +267,78 @@ export class MemoryPlannerStore implements PlannerStore {
   async listCalibrationSessions(): Promise<CalibrationSessionRecord[]> {
     return [...this.calibrationSessions.values()].map((session) => structuredClone(session))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+  async saveCalibrationCheckpoint(checkpoint: CalibrationCheckpoint): Promise<void> {
+    const current = this.calibrationCheckpoints.get(checkpoint.sessionId) ?? [];
+    if (current.some((item) => item.id === checkpoint.id || item.sequence === checkpoint.sequence)) {
+      throw new Error("duplicate_calibration_checkpoint");
+    }
+    this.calibrationCheckpoints.set(checkpoint.sessionId, [...current, structuredClone(checkpoint)]);
+  }
+  async listCalibrationCheckpoints(sessionId: string): Promise<CalibrationCheckpoint[]> {
+    return (this.calibrationCheckpoints.get(sessionId) ?? []).map((item) => structuredClone(item))
+      .sort((left, right) => right.sequence - left.sequence);
+  }
+  async saveCalibrationSessionLineage(lineage: CalibrationSessionLineage): Promise<void> {
+    if (this.calibrationLineage.has(lineage.childSessionId)) throw new Error("duplicate_calibration_session_lineage");
+    this.calibrationLineage.set(lineage.childSessionId, structuredClone(lineage));
+  }
+  async saveCalibrationDeviceIdentity(identity: CalibrationDeviceIdentity): Promise<void> {
+    const existing = this.calibrationDevices.get(identity.id);
+    if (existing && existing.publicKeyPem !== identity.publicKeyPem) throw new Error("calibration_device_key_changed");
+    this.calibrationDevices.set(identity.id, structuredClone(existing
+      ? { ...identity, trust: existing.trust, firstSeenAt: existing.firstSeenAt }
+      : identity));
+  }
+  async listCalibrationDeviceIdentities(): Promise<CalibrationDeviceIdentity[]> {
+    return [...this.calibrationDevices.values()].map((identity) => structuredClone(identity))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }
+  async listCalibrationRunProvenance(): Promise<CalibrationRunProvenance[]> {
+    return [...this.calibrationProvenance.values()].map((provenance) => structuredClone(provenance));
+  }
+  async setCalibrationDeviceTrust(id: string, trust: CalibrationDeviceIdentity["trust"]): Promise<CalibrationDeviceIdentity> {
+    const current = this.calibrationDevices.get(id);
+    if (!current) throw new Error("calibration_device_not_found");
+    const updated = { ...current, trust, updatedAt: now() };
+    this.calibrationDevices.set(id, updated);
+    return structuredClone(updated);
+  }
+  async commitCalibrationImport(input: {
+    batch: CalibrationImportBatch;
+    items: CalibrationImportItem[];
+    deviceIdentities: CalibrationDeviceIdentity[];
+    runs: Array<{ run: LocalCalibrationRun; provenance: CalibrationRunProvenance; workloadProfile: CalibrationWorkloadProfile }>;
+    predictions: CapacityPrediction[];
+  }): Promise<void> {
+    if (this.calibrationImportBatches.has(input.batch.id)) throw new Error("duplicate_calibration_import_batch");
+    for (const { run } of input.runs) {
+      if (this.calibrationRuns.has(run.id)) throw new Error("duplicate_calibration_run");
+    }
+    for (const identity of input.deviceIdentities) await this.saveCalibrationDeviceIdentity(identity);
+    this.calibrationImportBatches.set(input.batch.id, structuredClone(input.batch));
+    for (const item of input.items) this.calibrationImportItems.set(item.id, structuredClone(item));
+    for (const { run, provenance } of input.runs) {
+      this.calibrationRuns.set(run.id, structuredClone(run));
+      this.calibrationProvenance.set(run.id, structuredClone(provenance));
+    }
+    await this.savePredictions(input.predictions);
+  }
+  async saveCalibrationExportEvent(event: CalibrationExportEvent): Promise<void> {
+    if (this.calibrationExportEvents.has(event.id)) throw new Error("duplicate_calibration_export_event");
+    this.calibrationExportEvents.set(event.id, structuredClone(event));
+  }
+  async saveCalibrationCollectionSnapshot(snapshot: CalibrationCollectionSnapshot): Promise<void> {
+    if (this.calibrationCollectionSnapshots.has(snapshot.id)) throw new Error("duplicate_calibration_collection_snapshot");
+    this.calibrationCollectionSnapshots.set(snapshot.id, structuredClone(snapshot));
+  }
+  async listCalibrationExportEvents(): Promise<CalibrationExportEvent[]> {
+    return [...this.calibrationExportEvents.values()].map((event) => structuredClone(event))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+  async listCapacityAssessments(): Promise<HardwareCapacityAssessment[]> {
+    return [...this.capacityAssessments.values()].map((item) => structuredClone(item))
+      .sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
   }
   async upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void> {
     for (const observation of observations) {
@@ -265,7 +414,12 @@ export class MemoryPlannerStore implements PlannerStore {
     return publication;
   }
   async savePredictions(predictions: CapacityPrediction[]): Promise<void> {
-    for (const prediction of predictions) this.predictions.set(prediction.id, prediction);
+    const runs = [...this.calibrationRuns.values()];
+    for (const prediction of predictions) {
+      this.predictions.set(prediction.id, structuredClone(prediction));
+      const assessment = capacityAssessmentForPrediction(prediction, runs);
+      if (assessment) this.capacityAssessments.set(assessment.id, assessment);
+    }
   }
   async listPredictions(): Promise<CapacityPrediction[]> {
     return [...this.predictions.values()].sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
@@ -314,6 +468,22 @@ function rows(result: unknown[]): Record<string, unknown>[] {
   return result as Record<string, unknown>[];
 }
 
+function verifiedSqliteBackup(database: DatabaseSync, databasePath: string, label: string): string {
+  const backupDirectory = resolve(dirname(databasePath), "schema-backups");
+  mkdirSync(backupDirectory, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = resolve(backupDirectory, `${label}-${timestamp}-${randomUUID()}.sqlite`);
+  database.exec(`VACUUM INTO '${backupPath.replaceAll("'", "''")}'`);
+  const backup = new DatabaseSync(backupPath, { readOnly: true });
+  try {
+    const result = backup.prepare("PRAGMA integrity_check").get() as Record<string, unknown> | undefined;
+    if (!result || Object.values(result)[0] !== "ok") throw new Error("calibration_extension_backup_integrity_check_failed");
+  } finally {
+    backup.close();
+  }
+  return backupPath;
+}
+
 function catalogPublication(bundle: CatalogBundle, keyId: string, bundleSha256: string, etag: string | null): CatalogPublication {
   return {
     sequence: bundle.sequence, publicationId: bundle.publicationId, catalogVersion: bundle.catalogVersion,
@@ -325,6 +495,7 @@ function catalogPublication(bundle: CatalogBundle, keyId: string, bundleSha256: 
 
 export class SqlitePlannerStore implements PlannerStore {
   readonly storageKind = "sqlite" as const;
+  readonly calibrationExtensionReady: boolean;
   private readonly database: DatabaseSync;
 
   constructor(databasePath: string, schemaPath?: string) {
@@ -339,14 +510,35 @@ export class SqlitePlannerStore implements PlannerStore {
       throw new Error(`SQLite schema version ${currentVersion} is newer than supported version ${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}.`);
     }
     if (currentVersion > 0 && currentVersion < QUAL_HARDWARE_SQLITE_SCHEMA_VERSION) {
-      const backupDirectory = resolve(dirname(dedicatedPath), "schema-backups");
-      mkdirSync(backupDirectory, { recursive: true });
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const backupPath = resolve(backupDirectory, `qual-hardware-pre-v${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}-${timestamp}.sqlite`);
-      this.database.exec(`VACUUM INTO '${backupPath.replaceAll("'", "''")}'`);
+      verifiedSqliteBackup(this.database, dedicatedPath, `qual-hardware-pre-v${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}`);
+    }
+    const hasCalibrationExtension = Boolean(this.database.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_extension_metadata'",
+    ).get());
+    const calibrationExtensionVersion = hasCalibrationExtension
+      ? Number((this.database.prepare("SELECT extension_version FROM calibration_extension_metadata WHERE singleton=1").get() as { extension_version?: number } | undefined)?.extension_version ?? 0)
+      : 0;
+    if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && calibrationExtensionVersion < 2) {
+      verifiedSqliteBackup(this.database, dedicatedPath,
+        calibrationExtensionVersion === 0 ? "qual-hardware-pre-calibration-extension" : "qual-hardware-pre-calibration-extension-v2");
     }
     const resourceRoot = process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
-    this.database.exec(readFileSync(schemaPath ?? resolve(resourceRoot, "database", "sqlite-schema.sql"), "utf8"));
+    const schemaSql = readFileSync(schemaPath ?? resolve(resourceRoot, "database", "sqlite-schema.sql"), "utf8");
+    let calibrationExtensionReady = true;
+    try {
+      this.database.exec(schemaSql);
+      const integrity = this.database.prepare("PRAGMA integrity_check").get() as Record<string, unknown> | undefined;
+      if (!integrity || Object.values(integrity)[0] !== "ok") throw new Error("calibration_extension_post_migration_integrity_check_failed");
+    } catch (error) {
+      if (this.database.isTransaction) this.database.exec("ROLLBACK");
+      if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && calibrationExtensionVersion < 2) {
+        calibrationExtensionReady = false;
+      } else {
+        this.database.close();
+        throw error;
+      }
+    }
+    this.calibrationExtensionReady = calibrationExtensionReady;
     this.seedBundledCatalog();
   }
 
@@ -360,6 +552,50 @@ export class SqlitePlannerStore implements PlannerStore {
       this.database.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  private insertCalibrationRunV2(run: LocalCalibrationRun): void {
+    const runJson = JSON.stringify(run);
+    const digest = createHash("sha256").update(runJson).digest("hex");
+    this.database.prepare(
+      "INSERT INTO calibration_runs_v2(id,hardware_template_id,workload_profile_id,run_digest,run_json,completed_at,recorded_at) VALUES(?,?,?,?,?,?,?)",
+    ).run(run.id, run.fingerprint.hardwareTemplateId, run.workloadProfileId ?? null, digest, runJson, run.completedAt, now());
+    const statement = this.database.prepare(
+      "INSERT INTO calibration_tier_results(id,run_id,tier,repetition,phase,result_json,completed_at) VALUES(?,?,?,?,?,?,?)",
+    );
+    for (const [index, result] of (run.tierResults ?? []).entries()) {
+      statement.run(`${run.id}:${index}`, run.id, result.tier, result.repetition, result.phase, JSON.stringify(result), result.completedAt);
+    }
+    if (run.runtimeManifestHash) {
+      this.database.prepare(
+        "INSERT OR IGNORE INTO calibration_runtime_manifests(manifest_hash,manifest_json,recorded_at) VALUES(?,?,?)",
+      ).run(run.runtimeManifestHash, JSON.stringify(run.runtimeProvenance ?? {
+        kernelVersion: run.kernelVersion ?? null,
+        compatibleCommit: run.compatiblePerceptrumCommit ?? null,
+        manifestHash: run.runtimeManifestHash,
+      }), now());
+    }
+  }
+
+  private insertPrediction(prediction: CapacityPrediction): void {
+    this.database.prepare(
+      "INSERT INTO hardware_predictions(id,hardware_template_id,prediction_json,generated_at) VALUES(?,?,?,?)",
+    ).run(prediction.id, prediction.hardwareTemplateId, JSON.stringify(prediction), prediction.generatedAt);
+    this.upsertNormalizedPrediction(prediction);
+  }
+
+  private currentCalibrationRuns(): LocalCalibrationRun[] {
+    return rows(this.database.prepare("SELECT run_json FROM calibration_runs_v2").all())
+      .map((row) => parseJson<LocalCalibrationRun>(row.run_json));
+  }
+
+  private insertCapacityAssessment(prediction: CapacityPrediction, runs: LocalCalibrationRun[]): void {
+    const assessment = capacityAssessmentForPrediction(prediction, runs);
+    if (!assessment) return;
+    this.database.prepare(
+      "INSERT INTO hardware_capacity_assessments(id,hardware_template_id,workload_profile_id,assessment_json,generated_at) VALUES(?,?,?,?,?)",
+    ).run(assessment.id, assessment.hardwareTemplateId, assessment.workloadProfileId,
+      JSON.stringify(assessment), assessment.generatedAt);
   }
 
   private upsertNormalizedBenchmarkObservation(observation: PublicBenchmarkObservation, importedAt: string): void {
@@ -737,27 +973,199 @@ export class SqlitePlannerStore implements PlannerStore {
     }));
   }
   async saveCalibrationRun(run: LocalCalibrationRun): Promise<void> {
-    this.database.prepare(
-      "INSERT INTO calibration_runs(id,hardware_template_id,run_json,completed_at,imported_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hardware_template_id=excluded.hardware_template_id,run_json=excluded.run_json,completed_at=excluded.completed_at,imported_at=excluded.imported_at",
-    ).run(run.id, run.fingerprint.hardwareTemplateId, JSON.stringify(run), run.completedAt, now());
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    this.insertCalibrationRunV2(run);
+  }
+  async commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    this.inTransaction(() => {
+      this.insertCalibrationRunV2(run);
+      const runs = this.currentCalibrationRuns();
+      for (const prediction of predictions) {
+        this.insertPrediction(prediction);
+        this.insertCapacityAssessment(prediction, runs);
+      }
+    }, "IMMEDIATE");
   }
   async listCalibrationRuns(): Promise<LocalCalibrationRun[]> {
-    return rows(this.database.prepare("SELECT run_json FROM calibration_runs ORDER BY completed_at DESC").all())
-      .map((row) => parseJson<LocalCalibrationRun>(row.run_json));
+    const current = this.calibrationExtensionReady
+      ? rows(this.database.prepare("SELECT run_json FROM calibration_runs_v2 ORDER BY completed_at DESC").all())
+        .map((row) => parseJson<LocalCalibrationRun>(row.run_json)) : [];
+    const currentIds = new Set(current.map((run) => run.id));
+    const legacy = rows(this.database.prepare("SELECT run_json FROM calibration_runs ORDER BY completed_at DESC").all())
+      .map((row) => parseJson<LocalCalibrationRun>(row.run_json)).filter((run) => !currentIds.has(run.id));
+    return [...current, ...legacy].sort((left, right) => right.completedAt.localeCompare(left.completedAt));
   }
   async saveCalibrationSession(session: CalibrationSessionRecord): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
     const updatedAt = now();
-    this.database.prepare(
-      "INSERT INTO calibration_sessions(id,plan_id,state,session_json,created_at,expires_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,session_json=excluded.session_json,expires_at=excluded.expires_at,updated_at=excluded.updated_at",
-    ).run(session.id, session.planId, session.state, JSON.stringify(session), session.createdAt, session.expiresAt, updatedAt);
+    this.inTransaction(() => {
+      this.database.prepare(
+        "INSERT OR IGNORE INTO calibration_sessions_v2(id,plan_id,base_json,created_at) VALUES(?,?,?,?)",
+      ).run(session.id, session.planId, JSON.stringify({ ...session, result: null, progress: null }), session.createdAt);
+      this.database.prepare(
+        "INSERT INTO calibration_session_events(session_id,state,session_json,created_at) VALUES(?,?,?,?)",
+      ).run(session.id, session.state, JSON.stringify(session), updatedAt);
+      this.database.prepare(
+        "INSERT OR IGNORE INTO calibration_workload_profiles(id,signature,profile_json,created_at) VALUES(?,?,?,?)",
+      ).run(session.plan.workloadProfile.id, session.plan.workloadProfile.signature, JSON.stringify(session.plan.workloadProfile), session.createdAt);
+    }, "IMMEDIATE");
   }
   async getCalibrationSession(id: string): Promise<CalibrationSessionRecord | null> {
-    const row = this.database.prepare("SELECT session_json FROM calibration_sessions WHERE id=?").get(id) as Record<string, unknown> | undefined;
+    if (!this.calibrationExtensionReady) {
+      const legacy = this.database.prepare("SELECT session_json FROM calibration_sessions WHERE id=?").get(id) as Record<string, unknown> | undefined;
+      return legacy ? parseJson<CalibrationSessionRecord>(legacy.session_json) : null;
+    }
+    const row = this.database.prepare(
+      "SELECT session_json FROM calibration_session_events WHERE session_id=? ORDER BY event_id DESC LIMIT 1",
+    ).get(id) as Record<string, unknown> | undefined;
     return row ? parseJson<CalibrationSessionRecord>(row.session_json) : null;
   }
   async listCalibrationSessions(): Promise<CalibrationSessionRecord[]> {
-    return rows(this.database.prepare("SELECT session_json FROM calibration_sessions ORDER BY created_at DESC").all())
+    if (!this.calibrationExtensionReady) {
+      return rows(this.database.prepare("SELECT session_json FROM calibration_sessions ORDER BY created_at DESC").all())
+        .map((row) => parseJson<CalibrationSessionRecord>(row.session_json));
+    }
+    return rows(this.database.prepare(
+      "SELECT e.session_json FROM calibration_session_events e JOIN (SELECT session_id,MAX(event_id) event_id FROM calibration_session_events GROUP BY session_id) latest ON latest.event_id=e.event_id ORDER BY e.event_id DESC",
+    ).all())
       .map((row) => parseJson<CalibrationSessionRecord>(row.session_json));
+  }
+  async saveCalibrationCheckpoint(checkpoint: CalibrationCheckpoint): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    this.database.prepare(
+      "INSERT INTO calibration_checkpoints(id,session_id,sequence,checkpoint_json,payload_sha256,created_at) VALUES(?,?,?,?,?,?)",
+    ).run(checkpoint.id, checkpoint.sessionId, checkpoint.sequence, JSON.stringify(checkpoint), checkpoint.payloadSha256, checkpoint.createdAt);
+  }
+  async listCalibrationCheckpoints(sessionId: string): Promise<CalibrationCheckpoint[]> {
+    if (!this.calibrationExtensionReady) return [];
+    return rows(this.database.prepare(
+      "SELECT checkpoint_json FROM calibration_checkpoints WHERE session_id=? ORDER BY sequence DESC",
+    ).all(sessionId)).map((row) => parseJson<CalibrationCheckpoint>(row.checkpoint_json));
+  }
+  async saveCalibrationSessionLineage(lineage: CalibrationSessionLineage): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    this.database.prepare(
+      "INSERT INTO calibration_session_lineage(id,parent_session_id,child_session_id,checkpoint_id,created_at) VALUES(?,?,?,?,?)",
+    ).run(lineage.id, lineage.parentSessionId, lineage.childSessionId, lineage.checkpointId, lineage.createdAt);
+  }
+  async saveCalibrationDeviceIdentity(identity: CalibrationDeviceIdentity): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    const existing = this.database.prepare(
+      "SELECT public_key_pem FROM calibration_device_identities WHERE id=?",
+    ).get(identity.id) as { public_key_pem?: string } | undefined;
+    if (existing?.public_key_pem && existing.public_key_pem !== identity.publicKeyPem) {
+      throw new Error("calibration_device_key_changed");
+    }
+    this.database.prepare(
+      "INSERT OR IGNORE INTO calibration_device_identities(id,public_key_pem,short_code,trust_state,protection,first_seen_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+    ).run(identity.id, identity.publicKeyPem, identity.shortCode, identity.trust, identity.protection, identity.firstSeenAt, identity.updatedAt);
+  }
+  async listCalibrationDeviceIdentities(): Promise<CalibrationDeviceIdentity[]> {
+    if (!this.calibrationExtensionReady) return [];
+    return rows(this.database.prepare(
+      "SELECT id,public_key_pem,short_code,trust_state,protection,first_seen_at,updated_at FROM calibration_device_identities ORDER BY updated_at DESC",
+    ).all()).map((row) => ({
+      id: String(row.id), publicKeyPem: String(row.public_key_pem), shortCode: String(row.short_code),
+      trust: row.trust_state as CalibrationDeviceIdentity["trust"],
+      protection: row.protection as CalibrationDeviceIdentity["protection"],
+      firstSeenAt: String(row.first_seen_at), updatedAt: String(row.updated_at),
+    }));
+  }
+  async listCalibrationRunProvenance(): Promise<CalibrationRunProvenance[]> {
+    if (!this.calibrationExtensionReady) return [];
+    return rows(this.database.prepare(
+      "SELECT run_id,source,device_id,package_digest,trusted_at_import,imported_at FROM calibration_run_provenance",
+    ).all()).map((row) => ({
+      runId: String(row.run_id), source: row.source as CalibrationRunProvenance["source"],
+      deviceId: String(row.device_id), packageDigest: String(row.package_digest),
+      trustedAtImport: Number(row.trusted_at_import) === 1,
+      importedAt: row.imported_at === null ? null : String(row.imported_at),
+    }));
+  }
+  async setCalibrationDeviceTrust(id: string, trust: CalibrationDeviceIdentity["trust"]): Promise<CalibrationDeviceIdentity> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    const result = this.database.prepare(
+      "UPDATE calibration_device_identities SET trust_state=?,updated_at=? WHERE id=?",
+    ).run(trust, now(), id);
+    if (result.changes !== 1) throw new Error("calibration_device_not_found");
+    const identity = (await this.listCalibrationDeviceIdentities()).find((item) => item.id === id);
+    if (!identity) throw new Error("calibration_device_not_found");
+    return identity;
+  }
+  async commitCalibrationImport(input: {
+    batch: CalibrationImportBatch;
+    items: CalibrationImportItem[];
+    deviceIdentities: CalibrationDeviceIdentity[];
+    runs: Array<{ run: LocalCalibrationRun; provenance: CalibrationRunProvenance; workloadProfile: CalibrationWorkloadProfile }>;
+    predictions: CapacityPrediction[];
+  }): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    this.inTransaction(() => {
+      for (const identity of input.deviceIdentities) {
+        const existing = this.database.prepare("SELECT public_key_pem FROM calibration_device_identities WHERE id=?")
+          .get(identity.id) as { public_key_pem?: string } | undefined;
+        if (existing?.public_key_pem && existing.public_key_pem !== identity.publicKeyPem) throw new Error("calibration_device_key_changed");
+        this.database.prepare(
+          "INSERT OR IGNORE INTO calibration_device_identities(id,public_key_pem,short_code,trust_state,protection,first_seen_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+        ).run(identity.id, identity.publicKeyPem, identity.shortCode, identity.trust, identity.protection, identity.firstSeenAt, identity.updatedAt);
+      }
+      this.database.prepare(
+        "INSERT INTO calibration_import_batches(id,format,batch_json,created_at,completed_at) VALUES(?,?,?,?,?)",
+      ).run(input.batch.id, input.batch.format, JSON.stringify(input.batch), input.batch.createdAt, input.batch.completedAt);
+      const itemStatement = this.database.prepare(
+        "INSERT INTO calibration_import_items(id,batch_id,run_id,package_digest,status,item_json,recorded_at) VALUES(?,?,?,?,?,?,?)",
+      );
+      for (const item of input.items) {
+        itemStatement.run(item.id, item.batchId, item.runId, item.packageDigest, item.status, JSON.stringify(item), item.recordedAt);
+      }
+      for (const { run, provenance, workloadProfile } of input.runs) {
+        this.insertCalibrationRunV2(run);
+        this.database.prepare(
+          "INSERT OR IGNORE INTO calibration_workload_profiles(id,signature,profile_json,created_at) VALUES(?,?,?,?)",
+        ).run(workloadProfile.id, workloadProfile.signature, JSON.stringify(workloadProfile), run.createdAt);
+        const hardwareDigest = calibrationHardwareDigest(run.fingerprint);
+        const measuredSystemId = createHash("sha256").update(JSON.stringify({
+          hardwareDigest,
+          hostnameHash: run.fingerprint.hostnameHash,
+        })).digest("hex");
+        this.database.prepare(
+          "INSERT OR IGNORE INTO measured_system_identities(id,hardware_digest,identity_json,first_seen_at) VALUES(?,?,?,?)",
+        ).run(measuredSystemId, hardwareDigest, JSON.stringify({ fingerprint: run.fingerprint }), run.completedAt);
+        this.database.prepare(
+          "INSERT INTO calibration_run_provenance(run_id,source,device_id,package_digest,trusted_at_import,imported_at) VALUES(?,?,?,?,?,?)",
+        ).run(run.id, provenance.source, provenance.deviceId, provenance.packageDigest,
+          provenance.trustedAtImport ? 1 : 0, provenance.importedAt);
+      }
+      const runs = this.currentCalibrationRuns();
+      for (const prediction of input.predictions) {
+        this.insertPrediction(prediction);
+        this.insertCapacityAssessment(prediction, runs);
+      }
+    }, "IMMEDIATE");
+  }
+  async saveCalibrationExportEvent(event: CalibrationExportEvent): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    this.database.prepare(
+      "INSERT INTO calibration_export_events(id,format,event_json,created_at) VALUES(?,?,?,?)",
+    ).run(event.id, event.format, JSON.stringify(event), event.createdAt);
+  }
+  async saveCalibrationCollectionSnapshot(snapshot: CalibrationCollectionSnapshot): Promise<void> {
+    if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
+    this.database.prepare(
+      "INSERT INTO calibration_collection_snapshots(id,package_digest,result_count,snapshot_json,created_at) VALUES(?,?,?,?,?)",
+    ).run(snapshot.id, snapshot.packageDigest, snapshot.resultCount, JSON.stringify(snapshot), snapshot.createdAt);
+  }
+  async listCalibrationExportEvents(): Promise<CalibrationExportEvent[]> {
+    if (!this.calibrationExtensionReady) return [];
+    return rows(this.database.prepare(
+      "SELECT event_json FROM calibration_export_events ORDER BY created_at DESC",
+    ).all()).map((row) => parseJson<CalibrationExportEvent>(row.event_json));
+  }
+  async listCapacityAssessments(): Promise<HardwareCapacityAssessment[]> {
+    if (!this.calibrationExtensionReady) return [];
+    return rows(this.database.prepare("SELECT assessment_json FROM hardware_capacity_assessments ORDER BY generated_at DESC").all())
+      .map((row) => parseJson<HardwareCapacityAssessment>(row.assessment_json));
   }
   async upsertBenchmarkObservations(observations: PublicBenchmarkObservation[]): Promise<void> {
     const statement = this.database.prepare(
@@ -946,13 +1354,11 @@ export class SqlitePlannerStore implements PlannerStore {
     return publication;
   }
   async savePredictions(predictions: CapacityPrediction[]): Promise<void> {
-    const statement = this.database.prepare(
-      "INSERT INTO hardware_predictions(id,hardware_template_id,prediction_json,generated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET prediction_json=excluded.prediction_json,generated_at=excluded.generated_at",
-    );
     this.inTransaction(() => {
+      const runs = this.currentCalibrationRuns();
       for (const prediction of predictions) {
-        statement.run(prediction.id, prediction.hardwareTemplateId, JSON.stringify(prediction), prediction.generatedAt);
-        this.upsertNormalizedPrediction(prediction);
+        this.insertPrediction(prediction);
+        this.insertCapacityAssessment(prediction, runs);
       }
     });
   }

@@ -113,6 +113,7 @@ export class CatalogUpdateService {
   private readonly officialEnabled: boolean;
   private readonly officialChannel: OfficialCatalogChannel;
   private readonly allowLegacyConfiguration: boolean;
+  private refreshPromise: Promise<CatalogStatus> | null = null;
 
   constructor(private readonly store: PlannerStore, options: CatalogUpdateOptions = {}) {
     this.remoteUrl = validatedRemoteUrl(options.remoteUrl ?? process.env.QUAL_HARDWARE_CATALOG_URL);
@@ -155,6 +156,7 @@ export class CatalogUpdateService {
   }
 
   get status(): CatalogStatus { return { ...this.currentStatus }; }
+  get refreshing(): boolean { return this.refreshPromise !== null; }
 
   async initialize(): Promise<CatalogStatus> {
     const activePublication = await this.store.getActiveCatalogPublication();
@@ -180,7 +182,7 @@ export class CatalogUpdateService {
       }
     }
     if (this.officialEnabled) {
-      try { await this.refreshOfficial(); } catch { this.currentStatus.lastError = "official_catalog_refresh_failed"; }
+      try { await this.refresh(); } catch { this.currentStatus.lastError = "official_catalog_refresh_failed"; }
     } else if (this.currentStatus.remoteUpdateConfigured) {
       try { await this.refresh(); } catch { this.currentStatus.lastError = "remote_catalog_refresh_failed"; }
     }
@@ -188,7 +190,16 @@ export class CatalogUpdateService {
   }
 
   async refresh(): Promise<CatalogStatus> {
-    if (this.officialEnabled) return this.refreshOfficial();
+    if (this.refreshPromise) return this.refreshPromise;
+    const operation = (this.officialEnabled ? this.refreshOfficial() : this.refreshConfigured())
+      .finally(() => {
+        if (this.refreshPromise === operation) this.refreshPromise = null;
+      });
+    this.refreshPromise = operation;
+    return operation;
+  }
+
+  private async refreshConfigured(): Promise<CatalogStatus> {
     if (!this.remoteUrl || !this.publicKeyPem) throw new Error("catalog_update_not_configured");
     const run = await this.beginRun("inventory_prices", "remote", "Verificando atualização assinada de equipamentos e preços.");
     try {

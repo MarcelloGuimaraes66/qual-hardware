@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -20,27 +21,29 @@ interface RunningDesktop {
   origin: string;
   debuggerUrl: string;
   logs: string[];
+  userData: string;
 }
 
 const projectRoot = resolve(import.meta.dirname, "..");
+const releaseRoot = resolve(String(process.env.QUAL_HARDWARE_RELEASE_ROOT || "").trim() || join(projectRoot, "release"));
 
 function packagePaths(): PackagePaths {
   if (process.platform === "darwin") {
-    const application = join(projectRoot, "release", "mac-arm64", "Qual Hardware.app", "Contents");
+    const application = join(releaseRoot, "mac-arm64", "Qual Hardware.app", "Contents");
     return {
       executable: join(application, "MacOS", "Qual Hardware"),
       asar: join(application, "Resources", "app.asar"),
-      bundle: join(projectRoot, "release", "mac-arm64", "Qual Hardware.app"),
+      bundle: join(releaseRoot, "mac-arm64", "Qual Hardware.app"),
     };
   }
   if (process.platform === "win32") {
-    const application = join(projectRoot, "release", "win-unpacked");
+    const application = join(releaseRoot, "win-unpacked");
     return {
       executable: join(application, "Qual Hardware.exe"),
       asar: join(application, "resources", "app.asar"),
     };
   }
-  const application = join(projectRoot, "release", "linux-unpacked");
+  const application = join(releaseRoot, "linux-unpacked");
   return {
     executable: join(application, "qual-hardware"),
     asar: join(application, "resources", "app.asar"),
@@ -83,7 +86,11 @@ async function launchDesktop(executable: string, userData: string): Promise<Runn
     `--remote-debugging-port=${debugPort}`,
   ], {
     cwd: projectRoot,
-    env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_ENABLE_LOGGING: "1",
+      QUAL_HARDWARE_CALIBRATION_TIME_SCALE: process.env.QUAL_HARDWARE_CALIBRATION_TIME_SCALE ?? "0.02",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
@@ -106,7 +113,7 @@ async function launchDesktop(executable: string, userData: string): Promise<Runn
     throw new Error(`${error instanceof Error ? error.message : "desktop_start_failed"}; electron logs: ${logs.join("").slice(-4_000)}`);
   }
   assert.equal(new URL(page.origin).hostname, "127.0.0.1");
-  return { child, ...page, logs };
+  return { child, ...page, logs, userData };
 }
 
 async function rendererValue<T>(debuggerUrl: string, expression: string): Promise<T> {
@@ -233,28 +240,94 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
     "/contracts/qual-hardware-procurement-neutral-specification-v1.schema.json",
     "/contracts/qual-hardware-tr-technical-annex-v1.schema.json",
     "/database/sqlite-schema.sql",
+    "/dist/server/server/calibrationKernelService.js",
+    "/dist/server/server/calibrationKernelWorker.js",
+    "/dist/server/server/calibrationKernelProtocol.js",
+    "/dist/server/server/calibrationHardware.js",
+    "/dist/server/server/calibrationPipeline.js",
+    "/dist/server/server/calibrationQualification.js",
+    "/dist/server/server/calibrationRuntime.js",
+    "/dist/server/server/calibrationTelemetry.js",
+    "/dist/server/server/calibrationTemporaryFiles.js",
     "/node_modules/docx/dist/index.mjs",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
   for (const forbidden of [
     "/dist/server/server/index.js",
     "/dist/server/server/worker.js",
   ]) assert(!listing.includes(forbidden), `Desktop-only ASAR contains forbidden runtime ${forbidden}`);
+  const runtimeManifestPath = join(dirname(paths.asar), "resources", "calibration", "runtime-manifest.json");
+  const runtimeManifest = JSON.parse(await readFile(runtimeManifestPath, "utf8")) as {
+    schemaVersion?: string;
+    authorityCommit?: string;
+    pipelineImplementation?: string;
+    authorityContract?: { relativePath: string; sha256: string };
+    pipelineContract?: { relativePath: string; sha256: string };
+    sourceLock?: { relativePath: string; sha256: string };
+    supportedTargets?: string[];
+    assets?: Array<{
+      id: string;
+      artifacts?: Record<string, {
+        relativePath: string;
+        sha256?: string | null;
+        sizeBytes?: number | null;
+        licenseEvidence?: { relativePath: string; sha256: string } | null;
+        sbomEvidence?: { relativePath: string; sha256: string } | null;
+      }>;
+    }>;
+  };
+  assert.equal(runtimeManifest.schemaVersion, "qual-hardware-calibration-runtime-manifest/2.0.0");
+  assert.equal(runtimeManifest.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
+  assert.equal(runtimeManifest.pipelineImplementation, "perceptrum-equivalent-v1");
+  assert.deepEqual(runtimeManifest.supportedTargets, ["darwin-arm64", "win32-x64", "linux-x64"]);
+  assert(runtimeManifest.assets?.some((asset) => asset.id === "telemetry-probe"));
+  for (const asset of runtimeManifest.assets ?? []) {
+    for (const target of runtimeManifest.supportedTargets ?? []) {
+      assert(asset.artifacts?.[target]?.relativePath, `Runtime asset ${asset.id} is missing ${target}`);
+    }
+  }
+  for (const contract of [runtimeManifest.authorityContract, runtimeManifest.pipelineContract, runtimeManifest.sourceLock]) {
+    assert(contract);
+    const bytes = await readFile(join(dirname(paths.asar), contract.relativePath));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), contract.sha256);
+  }
+  const sourceLock = JSON.parse(await readFile(join(dirname(paths.asar), runtimeManifest.sourceLock!.relativePath), "utf8")) as {
+    schemaVersion?: string;
+    policy?: { runtimeNetworkAccess?: string; approvalMode?: string };
+    assets?: unknown[];
+  };
+  assert.equal(sourceLock.schemaVersion, "qual-hardware-calibration-asset-sources/1.0.0");
+  assert.equal(sourceLock.policy?.runtimeNetworkAccess, "forbidden");
+  assert.equal(sourceLock.policy?.approvalMode, "candidate_inventory_fail_closed");
+  assert.equal(sourceLock.assets?.length, 9);
+  const selectedTarget = process.platform === "darwin" ? "darwin-arm64" : process.platform === "win32" ? "win32-x64" : "linux-x64";
+  const telemetryArtifact = runtimeManifest.assets?.find((asset) => asset.id === "telemetry-probe")?.artifacts?.[selectedTarget];
+  assert(telemetryArtifact?.sha256 && telemetryArtifact.sizeBytes && telemetryArtifact.licenseEvidence && telemetryArtifact.sbomEvidence,
+    "packaged telemetry probe must have complete candidate integrity evidence");
+  const selectedRuntimeRoot = join(dirname(paths.asar), "resources", "calibration", selectedTarget);
+  const telemetryPath = join(selectedRuntimeRoot, telemetryArtifact.relativePath);
+  const telemetryInfo = await stat(telemetryPath);
+  assert.equal(telemetryInfo.size, telemetryArtifact.sizeBytes);
+  assert.equal(createHash("sha256").update(await readFile(telemetryPath)).digest("hex"), telemetryArtifact.sha256);
+  if (process.platform !== "win32") assert(telemetryInfo.mode & 0o111, "packaged telemetry probe must be executable");
+  for (const evidence of [telemetryArtifact.licenseEvidence, telemetryArtifact.sbomEvidence]) {
+    assert.equal(createHash("sha256").update(await readFile(join(selectedRuntimeRoot, evidence.relativePath))).digest("hex"), evidence.sha256);
+  }
 }
 
 async function verifyReleaseArtifacts(): Promise<void> {
   const metadata = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8")) as { version: string };
   if (process.platform === "win32") {
-    const portable = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-windows-x64-portable.exe`);
+    const portable = join(releaseRoot, `Qual-Hardware-${metadata.version}-windows-x64-portable.exe`);
     if (await fileExists(portable)) await verifyBinaryArchitecture(portable);
     return;
   }
   if (process.platform === "darwin") {
-    const dmg = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-macos-arm64.dmg`);
+    const dmg = join(releaseRoot, `Qual-Hardware-${metadata.version}-macos-arm64.dmg`);
     if (await fileExists(dmg)) execFileSync("/usr/bin/hdiutil", ["verify", dmg], { stdio: "pipe" });
     return;
   }
-  const appImage = join(projectRoot, "release", `Qual-Hardware-${metadata.version}-linux-x64.AppImage`);
-  const deb = join(projectRoot, "release", `qual-hardware_${metadata.version}_amd64.deb`);
+  const appImage = join(releaseRoot, `Qual-Hardware-${metadata.version}-linux-x64.AppImage`);
+  const deb = join(releaseRoot, `qual-hardware_${metadata.version}_amd64.deb`);
   if (await fileExists(appImage)) {
     await verifyBinaryArchitecture(appImage);
     assert((await stat(appImage)).mode & 0o111, "AppImage must be executable");
@@ -265,7 +338,7 @@ async function verifyReleaseArtifacts(): Promise<void> {
   }
 }
 
-async function exerciseApplication(application: RunningDesktop): Promise<string> {
+async function exerciseApplication(application: RunningDesktop): Promise<{ scenarioId: string; recommendationId: string }> {
   const renderedText = await waitFor("the rendered React interface", async () => {
     const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
     return text.includes("Qual Hardware") && text.length > 100 ? text : null;
@@ -311,7 +384,9 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   assert.equal(openedCalibration, true, "the permanent calibration entry point must open");
   const calibrationText = await waitFor("calibration actions", async () => {
     const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
-    return text.includes("Teste rápido local") && text.includes("Calibração completa local") ? text : null;
+    const fullActionVisible = text.includes("Calibração completa — 3 repetições") ||
+      text.includes("Validação física completa — diagnóstico");
+    return text.includes("Teste rápido interno — diagnóstico") && fullActionVisible ? text : null;
   });
   assert(calibrationText.includes("Medição avançada de CPU/GPU"));
   await rendererValue(application.debuggerUrl, "location.assign('data:text/html,blocked'); true");
@@ -363,6 +438,121 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
   }
   const recommendation = recommendations.find((item) => item.policy === "recommended");
   assert(recommendation);
+  const runtime = await api<{
+    readyForQuickTest: boolean;
+    readyForFullQualification: boolean;
+    authorityCommit: string;
+    assets: Array<{ id: string; status: string }>;
+    reasons: string[];
+  }>(application.origin, "/api/calibrations/runtime-status");
+  assert.equal(runtime.readyForQuickTest, true);
+  assert.equal(runtime.readyForFullQualification, false, "diagnostic runtime must fail closed for commercial qualification");
+  assert.equal(runtime.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
+  assert.equal(runtime.assets.find((asset) => asset.id === "telemetry-probe")?.status, "verified");
+  assert(runtime.reasons.length > 0);
+
+  const fullAttempt = await fetch(`${application.origin}/api/calibration-sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ recommendationId: recommendation.id, mode: "full", targetHardwareTemplateId: null, advancedTelemetry: true }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  assert.equal(fullAttempt.status, 503, "full qualification must remain blocked without verified packaged assets");
+
+  const startedCalibration = await api<{
+    delivery: string;
+    session: { id: string };
+  }>(application.origin, "/api/calibration-sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ recommendationId: recommendation.id, mode: "quick", targetHardwareTemplateId: null, advancedTelemetry: true }),
+  });
+  assert.equal(startedCalibration.delivery, "internal");
+  const completedCalibration = await waitFor("the autonomous calibration and exact-session cleanup", async () => {
+    const current = await api<{
+      id: string;
+      state: string;
+      progress: { percent?: number } | null;
+      cleanup: { state: string; bytesTemporary: number; bytesRemoved: number; remainingBytes: number } | null;
+      result: LocalCalibrationRun | null;
+      error: string | null;
+    }>(application.origin, `/api/calibration-sessions/${startedCalibration.session.id}`);
+    if (["failed", "cancelled", "interrupted"].includes(current.state)) {
+      throw new Error(`calibration ended in ${current.state}: ${current.error ?? "no recorded error"}; electron logs: ${application.logs.join("").slice(-2_000)}`);
+    }
+    return current.state === "completed" ? current : null;
+  }, 180_000);
+  assert.equal(completedCalibration.progress?.percent, 100);
+  assert.equal(completedCalibration.cleanup?.state, "completed");
+  assert.equal(completedCalibration.cleanup?.remainingBytes, 0);
+  assert.equal(completedCalibration.cleanup?.bytesRemoved, completedCalibration.cleanup?.bytesTemporary);
+  assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/3.0.0");
+  assert.equal(completedCalibration.result?.developmentOnly, true);
+  assert.equal(completedCalibration.result?.externalRequestCount, 0);
+  assert.equal(completedCalibration.result?.openAiRequestCount, 0);
+  assert.equal(completedCalibration.result?.overallSafeCameraCapacity, null);
+  assert.equal(completedCalibration.result?.pipelineEvidence?.complete, false);
+  assert.equal(completedCalibration.result?.qualityGate?.eligibleForCapacityExtrapolation, false);
+  assert(completedCalibration.result?.artifact?.fileName);
+  const completedEvidencePath = join(application.userData, "calibration-evidence", completedCalibration.result.artifact.fileName);
+  assert.equal(await fileExists(completedEvidencePath), true, "the compact successful evidence must survive temporary cleanup");
+  assert((await stat(completedEvidencePath)).size <= 10 * 1024 * 1024, "successful evidence must respect the 10 MB limit");
+  assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "unavailable");
+  for (const stage of ["thermal_sustain", "job_scheduler", "intelligence_scheduler", "database_persistence", "dashboard_queries"] as const) {
+    assert.equal(completedCalibration.result?.stages.find((item) => item.stage === stage)?.evidenceStatus, "measured");
+  }
+  assert.equal(completedCalibration.result?.pipelineEvidence?.jobSchedulerExecuted, true);
+  assert.equal(completedCalibration.result?.pipelineEvidence?.jobStepRunsPersisted, true);
+  assert.equal(completedCalibration.result?.pipelineEvidence?.intelligenceSchedulerExecuted, true);
+  assert.equal(completedCalibration.result?.pipelineEvidence?.dashboardQueriesExecuted, true);
+  assert.equal(await fileExists(join(tmpdir(), "qual-hardware-calibration", startedCalibration.session.id)), false,
+    "the exact calibration session directory must be removed after persistence");
+  const calibrationStatus = await api<{ calibrationRuns: number }>(application.origin, "/api/calibrations/status");
+  assert.equal(calibrationStatus.calibrationRuns, 1, "the diagnostic run must be committed before the session reaches 100%");
+  const assessments = await api<Array<{
+    calibrationRunIds: string[];
+    workloadProfileId: string;
+    targetBuildHash: string;
+    procurementEligibility: string;
+  }>>(
+    application.origin,
+    `/api/capacity-assessments?workloadProfileId=${encodeURIComponent(completedCalibration.result!.workloadProfileId!)}`,
+  );
+  assert(assessments.length > 0);
+  assert(assessments.every((assessment) => !assessment.calibrationRunIds.includes(completedCalibration.result!.id)),
+    "a quick diagnostic must not be promoted as a validated hardware anchor");
+  assert(assessments.every((assessment) => assessment.procurementEligibility !== "eligible"));
+  assert(assessments.every((assessment) => assessment.targetBuildHash === completedCalibration.result!.fingerprint.perceptrumBuildHash));
+
+  const cancelCalibration = await api<{ delivery: string; session: { id: string } }>(application.origin, "/api/calibration-sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ recommendationId: recommendation.id, mode: "quick", targetHardwareTemplateId: null, advancedTelemetry: false }),
+  });
+  assert.equal(cancelCalibration.delivery, "internal");
+  await api(application.origin, `/api/calibration-sessions/${cancelCalibration.session.id}/cancel`, { method: "POST" });
+  const cancelledCalibration = await waitFor("cancelled calibration cleanup", async () => {
+    const current = await api<{
+      state: string;
+      cleanup: { state: string; remainingBytes: number } | null;
+      diagnostic?: { fileName: string; payloadSha256: string; status: string; completedMeasurementCount: number };
+    }>(application.origin, `/api/calibration-sessions/${cancelCalibration.session.id}`);
+    if (["completed", "failed", "interrupted"].includes(current.state)) {
+      throw new Error(`cancel request ended in unexpected state ${current.state}: ${JSON.stringify(current)}`);
+    }
+    return current.state === "cancelled" ? current : null;
+  }, 30_000);
+  assert.equal(cancelledCalibration.cleanup?.state, "completed");
+  assert.equal(cancelledCalibration.cleanup?.remainingBytes, 0);
+  assert.equal(cancelledCalibration.diagnostic?.status, "cancelled");
+  assert.match(cancelledCalibration.diagnostic?.payloadSha256 ?? "", /^[0-9a-f]{64}$/);
+  assert(cancelledCalibration.diagnostic?.fileName);
+  const cancelledEvidencePath = join(application.userData, "calibration-evidence", cancelledCalibration.diagnostic.fileName);
+  assert.equal(await fileExists(cancelledEvidencePath), true, "cancelled diagnostics must survive temporary cleanup");
+  assert((await stat(cancelledEvidencePath)).size <= 10 * 1024 * 1024, "cancelled diagnostics must respect the 10 MB limit");
+  assert.equal(await fileExists(join(tmpdir(), "qual-hardware-calibration", cancelCalibration.session.id)), false);
+  assert.equal((await api<{ calibrationRuns: number }>(application.origin, "/api/calibrations/status")).calibrationRuns, 1,
+    "cancelled diagnostics must not create calibration runs");
   for (const format of ["json", "pdf", "xlsx"] as const) {
     const response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(15_000) });
     assert(response.ok, `${format} report returned ${response.status}`);
@@ -422,7 +612,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<string>
     assert.equal(exact?.status, "validated_local");
     assert.equal(exact?.exactCalibrationRunId, calibration.id);
   }
-  return created.id;
+  return { scenarioId: created.id, recommendationId: recommendation.id };
 }
 
 async function main(): Promise<void> {
@@ -433,16 +623,35 @@ async function main(): Promise<void> {
   let running: RunningDesktop | null = null;
   try {
     running = await launchDesktop(paths.executable, userData);
-    const scenarioId = await exerciseApplication(running);
+    const { scenarioId, recommendationId } = await exerciseApplication(running);
 
     await launchDuplicate(paths, userData);
     assert.equal(running.child.exitCode, null, "second instance must not terminate the primary instance");
+    const startedForShutdown = await api<{ delivery: string; session: { id: string } }>(running.origin, "/api/calibration-sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recommendationId, mode: "quick", targetHardwareTemplateId: null, advancedTelemetry: false }),
+    });
+    assert.equal(startedForShutdown.delivery, "internal");
+    const shutdownCalibrationSessionId = startedForShutdown.session.id;
     await stopDesktop(running);
     running = null;
 
     running = await launchDesktop(paths.executable, userData);
     const scenarios = await api<ScenarioRecord[]>(running.origin, "/api/scenarios");
     assert(scenarios.some((scenario) => scenario.id === scenarioId), "SQLite data did not persist across restarts");
+    const shutdownCalibration = await api<{
+      state: string;
+      cleanup: { state: string; remainingBytes: number } | null;
+      diagnostic?: { fileName: string; status: string };
+    }>(running.origin, `/api/calibration-sessions/${shutdownCalibrationSessionId}`);
+    assert(["cancelled", "interrupted"].includes(shutdownCalibration.state));
+    assert.equal(shutdownCalibration.cleanup?.state, "completed");
+    assert.equal(shutdownCalibration.cleanup?.remainingBytes, 0);
+    assert(shutdownCalibration.diagnostic?.fileName, "shutdown interruption must preserve a compact diagnostic artifact");
+    assert.equal(await fileExists(join(userData, "calibration-evidence", shutdownCalibration.diagnostic.fileName)), true);
+    assert.equal(await fileExists(join(tmpdir(), "qual-hardware-calibration", shutdownCalibrationSessionId)), false,
+      "application shutdown must leave no temporary files for the active calibration session");
     await stopDesktop(running);
     running = null;
 

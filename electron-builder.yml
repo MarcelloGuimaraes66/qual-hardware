@@ -12,9 +12,23 @@ files:
   - contracts/**/*
   - database/**/*
   - package.json
+extraResources:
+  - from: resources/calibration/runtime-manifest.json
+    to: resources/calibration/runtime-manifest.json
+  - from: resources/calibration/asset-sources.lock.json
+    to: resources/calibration/asset-sources.lock.json
+  - from: contracts/calibration-kernel-authority-v1.json
+    to: contracts/calibration-kernel-authority-v1.json
+  - from: contracts/calibration-pipeline-contract-v1.json
+    to: contracts/calibration-pipeline-contract-v1.json
 
 win:
   icon: build/icon.ico
+  extraResources:
+    - from: resources/calibration
+      to: resources/calibration
+      filter:
+        - "win32-x64/**/*"
   target:
     - target: portable
       arch:
@@ -23,6 +37,11 @@ win:
 
 mac:
   icon: build/icon.icns
+  extraResources:
+    - from: resources/calibration
+      to: resources/calibration
+      filter:
+        - "darwin-arm64/**/*"
   category: public.app-category.business
   identity: null
   target:
@@ -41,6 +60,12 @@ mac:
 
 linux:
   icon: build/icon.png
+  syncDesktopName: true
+  extraResources:
+    - from: resources/calibration
+      to: resources/calibration
+      filter:
+        - "linux-x64/**/*"
   category: Utility
   executableName: qual-hardware
   synopsis: Calculadora desktop de infraestrutura para cargas do Perceptrum

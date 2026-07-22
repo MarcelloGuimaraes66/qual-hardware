@@ -2,6 +2,7 @@
   "name": "@aiquimist/qual-hardware",
   "version": "0.1.0",
   "description": "Calculadora desktop de infraestrutura para cargas do Perceptrum",
+  "desktopName": "qual-hardware.desktop",
   "author": "Aiquimist",
   "private": true,
   "type": "module",
@@ -17,7 +18,7 @@
     "desktop:package:dir": "npm run build && electron-builder --dir --publish never",
     "desktop:smoke": "tsx scripts/smoke-desktop.ts",
     "start": "npm run desktop:run",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.calibration-tools.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "catalog:collect": "tsx src/server/worker.ts --once",
@@ -27,6 +28,11 @@
     "evidence:sign": "tsx scripts/sign-evidence.ts",
     "db:schema": "tsx src/server/applySchema.ts",
     "audit:source": "tsx scripts/audit-source-inventory.ts",
+    "calibration:assets:audit": "tsx scripts/audit-calibration-assets.ts",
+    "calibration:exchange:ci": "tsx scripts/calibration-exchange-ci.ts",
+    "calibration:telemetry:test": "go -C tools/telemetry-probe test ./...",
+    "calibration:telemetry:verify": "tsx scripts/verify-calibration-telemetry-probe.ts",
+    "calibration:runtime:prepare": "tsx scripts/prepare-calibration-runtime.ts",
     "reports:sample": "tsx scripts/generate-report-samples.ts"
   },
   "dependencies": {

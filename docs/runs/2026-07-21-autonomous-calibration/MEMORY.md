@@ -1,0 +1,21 @@
+# Memória — calibração autônoma
+
+- Branch: `codex/calibracao-autonoma-qual-hardware`.
+- Worktree: `/Users/marcellogmfreire/.archon/workspaces/Documents/qual-hardware/worktrees/archon/task-codex-calibracao-autonoma-qual-hardware`.
+- Base: `f0c4c00ed914d567bb2678e429b0e373d0ae11a7`.
+- O fluxo Archon histórico `17b577fbbb7b1b23c8cc26ba8da478c4` permanece pausado e não será retomado; a continuidade atual usa o protocolo Codex direto e os artefatos do repositório.
+- Autoridade Perceptrum: `d918faa0ecd6a9906b711039e5d89f78e0536c44`.
+- O pipeline local equivalente por contrato está implementado; não confundir execução diagnóstica com validação física do Perceptrum.
+- Para habilitar `full`, fornecer ativos redistribuíveis com metadados completos, aprovar o hash do manifesto, completar o probe térmico por plataforma e executar a matriz física.
+- Contratos dourados: `contracts/calibration-kernel-authority-v1.json` e `contracts/calibration-pipeline-contract-v1.json`; ambos são verificados por SHA-256 fora do ASAR.
+- O resultado comercial somente pode usar três repetições completas, perfil/build/kernel/manifest exatos e rede física full-duplex com reserva de 20%.
+- A tentativa final aprovada é a única fonte dos agregados comerciais; descoberta e tentativas reprovadas continuam preservadas apenas como histórico.
+- Troca do hash do manifesto ou do kernel impede que uma run antiga gere ou alimente previsão no runtime atual.
+- Um limite por máquina nunca promove automaticamente um projeto com vários nós: clusters ficam em planejamento até validação própria.
+- Cancelamento, falha e encerramento preservam um pacote diagnóstico compacto antes da limpeza; não criam uma calibração de capacidade.
+- Nunca apagar conteúdo fora de um workspace de sessão com UUID e manifesto válidos.
+- Diretórios de smoke e arquivos de calibração criados pelos testes devem ser removidos ao final; evidências reais e banco principal nunca são temporários.
+- O manifesto de runtime é `qual-hardware-calibration-runtime-manifest/2.0.0`; cada ativo possui artefato distinto para macOS arm64, Windows x64 e Linux x64.
+- Provisionamento: `npm run calibration:runtime:prepare -- --intake /absoluto/intake.json` faz dry-run; `--apply` exige inventário completo, licença e SBOM CycloneDX por hash, preserva backup e não aprova comercialmente o manifesto.
+- Pacotes construídos no macOS: DMG macOS arm64, AppImage Linux x64 e portátil Windows x64. Somente o macOS foi executado; os outros dois foram inspecionados estruturalmente.
+- Estado validado localmente: 21 arquivos de teste, 154 testes, typecheck, build, auditoria de dependências e smoke empacotado macOS arm64 verdes.

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+release-*/
 .playwright-cli/
 output/
 outputs/
@@ -10,3 +11,5 @@ coverage/
 tmp/
 artifacts/
 *.log
+auto.crt
+auto.key
