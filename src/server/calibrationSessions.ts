@@ -331,7 +331,7 @@ export async function resolveCalibrationDirectory(options: {
   const home = options.home ?? homedir();
   const override = env.QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR?.trim();
   if (override) return resolve(override, "Qual Hardware", "Calibracoes");
-  const documents = platform === "win32" ? await windowsDocuments(home)
+  const documents = platform === "win32" ? (options.home === undefined ? await windowsDocuments(home) : join(home, "Documents"))
     : platform === "linux" ? await linuxDocuments(home, env)
     : join(home, "Documents");
   return resolve(documents, "Qual Hardware", "Calibracoes");

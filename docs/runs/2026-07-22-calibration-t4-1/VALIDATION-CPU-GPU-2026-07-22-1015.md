@@ -1,6 +1,6 @@
 # Validation addendum — mandatory CPU and GPU lanes
 
-Status: local Qual Hardware gates green; approved runtime and physical Windows/Ubuntu/macOS gates pending; no commit created.
+Status: local Qual Hardware gates green; candidate commit published; corrective hosted CI and physical Windows/Ubuntu/macOS gates pending.
 
 ## Scope and invariants
 
@@ -52,6 +52,6 @@ Status: local Qual Hardware gates green; approved runtime and physical Windows/U
 - Execute the same full physical gate on Ubuntu 24.04 x64 and macOS arm64.
 - Confirm native thermal sensor coverage, zero egress, zero session-temporary bytes, cancel/resume and cross-platform `.qhcal` exchange.
 - Approve the exact runtime-manifest hashes only after those physical gates.
-- Create the first candidate commit only after the complete pre-commit matrix is green.
+- Publish the corrective commit and require the complete hosted native matrix to become green.
 
-No local code failure is known at this checkpoint. Completion and commercial capacity claims remain blocked by the deliberately unapproved assets and missing physical evidence.
+The hosted failures found after this checkpoint and their locally verified corrections are recorded in `CI-CORRECTION-2026-07-22-1605.md`. Completion and commercial capacity claims remain blocked by the deliberately unapproved assets, low local disk space and missing physical evidence.

@@ -1,8 +1,8 @@
 # Implementation — Calibration T4.1
 
-Update 2026-07-22 10:15: every tier/phase now executes isolated CPU and GPU lanes; official Windows CUDA, macOS Metal and Ubuntu Vulkan runtime companions are pinned; media uses bounded circular segments; progressive cleanup bytes remain cumulative; runtime-candidate wording is fail-closed; and concurrent temporary-manifest updates are serialized. Final local evidence is recorded in `VALIDATION-CPU-GPU-2026-07-22-1015.md`.
+Update 2026-07-22 16:05: every tier/phase still requires isolated CPU and GPU lanes. The first hosted CI run additionally required deterministic LF attributes, corrected evidence hashes, host-independent Windows Documents tests and clearer disk-reserve diagnostics. Local proof is recorded in `CI-CORRECTION-2026-07-22-1605.md`.
 
-Status: local implementation complete and green; approved-runtime and physical pre-commit gates pending.
+Status: corrective implementation complete and locally green; hosted native revalidation, approved runtime and physical gates pending.
 
 ## Execution order
 
@@ -44,4 +44,4 @@ Status: local implementation complete and green; approved-runtime and physical p
 
 ## Deliberate fail-closed state
 
-The runtime manifest intentionally contains no approved manifest hash yet. The telemetry-probe candidate now has reproducible platform binaries, installed hashes/sizes, provenance notices and candidate CycloneDX SBOMs, so diagnostic calibration can measure thermals locally. Its legal/SBOM review and physical sensor validation remain blocked, as do all other runtime/model approvals. Purchase-grade full calibration remains disabled until every asset and native physical gate passes. Current disk reserve also blocks acquisition on this host. No candidate commit is allowed before those external gates pass.
+The runtime manifest intentionally contains no approved manifest hash yet. The telemetry-probe candidate now has reproducible platform binaries, installed hashes/sizes, provenance notices and candidate CycloneDX SBOMs, so diagnostic calibration can measure thermals locally. Its legal/SBOM review and physical sensor validation remain blocked, as do all other runtime/model approvals. Purchase-grade full calibration remains disabled until every asset and native physical gate passes. Current disk reserve also blocks a real retry on this host. The published commit is a development candidate only.
