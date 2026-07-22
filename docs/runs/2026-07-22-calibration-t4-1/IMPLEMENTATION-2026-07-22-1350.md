@@ -10,6 +10,7 @@
 - Resultados importados continuam podendo ser reexportados com a identidade e assinatura originais.
 - A tela apresenta o `.qhcal` automático como arquivo principal; a exportação manual agora é descrita como download de outra cópia.
 - Falhas de recuperação de arquivos antigos são mostradas sem esconder ou sobrescrever a evidência conflitante.
+- O contrato portátil aceita explicitamente `formFactor: "unknown"`, valor real produzido quando o sistema operacional não permite classificar fisicamente a máquina.
 
 ## Segurança e preservação
 

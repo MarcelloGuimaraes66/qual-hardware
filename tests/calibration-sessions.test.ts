@@ -404,6 +404,7 @@ describe("secure cross-platform calibration handoff", () => {
       result.mode = "quick";
       result.executionMode = "readiness";
       result.fingerprint.hardwareTemplateId = null;
+      result.fingerprint.formFactor = "unknown";
       result.workloadProfileId = sourceSession.plan.workloadProfile.id;
       result.workloadProfileSignature = sourceSession.plan.workloadProfile.signature;
       result.qualityGate = {

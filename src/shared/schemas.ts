@@ -224,7 +224,7 @@ export const localCalibrationRunSchema = z.object({
     operatingSystem: operatingSystemSchema,
     operatingSystemVersion: z.string().min(1).max(240),
     powerProfile: z.string().min(1).max(160),
-    formFactor: z.enum(["laptop", "mini_pc", "workstation", "rack", "unknown"]),
+    formFactor: z.enum(["laptop", "mini_pc", "workstation", "rack", "unknown"]).nullable(),
     coolingProfile: z.string().min(1).max(240),
     perceptrumBuildHash: z.string().min(1).max(128),
     aiqModel: z.string().min(1).max(240),
@@ -650,7 +650,7 @@ export const qhcalPackageSchema = z.object({
     gpuCount: z.number().int().nonnegative().max(64), gpuVramBytes: z.number().int().nonnegative().nullable(),
     gpuDriver: z.string().min(1).max(160), ramBytes: z.number().int().positive(),
     operatingSystem: z.enum(["windows", "ubuntu", "macos"]), operatingSystemVersion: z.string().min(1).max(240),
-    formFactor: z.enum(["laptop", "mini_pc", "workstation", "rack"]).nullable(),
+    formFactor: z.enum(["laptop", "mini_pc", "workstation", "rack", "unknown"]),
   }),
   provenance: z.object({
     source: z.literal("local"), producerDeviceId: z.string().regex(/^[a-f0-9]{64}$/),
