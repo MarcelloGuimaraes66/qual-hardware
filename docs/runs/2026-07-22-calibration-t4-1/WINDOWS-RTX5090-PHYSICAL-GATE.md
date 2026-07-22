@@ -43,9 +43,12 @@ Mandatory capability details:
 Prepare an absolute-path intake JSON conforming to `qual-hardware-calibration-asset-intake/1.0.0`. Dry-run it first, then apply it:
 
 ```powershell
+npm run calibration:runtime:prepare -- --target win32-x64 --print-template | Set-Content -Encoding utf8 C:\qual-hardware-runtime\intake-win32-x64.json
 npm run calibration:runtime:prepare -- --intake C:\qual-hardware-runtime\intake-win32-x64.json
 npm run calibration:runtime:prepare -- --intake C:\qual-hardware-runtime\intake-win32-x64.json --apply
 ```
+
+Fill only the nested `intake` values in the generated file. Keep `sourceGuide` as immutable review context. The file remains deliberately invalid until every placeholder is replaced, the SPDX decision is reviewed and every CUDA companion-library group is represented; one entry may be expanded into as many DLL rows as the extracted bundle requires.
 
 The preparer refuses insufficient disk, symlinks, placeholders, duplicate destinations, incomplete inventories, invalid SBOMs and identical reapplication. If a partial target already exists, it is preserved in a versioned backup before the candidate is installed.
 

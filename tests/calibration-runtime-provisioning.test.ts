@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CALIBRATION_ASSET_INTAKE_VERSION,
+  CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION,
   applyCalibrationRuntimeProvisioning,
+  createCalibrationRuntimeIntakeTemplate,
   planCalibrationRuntimeProvisioning,
 } from "../src/server/calibrationRuntimeProvisioning.js";
 import { REQUIRED_RUNTIME_ASSET_IDS, inspectCalibrationRuntime } from "../src/server/calibrationRuntime.js";
@@ -18,6 +20,28 @@ afterEach(async () => {
 });
 
 describe("calibration runtime asset provisioning", () => {
+  it.each(["darwin-arm64", "win32-x64", "linux-x64"] as const)(
+    "generates a fail-closed, complete and target-specific intake template for %s",
+    async (target) => {
+      const template = await createCalibrationRuntimeIntakeTemplate({ repositoryRoot: projectRoot, target });
+      expect(template).toMatchObject({
+        schemaVersion: "qual-hardware-calibration-asset-intake-template/1.0.0",
+        target,
+        readyToApply: false,
+        runtimeNetworkAccess: "forbidden",
+      });
+      expect(template.intake.assets.map((asset) => asset.id)).toEqual(REQUIRED_RUNTIME_ASSET_IDS);
+      expect(template.sourceGuide.map((asset) => asset.id)).toEqual(REQUIRED_RUNTIME_ASSET_IDS);
+      expect(template.sourceGuide.every((asset) => asset.source.sha256 && asset.source.sizeBytes)).toBe(true);
+      expect(template.intake.assets.every((asset) => asset.sourcePath.startsWith("REPLACE_WITH_"))).toBe(true);
+      const llamaIntake = template.intake.assets.find((asset) => asset.id === "llama-server")!;
+      const llamaGuide = template.sourceGuide.find((asset) => asset.id === "llama-server")!;
+      expect(llamaIntake.companionFiles).toHaveLength(llamaGuide.source.companionSources.length);
+      await expect(planCalibrationRuntimeProvisioning({ repositoryRoot: projectRoot, intake: template }))
+        .rejects.toThrow("absolute_source_path_required");
+    },
+  );
+
   it("plans without mutation, then atomically installs one complete verified target with a manifest backup", async () => {
     const root = await mkdtemp(join(tmpdir(), "qual-hardware-runtime-provisioning-test-"));
     roots.push(root);
@@ -59,6 +83,11 @@ describe("calibration runtime asset provisioning", () => {
     }
     const intake = { schemaVersion: CALIBRATION_ASSET_INTAKE_VERSION, target: "linux-x64", assets };
     const planned = await planCalibrationRuntimeProvisioning({ repositoryRoot: root, intake });
+    const wrappedPlan = await planCalibrationRuntimeProvisioning({
+      repositoryRoot: root,
+      intake: { schemaVersion: CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION, target: "linux-x64", intake, sourceGuide: [] },
+    });
+    expect(wrappedPlan).toEqual(planned);
     expect(planned.files).toHaveLength(REQUIRED_RUNTIME_ASSET_IDS.length * 3 + 1);
     expect(planned.stagingBytes).toBeGreaterThan(0);
     expect((await readdir(join(root, "resources/calibration"))).sort()).toEqual(["asset-sources.lock.json", "runtime-manifest.json"]);
@@ -116,6 +145,12 @@ describe("calibration runtime asset provisioning", () => {
       await writeFile(sourcePath, `asset:${id}`, "utf8");
       await writeFile(licenseEvidencePath, `license:${id}`, "utf8");
       await writeFile(sbomEvidencePath, JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.6" }), "utf8");
+      const companionFiles = [];
+      if (id === "llama-server") {
+        const companionPath = join(sourceRoot, "libllama.dylib");
+        await writeFile(companionPath, "fixture Metal companion", "utf8");
+        companionFiles.push({ sourcePath: companionPath, relativePath: "bin/libllama.dylib" });
+      }
       assets.push({
         id,
         sourcePath,
@@ -123,6 +158,7 @@ describe("calibration runtime asset provisioning", () => {
         licenseSpdx: id === "telemetry-probe" ? "NOASSERTION" : "MIT",
         licenseEvidencePath,
         sbomEvidencePath,
+        companionFiles,
       });
     }
     const manifestBefore = await readFile(join(root, "resources/calibration/runtime-manifest.json"), "utf8");
@@ -136,5 +172,23 @@ describe("calibration runtime asset provisioning", () => {
     })).rejects.toThrow("calibration_runtime_insufficient_disk_reserve");
     expect(await readFile(join(root, "resources/calibration/runtime-manifest.json"), "utf8")).toBe(manifestBefore);
     expect((await readdir(join(root, "resources/calibration"))).sort()).toEqual(["asset-sources.lock.json", "runtime-manifest.json"]);
+  });
+
+  it("refuses an incomplete companion-library inventory before reading or mutating runtime files", async () => {
+    const template = await createCalibrationRuntimeIntakeTemplate({ repositoryRoot: projectRoot, target: "win32-x64" });
+    const llama = template.intake.assets.find((asset) => asset.id === "llama-server")!;
+    llama.companionFiles.splice(1);
+    for (const asset of template.intake.assets) {
+      asset.sourcePath = "/nonexistent/asset";
+      asset.licenseSpdx = "MIT";
+      asset.licenseEvidencePath = "/nonexistent/license";
+      asset.sbomEvidencePath = "/nonexistent/sbom";
+      for (const companion of asset.companionFiles) {
+        companion.sourcePath = "/nonexistent/companion";
+        companion.relativePath = "bin/companion.dll";
+      }
+    }
+    await expect(planCalibrationRuntimeProvisioning({ repositoryRoot: projectRoot, intake: template }))
+      .rejects.toThrow("calibration_asset_companion_groups_incomplete:llama-server:2:1");
   });
 });

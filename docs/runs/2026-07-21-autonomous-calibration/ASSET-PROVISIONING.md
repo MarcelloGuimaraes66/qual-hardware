@@ -9,9 +9,12 @@ O comando `npm run calibration:runtime:prepare` prepara um alvo completo do runt
 O modo padrão é somente leitura: valida a entrada, calcula hashes e apresenta o hash do manifesto proposto. A opção `--apply` é obrigatória para gravar qualquer coisa.
 
 ```text
+npm run calibration:runtime:prepare -- --target win32-x64 --print-template
 npm run calibration:runtime:prepare -- --intake /caminho/absoluto/intake.json
 npm run calibration:runtime:prepare -- --intake /caminho/absoluto/intake.json --apply
 ```
+
+O primeiro comando imprime um modelo determinístico com o objeto `intake` preenchível e um `sourceGuide` para a plataforma escolhida. Ele não baixa, instala nem aprova ativos. O mesmo arquivo completo pode ser fornecido depois com `--intake`: enquanto existir qualquer `REPLACE_WITH`, a validação falhará antes de alterar o repositório.
 
 ## Contrato de entrada
 
@@ -21,6 +24,7 @@ npm run calibration:runtime:prepare -- --intake /caminho/absoluto/intake.json --
 - Cada item informa `id`, `sourcePath`, `version`, `licenseSpdx`, `licenseEvidencePath` e `sbomEvidencePath`.
 - Todos os caminhos de origem são absolutos, regulares, não vazios e não podem ser links simbólicos.
 - O SBOM deve ser JSON CycloneDX com `bomFormat` e `specVersion`.
+- Quando a origem fixa bibliotecas auxiliares, o intake deve cobrir todos os grupos declarados e listar todos os arquivos necessários. O provisionador rejeita inventário de grupos incompleto antes de copiar qualquer arquivo.
 
 IDs obrigatórios:
 

@@ -12,14 +12,17 @@ import {
   type RuntimeManifest,
   type SupportedRuntimeTarget,
 } from "./calibrationRuntime.js";
+import { parseCalibrationAssetSourceLock } from "./calibrationAssetSources.js";
 import { calibrationDiskStatus, type CalibrationDiskStatus } from "./calibrationTemporaryFiles.js";
 
 export const CALIBRATION_ASSET_INTAKE_VERSION = "qual-hardware-calibration-asset-intake/1.0.0" as const;
+export const CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION = "qual-hardware-calibration-asset-intake-template/1.0.0" as const;
 const absoluteExistingPathSchema = z.string().min(1).max(4_096).refine((value) => isAbsolute(value), "absolute_source_path_required");
 const intakeRelativePathSchema = z.string().min(1).max(500).superRefine((value, context) => {
   const segments = value.split(/[\\/]+/);
   if (isAbsolute(value) || /^(?:[a-z]:[\\/]|[\\/]{2})/i.test(value) ||
-      segments.some((segment) => segment === ".." || segment === "." || segment.length === 0)) {
+      segments.some((segment) => segment === ".." || segment === "." || segment.length === 0) ||
+      /replace_with/i.test(value)) {
     context.addIssue({ code: "custom", message: "runtime_relative_path_required" });
   }
 });
@@ -42,6 +45,45 @@ export const calibrationAssetIntakeSchema = z.object({
 }).strict();
 export type CalibrationAssetIntake = z.infer<typeof calibrationAssetIntakeSchema>;
 
+const calibrationAssetIntakeTemplateWrapperSchema = z.object({
+  schemaVersion: z.literal(CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION),
+  target: z.enum(SUPPORTED_RUNTIME_TARGETS),
+  intake: z.unknown(),
+}).passthrough();
+
+export interface CalibrationAssetIntakeTemplate {
+  schemaVersion: typeof CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION;
+  target: SupportedRuntimeTarget;
+  readyToApply: false;
+  runtimeNetworkAccess: "forbidden";
+  instructions: string[];
+  intake: {
+    schemaVersion: typeof CALIBRATION_ASSET_INTAKE_VERSION;
+    target: SupportedRuntimeTarget;
+    assets: Array<{
+      id: typeof REQUIRED_RUNTIME_ASSET_IDS[number];
+      sourcePath: string;
+      version: string;
+      licenseSpdx: string;
+      licenseEvidencePath: string;
+      sbomEvidencePath: string;
+      companionFiles: Array<{ sourcePath: string; relativePath: string }>;
+    }>;
+  };
+  sourceGuide: Array<{
+    id: typeof REQUIRED_RUNTIME_ASSET_IDS[number];
+    destinationRelativePath: string;
+    upstream: string;
+    revision: string;
+    versionCandidate: string;
+    licenseSpdxCandidate: string | null;
+    licenseEvidenceUrl: string | null;
+    approvalStatus: "candidate" | "approved" | "blocked";
+    blockers: string[];
+    source: ReturnType<typeof parseCalibrationAssetSourceLock>["assets"][number]["targets"][SupportedRuntimeTarget];
+  }>;
+}
+
 interface PreparedFile {
   id: string;
   kind: "asset" | "companion" | "license" | "sbom";
@@ -58,6 +100,81 @@ export interface CalibrationRuntimeProvisioningPlan {
   manifestSha256: string;
   files: PreparedFile[];
   stagingBytes: number;
+}
+
+function intakeFromInput(input: unknown): { intake: CalibrationAssetIntake; templateTarget: SupportedRuntimeTarget | null } {
+  const template = calibrationAssetIntakeTemplateWrapperSchema.safeParse(input);
+  const intake = calibrationAssetIntakeSchema.parse(template.success ? template.data.intake : input);
+  if (template.success && template.data.target !== intake.target) {
+    throw new Error("calibration_asset_intake_template_target_mismatch");
+  }
+  return { intake, templateTarget: template.success ? template.data.target : null };
+}
+
+export async function createCalibrationRuntimeIntakeTemplate(input: {
+  repositoryRoot: string;
+  target: unknown;
+}): Promise<CalibrationAssetIntakeTemplate> {
+  const repositoryRoot = resolve(input.repositoryRoot);
+  const target = z.enum(SUPPORTED_RUNTIME_TARGETS).parse(input.target);
+  const manifestPath = safeChildPath(repositoryRoot, "resources/calibration/runtime-manifest.json");
+  const manifest = runtimeManifestSchema.parse(JSON.parse(await readFile(manifestPath, "utf8")));
+  const sourceLockPath = safeChildPath(repositoryRoot, manifest.sourceLock.relativePath);
+  const sourceLockBytes = await readFile(sourceLockPath, "utf8");
+  const sourceLockHash = createHash("sha256").update(sourceLockBytes).digest("hex");
+  if (sourceLockHash !== manifest.sourceLock.sha256) throw new Error("calibration_asset_source_lock_hash_mismatch");
+  const sourceLock = parseCalibrationAssetSourceLock(JSON.parse(sourceLockBytes));
+  const assets = REQUIRED_RUNTIME_ASSET_IDS.map((id) => {
+    const sourceDefinition = sourceLock.assets.find((asset) => asset.id === id);
+    const runtimeDefinition = manifest.assets.find((asset) => asset.id === id);
+    if (!sourceDefinition || !runtimeDefinition) throw new Error(`calibration_asset_template_inventory_missing:${id}`);
+    const source = sourceDefinition.targets[target];
+    return {
+      intake: {
+        id,
+        sourcePath: `REPLACE_WITH_ABSOLUTE_PATH_TO_${id.toUpperCase().replaceAll("-", "_")}`,
+        version: sourceDefinition.version,
+        licenseSpdx: `REPLACE_WITH_APPROVED_SPDX_FOR_${id.toUpperCase().replaceAll("-", "_")}`,
+        licenseEvidencePath: `REPLACE_WITH_ABSOLUTE_LICENSE_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}`,
+        sbomEvidencePath: `REPLACE_WITH_ABSOLUTE_CYCLONEDX_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}`,
+        companionFiles: source.companionSources.map((_companion, index) => ({
+          sourcePath: `REPLACE_WITH_ABSOLUTE_COMPANION_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}_GROUP_${index + 1}`,
+          relativePath: `REPLACE_WITH_RELATIVE_BIN_PATH_FOR_${id.toUpperCase().replaceAll("-", "_")}_GROUP_${index + 1}`,
+        })),
+      },
+      guide: {
+        id,
+        destinationRelativePath: runtimeDefinition.artifacts[target].relativePath,
+        upstream: sourceDefinition.upstream,
+        revision: sourceDefinition.revision,
+        versionCandidate: sourceDefinition.version,
+        licenseSpdxCandidate: sourceDefinition.licenseSpdxCandidate,
+        licenseEvidenceUrl: sourceDefinition.licenseEvidenceUrl,
+        approvalStatus: sourceDefinition.approvalStatus,
+        blockers: [...sourceDefinition.blockers],
+        source,
+      },
+    };
+  });
+  return {
+    schemaVersion: CALIBRATION_ASSET_INTAKE_TEMPLATE_VERSION,
+    target,
+    readyToApply: false,
+    runtimeNetworkAccess: "forbidden",
+    instructions: [
+      "Preencha somente com ativos obtidos e revisados fora da execução da calibração.",
+      "Substitua todos os valores REPLACE_WITH; caminhos devem ser absolutos e apontar para arquivos regulares, nunca links simbólicos.",
+      "O campo licenseSpdx exige decisão humana; licenseSpdxCandidate é apenas referência e não representa aprovação.",
+      "Para cada grupo auxiliar, liste todos os arquivos extraídos necessários e preserve o destino dentro da raiz do runtime.",
+      "Use este mesmo arquivo com --intake após preencher o objeto intake; o guia de origem é informativo e não autoriza download em runtime.",
+    ],
+    intake: {
+      schemaVersion: CALIBRATION_ASSET_INTAKE_VERSION,
+      target,
+      assets: assets.map((asset) => asset.intake),
+    },
+    sourceGuide: assets.map((asset) => asset.guide),
+  };
 }
 
 async function targetInventory(root: string, current = root): Promise<string[]> {
@@ -113,10 +230,21 @@ export async function planCalibrationRuntimeProvisioning(input: {
   intake: unknown;
 }): Promise<CalibrationRuntimeProvisioningPlan> {
   const repositoryRoot = resolve(input.repositoryRoot);
-  const intake = calibrationAssetIntakeSchema.parse(input.intake);
+  const { intake } = intakeFromInput(input.intake);
   assertExactIntake(intake);
   const manifestPath = safeChildPath(repositoryRoot, "resources/calibration/runtime-manifest.json");
   const manifest = runtimeManifestSchema.parse(JSON.parse(await readFile(manifestPath, "utf8")));
+  const sourceLockPath = safeChildPath(repositoryRoot, manifest.sourceLock.relativePath);
+  const sourceLock = parseCalibrationAssetSourceLock(JSON.parse(await readFile(sourceLockPath, "utf8")));
+  const sourceDefinitions = new Map(sourceLock.assets.map((asset) => [asset.id, asset]));
+  for (const item of intake.assets) {
+    const sourceDefinition = sourceDefinitions.get(item.id);
+    if (!sourceDefinition) throw new Error(`calibration_asset_source_inventory_missing:${item.id}`);
+    const requiredCompanionGroups = sourceDefinition.targets[intake.target].companionSources.length;
+    if (item.companionFiles.length < requiredCompanionGroups) {
+      throw new Error(`calibration_asset_companion_groups_incomplete:${item.id}:${requiredCompanionGroups}:${item.companionFiles.length}`);
+    }
+  }
   const files: PreparedFile[] = [];
   for (const item of intake.assets) {
     const definition = manifest.assets.find((asset) => asset.id === item.id);
