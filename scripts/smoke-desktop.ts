@@ -503,7 +503,7 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
     "thermal evidence must be measured on physical hardware or explicitly unavailable on a virtual runner");
   if (thermalEvidence === "unavailable") {
     assert.equal(completedCalibration.result?.qualityGate?.eligibleForCapacityExtrapolation, false);
-    assert(completedCalibration.result?.qualityGate?.failures.includes("thermal_throttling_sensor_unavailable"),
+    assert(completedCalibration.result?.qualityGate?.failures.includes("approved_thermal_guardrail_unavailable"),
       "missing thermal evidence must remain a blocking diagnostic failure");
   }
   for (const stage of ["job_scheduler", "intelligence_scheduler", "database_persistence", "dashboard_queries"] as const) {

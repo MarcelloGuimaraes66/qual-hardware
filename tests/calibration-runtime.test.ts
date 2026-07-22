@@ -139,7 +139,7 @@ describe("offline calibration runtime manifest", () => {
     expect(darwin.reasons).toContain("runtime-manifest:darwin-arm64:not-approved");
   });
 
-  it("requires execute permission for packaged Unix executables", async () => {
+  it.runIf(process.platform !== "win32")("requires execute permission for packaged Unix executables", async () => {
     const root = await makeRuntimeFixture("linux-x64", { nonExecutableId: "ffmpeg" });
     const status = await inspectCalibrationRuntime({ resourceRoot: root, platform: "linux", architecture: "x64", env: { PATH: "" }, featureMode: "full" });
     expect(status.assets.find((asset) => asset.id === "ffmpeg")?.status).toBe("missing");
