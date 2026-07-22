@@ -52,9 +52,13 @@ export function CalibrationResultPanel({
 }): ReactElement {
   const status = validation(result);
   const separator = directory.includes("\\") ? "\\" : "/";
-  const artifactPath = result.artifact
-    ? `${directory.replace(/[\\/]+$/, "")}${separator}${result.artifact.fileName}`
-    : directory;
+  const directoryPath = directory.replace(/[\\/]+$/, "");
+  const portableArtifactPath = directoryPath
+    ? `${directoryPath}${separator}${result.id}.qhcal`
+    : `${result.id}.qhcal`;
+  const compactEvidencePath = result.artifact
+    ? `${directoryPath}${separator}${result.artifact.fileName}`
+    : "";
   const safeCapacity = result.overallSafeCameraCapacity === null
     ? (lang === "pt" ? "não validada" : "not validated")
     : Math.floor(result.overallSafeCameraCapacity);
@@ -105,8 +109,8 @@ export function CalibrationResultPanel({
     ].map((item) => { const [key, label] = item as [string, string]; const measured = result.pipelineEvidence?.[key] === true; return <div key={key}><span className={`evidence-state ${measured ? "measured" : "failed"}`}>{measured ? "measured" : "missing"}</span><b>{label}</b><small>{measured ? (lang === "pt" ? "comprovado no resultado" : "proven in result") : (lang === "pt" ? "ausente; bloqueia compra" : "missing; blocks purchase")}</small></div>; })}</details>}
     {result.telemetryCapabilities && <details className="calibration-sensors"><summary>{lang === "pt" ? "Sensores e capacidades de telemetria" : "Telemetry sensors and capabilities"}</summary>{result.telemetryCapabilities.map((item) => <div key={item.id}><span className={`evidence-state ${item.status}`}>{item.status}</span><b>{item.id}</b><small>{item.provider}{item.reason ? ` · ${item.reason}` : ""}</small></div>)}</details>}
     {(result.qualityGate?.failures.length || result.qualityGate?.warnings.length) ? <div className="calibration-findings">{result.qualityGate?.failures.map((item) => <div className="failure" key={item}>✕ {item}</div>)}{result.qualityGate?.warnings.map((item) => <div className="warning" key={item}>△ {item}</div>)}</div> : null}
-    <div className="calibration-artifact"><span>{lang === "pt" ? "Arquivo salvo antes da importação" : "File saved before import"}</span><code>{artifactPath || result.artifact?.fileName || "—"}</code><small>SHA-256: {result.artifact?.payloadSha256 ?? (lang === "pt" ? "não disponível na versão 1.0" : "not available in version 1.0")}</small></div>
-    <div className="catalog-actions"><button className="primary" type="button" onClick={onOpenDirectory}>{lang === "pt" ? "Abrir pasta do resultado" : "Open result folder"}</button><button className="secondary" type="button" onClick={() => void navigator.clipboard.writeText(artifactPath)}>{lang === "pt" ? "Copiar caminho" : "Copy path"}</button><button className="secondary" type="button" onClick={onExport}>{lang === "pt" ? "Exportar pacote .qhcal assinado" : "Export signed .qhcal package"}</button><button className="secondary" type="button" onClick={onRecalculate}>{lang === "pt" ? "Recalcular recomendações" : "Recalculate recommendations"}</button></div>
+    <div className="calibration-artifact"><span>{lang === "pt" ? "Pacote portátil criado automaticamente" : "Portable package created automatically"}</span><code>{portableArtifactPath}</code><small>{compactEvidencePath ? `${lang === "pt" ? "Evidência compacta" : "Compact evidence"}: ${compactEvidencePath} · ` : ""}SHA-256: {result.artifact?.payloadSha256 ?? (lang === "pt" ? "registrado dentro do pacote assinado" : "recorded inside the signed package")}</small></div>
+    <div className="catalog-actions"><button className="primary" type="button" onClick={onOpenDirectory}>{lang === "pt" ? "Abrir pasta do resultado" : "Open result folder"}</button><button className="secondary" type="button" onClick={() => void navigator.clipboard.writeText(portableArtifactPath)}>{lang === "pt" ? "Copiar caminho" : "Copy path"}</button><button className="secondary" type="button" onClick={onExport}>{lang === "pt" ? "Baixar outra cópia .qhcal" : "Download another .qhcal copy"}</button><button className="secondary" type="button" onClick={onRecalculate}>{lang === "pt" ? "Recalcular recomendações" : "Recalculate recommendations"}</button></div>
     <details className="calibration-json"><summary>{lang === "pt" ? "Ver JSON completo" : "View complete JSON"}</summary><pre>{JSON.stringify(result, null, 2)}</pre></details>
   </section>;
 }

@@ -80,6 +80,9 @@ describe("signed portable calibration exchange", () => {
     const imported = await app.request("/api/calibration-imports", { method: "POST", headers: { "content-type": QHCAL_MIME }, body: requestBody(exported.bytes) });
     expect(imported.status).toBe(201);
     expect((await store.listCalibrationRuns()).map((run) => run.id)).toEqual([autonomousCalibrationRun().id]);
+    const downloadedImportedRun = await app.request(`/api/calibrations/${autonomousCalibrationRun().id}/export`);
+    expect(downloadedImportedRun.status).toBe(200);
+    expect(Buffer.from(await downloadedImportedRun.arrayBuffer())).toEqual(exported.bytes);
     const duplicate = await app.request("/api/calibration-imports", { method: "POST", headers: { "content-type": QHCAL_MIME }, body: requestBody(exported.bytes) });
     expect(duplicate.status).toBe(201);
     const duplicateBody = await duplicate.json() as { batch: { duplicateItems: number }; importedRuns: string[] };

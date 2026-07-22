@@ -545,7 +545,14 @@ function CalibrationCenter({
   const refreshStatus = (): void => {
     void api<CalibrationStatusSummary>("/api/calibrations/status").then(setStatus).catch(() => setStatus(null));
     void api<LocalCalibrationRun[]>("/api/calibrations").then((runs) => { setHistory(runs); if (!result && runs[0]) setResult(runs[0]); }).catch(() => setHistory([]));
-    void api<{ directory: string }>("/api/calibration-sessions/directory").then((value) => setDirectory(value.directory)).catch(() => setDirectory(""));
+    void api<{ directory: string; recoveredFiles?: string[]; recoveryErrors?: string[] }>("/api/calibration-sessions/directory").then((value) => {
+      setDirectory(value.directory);
+      if (value.recoveryErrors?.length) {
+        setDetail(lang === "pt"
+          ? `A pasta foi localizada, mas ${value.recoveryErrors.length} pacote(s) antigo(s) não puderam ser recuperados automaticamente.`
+          : `The folder was found, but ${value.recoveryErrors.length} older package(s) could not be recovered automatically.`);
+      }
+    }).catch(() => setDirectory(""));
     void api<CalibrationRuntimeStatus>("/api/calibrations/runtime-status").then(setRuntimeStatus).catch(() => setRuntimeStatus(null));
     void api<CalibrationHardwarePreflight>("/api/calibrations/hardware-status").then(setDetectedHardware).catch(() => setDetectedHardware(null));
     void api<CalibrationDeviceIdentity[]>("/api/calibration-devices").then(setDevices).catch(() => setDevices([]));
@@ -727,7 +734,7 @@ function CalibrationCenter({
     setWorking(true);
     try {
       await downloadBinaryResponse(await fetch(`/api/calibrations/${run.id}/export`), `${run.id}.qhcal`);
-      setDetail(lang === "pt" ? "Pacote .qhcal assinado exportado." : "Signed .qhcal package exported.");
+      setDetail(lang === "pt" ? "Outra cópia do pacote .qhcal assinado foi baixada." : "Another copy of the signed .qhcal package was downloaded.");
     } catch (error) { setDetail(error instanceof Error ? error.message : "calibration_export_failed"); }
     finally { setWorking(false); }
   };
@@ -774,8 +781,13 @@ function CalibrationCenter({
 
   const openDirectory = async (): Promise<void> => {
     try {
-      const opened = await api<{ directory: string }>("/api/calibration-sessions/open-directory", { method: "POST" });
+      const opened = await api<{ directory: string; recoveredFiles?: string[]; recoveryErrors?: string[] }>("/api/calibration-sessions/open-directory", { method: "POST" });
       setDirectory(opened.directory);
+      if (opened.recoveryErrors?.length) {
+        setDetail(lang === "pt"
+          ? `A pasta correta foi aberta, mas ${opened.recoveryErrors.length} pacote(s) antigo(s) têm conflito ou evidência inválida e foram preservados sem sobrescrita.`
+          : `The correct folder was opened, but ${opened.recoveryErrors.length} older package(s) have a conflict or invalid evidence and were preserved without overwrite.`);
+      }
     } catch (error) { setDetail(error instanceof Error ? error.message : "open_calibration_directory_failed"); }
   };
 

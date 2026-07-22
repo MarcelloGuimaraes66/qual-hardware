@@ -194,7 +194,6 @@ export function createApp(
   options: ApplicationOptions = {},
 ): Hono {
   const app = new Hono();
-  const calibrationDirectoryOptions = options.documentsDirectory ? { documentsDirectory: options.documentsDirectory } : {};
   const volatileCalibrationTokens = new Map<string, string>();
   const resourceRoot = options.resourceRoot ?? process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
   const applicationVersion = options.appVersion ?? "0.1.0";
@@ -205,6 +204,8 @@ export function createApp(
   };
   const calibrationEvidenceDirectory = options.calibrationEvidenceDirectory ??
     join(options.documentsDirectory ?? process.cwd(), "Qual Hardware", "Calibracoes");
+  const calibrationDirectoryOptions = { calibrationDirectory: calibrationEvidenceDirectory };
+  const legacyCalibrationDirectoryOptions = options.documentsDirectory ? { documentsDirectory: options.documentsDirectory } : {};
   const calibrationKernel = options.calibrationKernel ?? new CalibrationKernelService({
     temporaryRoot: options.calibrationTemporaryRoot ?? join(tmpdir(), "qual-hardware-calibration"),
     evidenceDirectory: calibrationEvidenceDirectory,
@@ -236,6 +237,68 @@ export function createApp(
       kernelVersion: status.kernelVersion,
       runtimeManifestHash: status.manifestHash,
     }, calibrationFeatures.evidencePolicy);
+  }
+
+  async function preparePortableCalibrationResult(
+    run: LocalCalibrationRun,
+    workloadProfile: CalibrationSessionRecord["plan"]["workloadProfile"],
+  ) {
+    const identity = await calibrationExchange.localIdentity();
+    const exported = await calibrationExchange.exportRun(run, workloadProfile);
+    return { identity, exported };
+  }
+
+  async function recordPortableCalibrationResult(
+    prepared: Awaited<ReturnType<typeof preparePortableCalibrationResult>>,
+  ): Promise<void> {
+    const { identity, exported } = prepared;
+    await store.saveCalibrationDeviceIdentity(identity);
+    await recordCalibrationExportEvent(exported);
+  }
+
+  async function recordCalibrationExportEvent(
+    exported: Awaited<ReturnType<CalibrationExchangeService["exportRun"]>>,
+  ): Promise<void> {
+    await store.saveCalibrationExportEvent({
+      id: randomUUID(), format: "qhcal", runIds: [exported.package.run.id], packageDigest: exported.packageDigest,
+      sizeBytes: exported.bytes.byteLength, createdAt: new Date().toISOString(),
+    });
+  }
+
+  let portableRecoveryPromise: Promise<{ recoveredFiles: string[]; recoveryErrors: string[] }> | null = null;
+  async function performPortableCalibrationRecovery(): Promise<{ recoveredFiles: string[]; recoveryErrors: string[] }> {
+    if (!calibrationFeatures.exchange) return { recoveredFiles: [], recoveryErrors: [] };
+    const [runs, sessions, provenance, exportEvents] = await Promise.all([
+      store.listCalibrationRuns(), store.listCalibrationSessions(), store.listCalibrationRunProvenance(),
+      store.listCalibrationExportEvents(),
+    ]);
+    const importedRunIds = new Set(provenance.map((item) => item.runId));
+    const exportedRunIds = new Set(exportEvents.flatMap((item) => item.format === "qhcal" ? item.runIds : []));
+    const sessionByPlan = new Map(sessions.map((session) => [session.planId, session]));
+    const recovered: string[] = [];
+    const errors: string[] = [];
+    for (const run of runs) {
+      if (importedRunIds.has(run.id) || run.schemaVersion !== AUTONOMOUS_LOCAL_CALIBRATION_VERSION) continue;
+      const sourceSession = sessionByPlan.get(run.planId);
+      if (!sourceSession) continue;
+      try {
+        const prepared = await preparePortableCalibrationResult(run, sourceSession.plan.workloadProfile);
+        if (prepared.exported.created || !exportedRunIds.has(run.id)) {
+          await recordPortableCalibrationResult(prepared);
+        }
+        if (prepared.exported.created) recovered.push(prepared.exported.fileName);
+      } catch (error) {
+        errors.push(`${run.id}:${safeError(error)}`);
+      }
+    }
+    return { recoveredFiles: recovered, recoveryErrors: errors };
+  }
+
+  function recoverMissingPortableCalibrationResults(): Promise<{ recoveredFiles: string[]; recoveryErrors: string[] }> {
+    portableRecoveryPromise ??= performPortableCalibrationRecovery().finally(() => {
+      portableRecoveryPromise = null;
+    });
+    return portableRecoveryPromise;
   }
   app.use("*", async (context, next) => {
     await next();
@@ -280,7 +343,11 @@ export function createApp(
       observations,
       { kernelVersion: runtimeStatus.kernelVersion, runtimeManifestHash: runtimeStatus.manifestHash },
     );
+    const portableResult = run.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION
+      ? await preparePortableCalibrationResult(run, session.plan.workloadProfile)
+      : null;
     await store.commitCalibrationRun(run, predictions);
+    if (portableResult) await recordPortableCalibrationResult(portableResult);
     const derived = deriveComponentCatalog(hardware);
     const components = [...new Map([...derived.components, ...storedComponents].map((item) => [item.id, item])).values()];
     const builds = buildHistoricalComponentBuilds(hardware, components, observations, [run, ...existingRuns]).map((candidate) => {
@@ -352,7 +419,7 @@ export function createApp(
       return interrupted;
     }
     if (session.tokenHash === "internal") return session;
-    const persisted = await findPersistedCalibration(session.planId, calibrationDirectoryOptions);
+    const persisted = await findPersistedCalibration(session.planId, legacyCalibrationDirectoryOptions);
     if (persisted) {
       try {
         return await acceptCalibrationResult(session, persisted.result);
@@ -372,6 +439,8 @@ export function createApp(
   void store.listCalibrationSessions()
     .then((sessions) => Promise.all(sessions.map(reconcileCalibrationSession)))
     .catch((error: unknown) => console.error("calibration_cleanup_recovery_failed", safeError(error)));
+  void recoverMissingPortableCalibrationResults()
+    .catch((error: unknown) => console.error("calibration_portable_result_recovery_failed", safeError(error)));
 
   async function startCalibrationKernelSession(
     launching: CalibrationSessionRecord,
@@ -649,14 +718,16 @@ export function createApp(
     if (!calibrationFeatures.exchange) return context.json({ error: "calibration_exchange_feature_disabled" }, 503);
     const run = (await store.listCalibrationRuns()).find((item) => item.id === context.req.param("id"));
     if (!run) return context.json({ error: "calibration_run_not_found" }, 404);
-    const identity = await calibrationExchange.localIdentity();
-    await store.saveCalibrationDeviceIdentity(identity);
     const sourceSession = (await store.listCalibrationSessions()).find((session) => session.planId === run.planId);
-    const exported = await calibrationExchange.exportRun(run, sourceSession?.plan.workloadProfile ?? null);
-    await store.saveCalibrationExportEvent({
-      id: randomUUID(), format: "qhcal", runIds: [run.id], packageDigest: exported.packageDigest,
-      sizeBytes: exported.bytes.byteLength, createdAt: new Date().toISOString(),
-    });
+    let exported: Awaited<ReturnType<CalibrationExchangeService["exportRun"]>>;
+    if (sourceSession) {
+      const prepared = await preparePortableCalibrationResult(run, sourceSession.plan.workloadProfile);
+      await recordPortableCalibrationResult(prepared);
+      exported = prepared.exported;
+    } else {
+      exported = await calibrationExchange.exportRun(run, null);
+      await recordCalibrationExportEvent(exported);
+    }
     context.header("Content-Type", QHCAL_MIME);
     context.header("Content-Disposition", `attachment; filename="${exported.fileName}"`);
     context.header("X-Calibration-Package-Sha256", exported.packageDigest);
@@ -876,9 +947,10 @@ export function createApp(
     const sessions = await Promise.all((await store.listCalibrationSessions()).map(reconcileCalibrationSession));
     return context.json(sessions.map(publicCalibrationSession));
   });
-  app.get("/api/calibration-sessions/directory", async (context) => context.json({
-    directory: await resolveCalibrationDirectory(calibrationDirectoryOptions),
-  }));
+  app.get("/api/calibration-sessions/directory", async (context) => {
+    const recovery = await recoverMissingPortableCalibrationResults();
+    return context.json({ directory: await resolveCalibrationDirectory(calibrationDirectoryOptions), ...recovery });
+  });
   app.get("/api/calibrations/runtime-status", async (context) => context.json(await effectiveCalibrationRuntimeStatus()));
   app.get("/api/calibrations/hardware-status", async (context) => context.json(await detectCalibrationHardware()));
   app.get("/api/capacity-assessments", async (context) => {
@@ -1111,10 +1183,11 @@ export function createApp(
     }
   });
   app.post("/api/calibration-sessions/open-directory", async (context) => {
+    const recovery = await recoverMissingPortableCalibrationResults();
     const directory = await resolveCalibrationDirectory(calibrationDirectoryOptions);
     await mkdir(directory, { recursive: true });
     if (options.desktopBridge?.openPath) await options.desktopBridge.openPath(directory);
-    return context.json({ directory });
+    return context.json({ directory, ...recovery });
   });
   app.post("/api/calibrations/import", async (context) => {
     if (!store.calibrationExtensionReady) return context.json({ error: "calibration_extension_unavailable" }, 503);

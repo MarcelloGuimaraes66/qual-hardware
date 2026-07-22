@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createCalibrationPlan } from "../src/engine/calibration.js";
 import { createDefaultScenario } from "../src/shared/schemas.js";
@@ -25,6 +28,8 @@ import { calibrationHardwareDigest, detectCalibrationHardware } from "../src/ser
 import { calibrationPolicyHash } from "../src/engine/calibrationProfile.js";
 import type { CalibrationKernelHandlers, CalibrationKernelPort, CalibrationKernelStartInput } from "../src/server/calibrationKernelService.js";
 import { calibrationFailureWasCancelled } from "../src/server/calibrationKernelProtocol.js";
+import { CalibrationExchangeService } from "../src/server/calibrationExchange.js";
+import { autonomousCalibrationRun } from "./fixtures/autonomousCalibrationRun.js";
 
 const cleaned: CalibrationCleanupStatus = {
   schemaVersion: "qual-hardware-calibration-cleanup/1.0.0",
@@ -361,6 +366,89 @@ describe("secure cross-platform calibration handoff", () => {
     expect((await store.getCalibrationSession(started.session.id))?.state).toBe("completed");
     expect((await store.getCalibrationSession(started.session.id))?.cleanup?.bytesRemoved).toBe(1_024);
     await store.close();
+  });
+
+  it("creates the signed portable result automatically in the exact folder opened by the desktop", async () => {
+    const root = await mkdtemp(join(tmpdir(), "qual-hardware-automatic-result-"));
+    const evidenceDirectory = join(root, "application-data", "calibration-evidence");
+    const documentsDirectory = join(root, "Documents");
+    const identityDirectory = join(root, "identity");
+    const store = new MemoryPlannerStore();
+    const kernel = new FakeCalibrationKernel();
+    const openPath = vi.fn(async (_path: string) => undefined);
+    try {
+      const application = createApp(store, undefined, {
+        calibrationKernel: kernel,
+        calibrationEvidenceDirectory: evidenceDirectory,
+        calibrationIdentityDirectory: identityDirectory,
+        documentsDirectory,
+        desktopBridge: { openPath },
+      });
+      const scenarioResponse = await application.request("/api/scenarios", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario: createDefaultScenario(8) }),
+      });
+      const scenario = await scenarioResponse.json() as { id: string };
+      const recommendations = await (await application.request(`/api/scenarios/${scenario.id}/recommendations`, { method: "POST" })).json() as Array<{ id: string }>;
+      const startedResponse = await application.request("/api/calibration-sessions", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ recommendationId: recommendations[0]!.id, mode: "quick", targetHardwareTemplateId: null, advancedTelemetry: false }),
+      });
+      expect(startedResponse.status).toBe(201);
+      const started = await startedResponse.json() as { session: { id: string } };
+      const sourceSession = (await store.getCalibrationSession(started.session.id))!;
+      const result = autonomousCalibrationRun({
+        id: "00000000-0000-4000-8000-000000000099",
+        runtimeManifestHash: kernel.status.manifestHash,
+      });
+      result.planId = sourceSession.planId;
+      result.mode = "quick";
+      result.executionMode = "readiness";
+      result.fingerprint.hardwareTemplateId = null;
+      result.workloadProfileId = sourceSession.plan.workloadProfile.id;
+      result.workloadProfileSignature = sourceSession.plan.workloadProfile.signature;
+      result.qualityGate = {
+        eligibleForCapacityExtrapolation: false,
+        evidenceLevel: "representative_only",
+        validationStatus: "diagnostic",
+        failures: [],
+        warnings: ["quick_test_is_diagnostic"],
+      };
+      result.artifact = {
+        fileName: `${result.id}.qhcal.json.gz`,
+        payloadSha256: calibrationPayloadSha256(result),
+        persistedAt: new Date().toISOString(),
+        storage: "application_data_append_only",
+      };
+
+      await kernel.complete(result);
+
+      const portableFileName = `${result.id}.qhcal`;
+      expect((await store.getCalibrationSession(started.session.id))?.state).toBe("completed");
+      expect(await readdir(evidenceDirectory)).toContain(portableFileName);
+      const packageBytes = await readFile(join(evidenceDirectory, portableFileName));
+      const verifier = new CalibrationExchangeService({ identityDirectory, evidenceDirectory });
+      expect(verifier.parseQhcal(packageBytes).run.id).toBe(result.id);
+      expect(await store.listCalibrationExportEvents()).toHaveLength(1);
+
+      await unlink(join(evidenceDirectory, portableFileName));
+      const directoryResponse = await application.request("/api/calibration-sessions/directory");
+      expect(directoryResponse.status).toBe(200);
+      expect(await directoryResponse.json()).toMatchObject({ directory: evidenceDirectory, recoveredFiles: [portableFileName], recoveryErrors: [] });
+      const recoveredPackageBytes = await readFile(join(evidenceDirectory, portableFileName));
+      expect(verifier.parseQhcal(recoveredPackageBytes).run.id).toBe(result.id);
+      const opened = await application.request("/api/calibration-sessions/open-directory", { method: "POST" });
+      expect(opened.status).toBe(200);
+      expect(openPath).toHaveBeenCalledWith(evidenceDirectory);
+      expect(await readdir(documentsDirectory).catch(() => [])).toEqual([]);
+
+      const downloaded = await application.request(`/api/calibrations/${result.id}/export`);
+      expect(downloaded.status).toBe(200);
+      expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(recoveredPackageBytes);
+      expect((await readdir(evidenceDirectory)).filter((file) => file.endsWith(".qhcal"))).toEqual([portableFileName]);
+    } finally {
+      await store.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("allows an unmapped computer to run the full candidate-validation cycle without making it purchase evidence", async () => {

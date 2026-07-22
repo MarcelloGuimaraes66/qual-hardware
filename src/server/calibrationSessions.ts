@@ -320,6 +320,7 @@ async function linuxDocuments(home: string, env: NodeJS.ProcessEnv): Promise<str
 }
 
 export async function resolveCalibrationDirectory(options: {
+  calibrationDirectory?: string;
   documentsDirectory?: string;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
@@ -327,6 +328,7 @@ export async function resolveCalibrationDirectory(options: {
 } = {}): Promise<string> {
   const platform = options.platform ?? process.platform;
   const pathApi = platform === "win32" ? win32 : posix;
+  if (options.calibrationDirectory) return pathApi.resolve(options.calibrationDirectory);
   if (options.documentsDirectory) return pathApi.resolve(options.documentsDirectory, "Qual Hardware", "Calibracoes");
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();

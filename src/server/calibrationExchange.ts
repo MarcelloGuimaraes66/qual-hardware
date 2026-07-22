@@ -239,7 +239,7 @@ export class CalibrationExchangeService {
   async exportRun(
     run: LocalCalibrationRun,
     workloadProfile: CalibrationWorkloadProfile | null = null,
-  ): Promise<{ bytes: Buffer; fileName: string; packageDigest: string; package: QhcalPackage }> {
+  ): Promise<{ bytes: Buffer; fileName: string; packageDigest: string; package: QhcalPackage; created: boolean }> {
     const fileName = `${run.id}.qhcal`;
     await mkdir(this.options.evidenceDirectory, { recursive: true });
     const path = join(this.options.evidenceDirectory, fileName);
@@ -247,7 +247,7 @@ export class CalibrationExchangeService {
       const existing = await readFile(path);
       const parsed = this.parseQhcal(existing);
       if (parsed.run.id !== run.id || parsed.runDigest !== exchangeDigest(run)) throw new Error("calibration_persisted_export_conflict");
-      return { bytes: existing, fileName, packageDigest: exchangeDigest(parsed), package: parsed };
+      return { bytes: existing, fileName, packageDigest: exchangeDigest(parsed), package: parsed, created: false };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -272,7 +272,18 @@ export class CalibrationExchangeService {
     verifyQhcalPackage(packageValue);
     const bytes = compressBounded(packageValue, QHCAL_MAX_COMPRESSED_BYTES, "calibration_package_compressed_size_exceeded");
     await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
-    return { bytes, fileName, packageDigest: exchangeDigest(packageValue), package: packageValue };
+    const persistedBytes = await readFile(path);
+    const persistedPackage = this.parseQhcal(persistedBytes);
+    if (exchangeDigest(persistedPackage) !== exchangeDigest(packageValue)) {
+      throw new Error("calibration_persisted_export_verification_failed");
+    }
+    return {
+      bytes: persistedBytes,
+      fileName,
+      packageDigest: exchangeDigest(persistedPackage),
+      package: persistedPackage,
+      created: true,
+    };
   }
 
   parseQhcal(bytes: Uint8Array): QhcalPackage {
