@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { createCalibrationPlan } from "../src/engine/calibration.js";
 import { createDefaultScenario } from "../src/shared/schemas.js";
-import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, CALIBRATION_KERNEL_VERSION, LEGACY_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT, WORKLOAD_CONTRACT_VERSION, type CalibrationCheckpoint, type CalibrationCleanupStatus, type CalibrationDiagnosticArtifact, type CalibrationRuntimeStatus, type LocalCalibrationRun } from "../src/shared/types.js";
+import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, CALIBRATION_KERNEL_VERSION, LEGACY_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT, WORKLOAD_CONTRACT_VERSION, type CalibrationCheckpoint, type CalibrationCleanupStatus, type CalibrationDiagnosticArtifact, type CalibrationHardwarePreflight, type CalibrationRuntimeStatus, type LocalCalibrationRun } from "../src/shared/types.js";
 import { createApp } from "../src/server/app.js";
 import {
   assertAutonomousCalibrationSessionContract,
@@ -14,7 +14,7 @@ import {
 } from "../src/server/calibrationSessions.js";
 import { MemoryPlannerStore } from "../src/server/store.js";
 import { CatalogUpdateService } from "../src/server/catalogUpdates.js";
-import { calibrationHardwareDigest, detectCalibrationHardware } from "../src/server/calibrationHardware.js";
+import { calibrationHardwareDigest } from "../src/server/calibrationHardware.js";
 import { calibrationPolicyHash } from "../src/engine/calibrationProfile.js";
 import type { CalibrationKernelHandlers, CalibrationKernelPort, CalibrationKernelStartInput } from "../src/server/calibrationKernelService.js";
 import { calibrationFailureWasCancelled } from "../src/server/calibrationKernelProtocol.js";
@@ -346,7 +346,25 @@ describe("secure cross-platform autonomous calibration", () => {
       plan, recommendationId: randomUUID(), scenarioId: randomUUID(), advancedTelemetry: false,
     });
     await store.saveCalibrationSession({ ...source, state: "cancelled", completedAt: new Date().toISOString() });
-    const detected = await detectCalibrationHardware();
+    const detected: CalibrationHardwarePreflight = {
+      schemaVersion: "qual-hardware-calibration-hardware/1.0.0",
+      detectedAt: "2026-07-23T11:00:00.000Z",
+      cpuModel: "Deterministic test CPU",
+      cpuArchitecture: "x64",
+      physicalCores: 8,
+      logicalCores: 16,
+      gpuModel: "Deterministic test GPU",
+      gpuDriver: "test-driver",
+      gpuArchitecture: "test-gpu",
+      gpuCount: 1,
+      gpuVramBytes: 16 * 1024 ** 3,
+      ramBytes: 64 * 1024 ** 3,
+      operatingSystem: "windows",
+      operatingSystemVersion: "test-version",
+      formFactor: "workstation",
+      networkLinks: [],
+    };
+    const hardwareDetector = vi.fn(async () => detected);
     const payload = {
       sessionId: source.id, runId: randomUUID(), sequence: 1, phase: "discovery" as const, tier: 4,
       repetition: null, attempt: 1,
@@ -364,7 +382,7 @@ describe("secure cross-platform autonomous calibration", () => {
       ...payload, payloadSha256: "c".repeat(64),
     };
     await store.saveCalibrationCheckpoint(checkpoint);
-    const application = createApp(store, undefined, { calibrationKernel: kernel });
+    const application = createApp(store, undefined, { calibrationKernel: kernel, calibrationHardwareDetector: hardwareDetector });
     const status = await application.request(`/api/calibration-sessions/${source.id}/resume-status`);
     expect(status.status).toBe(200);
     expect(await status.json()).toMatchObject({ resumable: true, qualificationWillRestart: true });
@@ -374,6 +392,7 @@ describe("secure cross-platform autonomous calibration", () => {
     expect(body.session.id).not.toBe(source.id);
     expect((await store.getCalibrationSession(source.id))?.state).toBe("cancelled");
     expect(kernel.starts.at(-1)?.resumeCheckpoint?.id).toBe(checkpoint.id);
+    expect(hardwareDetector).toHaveBeenCalledTimes(2);
     await store.close();
-  }, 15_000);
+  });
 });
