@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,7 @@ type MutableManifest = {
       sizeBytes: number | null;
       licenseEvidence?: { relativePath: string; sha256: string } | null;
       sbomEvidence?: { relativePath: string; sha256: string } | null;
+      companionFiles?: Array<{ relativePath: string; sha256: string; sizeBytes: number }>;
     }>;
   }>;
 };
@@ -55,6 +56,7 @@ async function makeRuntimeFixture(
     asset.licenseSpdx = "MIT";
     asset.sbomRef = "sbom/fixture.cdx.json";
     const artifact = asset.artifacts[selectedTarget];
+    artifact.companionFiles = [];
     const bytes = Buffer.from(`${selectedTarget}:${asset.id}:platform-specific-bytes`, "utf8");
     artifact.sha256 = sha256(bytes);
     artifact.sizeBytes = bytes.byteLength;
@@ -85,7 +87,7 @@ afterEach(async () => {
 });
 
 describe("offline calibration runtime manifest", () => {
-  it("ships no native runtime in the application and blocks commercial qualification", async () => {
+  it("keeps commercial qualification fail-closed for an embedded candidate runtime", async () => {
     const status = await inspectCalibrationRuntime({
       resourceRoot: projectRoot,
       platform: "linux",
@@ -97,24 +99,15 @@ describe("offline calibration runtime manifest", () => {
     expect(status.readyForQuickTest).toBe(true);
     expect(status.readyForFullQualification).toBe(false);
     expect(status.contracts.every((contract) => contract.status === "verified")).toBe(true);
-    expect(status.assets.every((asset) => asset.status === "missing")).toBe(true);
-    expect(status.reasons).toContain("ffmpeg:missing");
     expect(status.reasons).toContain("runtime-manifest:linux-x64:not-approved");
   });
 
-  it("keeps PE, Mach-O and ELF telemetry binaries outside the repository", async () => {
-    const selected = [
-      ["darwin", "arm64"],
-      ["win32", "x64"],
-      ["linux", "x64"],
-    ] as const;
-    for (const [selectedPlatform, architecture] of selected) {
-      const target = selectedPlatform === "darwin" ? "darwin-arm64" : selectedPlatform === "win32" ? "win32-x64" : "linux-x64";
-      const executable = selectedPlatform === "win32" ? "telemetry-probe.exe" : "telemetry-probe";
-      await expect(access(join(projectRoot, "resources", "calibration", target, "bin", executable))).rejects.toThrow();
-      const status = await inspectCalibrationRuntime({ resourceRoot: projectRoot, platform: selectedPlatform, architecture, env: { PATH: "" } });
-      expect(status.assets.find((asset) => asset.id === "telemetry-probe")?.status).toBe("missing");
-    }
+  it("keeps native telemetry artifacts in their target-specific runtime directories", async () => {
+    const manifest = JSON.parse(await readFile(join(projectRoot, "resources/calibration/runtime-manifest.json"), "utf8")) as MutableManifest;
+    const telemetry = manifest.assets.find((asset) => asset.id === "telemetry-probe");
+    expect(telemetry?.artifacts["darwin-arm64"].relativePath).toBe("bin/telemetry-probe");
+    expect(telemetry?.artifacts["win32-x64"].relativePath).toBe("bin/telemetry-probe.exe");
+    expect(telemetry?.artifacts["linux-x64"].relativePath).toBe("bin/telemetry-probe");
   });
 
   it("selects and verifies distinct artifacts for each supported platform", async () => {
@@ -174,8 +167,8 @@ describe("offline calibration runtime manifest", () => {
 
     const disabled = await inspectCalibrationRuntime({
       resourceRoot: projectRoot,
-      platform: "darwin",
-      architecture: "arm64",
+      platform: "linux",
+      architecture: "x64",
       env: { PATH: "" },
       featureMode: "disabled",
     });

@@ -11,9 +11,11 @@ import {
   CALIBRATION_PIPELINE_CONTRACT_VERSION,
   CALIBRATION_NETWORK_RESERVE_PERCENT,
   allocateCalibrationCameraGroups,
+  calibrationLlamaContextSize,
   estimateCalibrationMediaRingBytes,
   evaluateCalibrationNetworkCapacity,
   OfflineCalibrationPipeline,
+  planCalibrationInferenceLoad,
 } from "../src/server/calibrationPipeline.js";
 import {
   cleanupCalibrationWorkspace,
@@ -87,6 +89,23 @@ async function fixture(
 }
 
 describe("offline Perceptrum-equivalent calibration pipeline", () => {
+  it("uses the agent interval instead of treating model FPS as request FPS", () => {
+    const plan = createCalibrationPlan(createDefaultScenario(8), "validation");
+    expect(planCalibrationInferenceLoad(plan.workloadProfile, 8, 120)).toEqual({
+      requestsPlanned: 16,
+      framesPlanned: 64,
+      requestsPerWindow: 8,
+      windowCount: 2,
+      intervalMs: 60_000,
+    });
+  });
+
+  it("allocates a complete vision context to every llama.cpp slot", () => {
+    expect(calibrationLlamaContextSize(1)).toBe(4_096);
+    expect(calibrationLlamaContextSize(8)).toBe(32_768);
+    expect(calibrationLlamaContextSize(64)).toBe(262_144);
+  });
+
   it("keeps every active kernel module independent from Perceptrum and external providers", async () => {
     const modules = [
       "calibrationKernelService.ts", "calibrationKernelWorker.ts", "calibrationKernelProtocol.ts",
@@ -327,7 +346,7 @@ const server = http.createServer((request, response) => {
   request.on("end", () => {
     const payload = JSON.parse(body);
     const image = payload.messages[0].content.find(item => item.type === "image_url");
-    if (!String(image.image_url.url).startsWith("data:image/x-portable-pixmap;base64,")) {
+    if (!String(image.image_url.url).startsWith("data:image/jpeg;base64,")) {
       response.writeHead(400); response.end("invalid image"); return;
     }
     response.writeHead(200, { "content-type": "application/json" });

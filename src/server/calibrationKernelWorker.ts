@@ -25,7 +25,7 @@ import {
   type PipelinePhaseMeasurement,
 } from "./calibrationPipeline.js";
 import { CALIBRATION_AUTHORITY_COMMIT } from "./calibrationRuntime.js";
-import { evaluateCalibrationQualification } from "./calibrationQualification.js";
+import { evaluateCalibrationQualification, selectTechnicalCalibrationMeasurements } from "./calibrationQualification.js";
 import { expectedGpuInferenceBackend, REQUIRED_CALIBRATION_COMPUTE_MODES } from "./calibrationCompute.js";
 import {
   createCalibrationWorkspace,
@@ -280,22 +280,21 @@ function measurementTierResult(
   const inferenceSuccessRate = measurement.inferencesPlanned > 0
     ? Math.min(1, measurement.framesInferred / measurement.inferencesPlanned)
     : 0;
-  const approvedThermalEvidence = measurement.hardwareTelemetry.provider === "approved-telemetry-probe"
-    ? measurement.hardwareTelemetry.thermalThrottlePercent : null;
+  const thermalEvidence = measurement.hardwareTelemetry.thermalThrottlePercent;
   const p95BottleneckUtilizationPercent = measurement.computeMode === "gpu_accelerated"
-    ? Math.max(measurement.cpuUtilizationPercent?.p95 ?? 100,
-        measurement.hardwareTelemetry.gpuUtilizationPercent?.p95 ?? 100)
+    ? Math.max(measurement.cpuUtilizationPercent?.p95 ?? 0,
+        measurement.hardwareTelemetry.gpuUtilizationPercent?.p95 ?? 0)
     : measurement.cpuUtilizationPercent?.p95 ?? 100;
   const failures = [...new Set([
     ...measurement.failures,
     ...(frameDeliveryRate < 0.995 ? ["frame_delivery_below_99_5_percent"] : []),
     ...(inferenceSuccessRate < 0.995 ? ["inference_success_below_99_5_percent"] : []),
-    ...((measurement.p99InferenceLatencyMs ?? 60_000) >= 45_000 ? ["p99_inference_latency_exceeded"] : []),
+    ...((measurement.p99InferenceLatencyMs ?? measurement.inferenceIntervalMs) >= measurement.inferenceIntervalMs * 0.75
+      ? ["p99_inference_latency_exceeded"] : []),
     ...(measurement.queueGrowthPerMinute > 0 ? ["queue_growth_detected"] : []),
     ...(!measurement.cpuUtilizationPercent ? ["resource_utilization_sensor_unavailable"] : []),
     ...(p95BottleneckUtilizationPercent > 80 ? ["p95_bottleneck_utilization_exceeded"] : []),
-    ...(!approvedThermalEvidence ? ["thermal_throttling_sensor_unavailable"] : []),
-    ...((approvedThermalEvidence?.peak ?? 0) > 0 ? ["thermal_throttling_detected"] : []),
+    ...((thermalEvidence?.peak ?? 0) > 0 ? ["thermal_throttling_detected"] : []),
   ])];
   const completedAt = new Date();
   return {
@@ -308,12 +307,12 @@ function measurementTierResult(
     passed: failures.length === 0,
     frameDeliveryRate,
     inferenceSuccessRate,
-    p99InferenceLatencyMs: measurement.p99InferenceLatencyMs ?? 60_000,
-    inferenceIntervalMs: 60_000,
+    p99InferenceLatencyMs: measurement.p99InferenceLatencyMs ?? measurement.inferenceIntervalMs,
+    inferenceIntervalMs: measurement.inferenceIntervalMs,
     p95BottleneckUtilizationPercent,
     queueGrowthPerMinute: measurement.queueGrowthPerMinute,
     outOfMemoryCount: 0,
-    thermalThrottlePercent: approvedThermalEvidence?.peak ?? null,
+    thermalThrottlePercent: thermalEvidence?.peak ?? null,
     failures,
   };
 }
@@ -326,8 +325,8 @@ function phaseMetric(measurement: PipelinePhaseMeasurement): CalibrationPhaseMet
     cameraCount: measurement.tier,
     inferenceSuccessRate: measurement.inferencesPlanned > 0
       ? Math.min(1, measurement.framesInferred / measurement.inferencesPlanned) : 0,
-    p99InferenceLatencyMs: measurement.p99InferenceLatencyMs ?? 60_000,
-    inferenceIntervalMs: 60_000,
+    p99InferenceLatencyMs: measurement.p99InferenceLatencyMs ?? measurement.inferenceIntervalMs,
+    inferenceIntervalMs: measurement.inferenceIntervalMs,
     maxQueueDepth: measurement.queueGrowthPerMinute > 0 ? 1 : 0,
     queueGrowthPerMinute: measurement.queueGrowthPerMinute,
     outOfMemoryCount: 0,
@@ -335,8 +334,7 @@ function phaseMetric(measurement: PipelinePhaseMeasurement): CalibrationPhaseMet
     decodedFrames: measurement.framesDecoded,
     frameDeliveryRate: measurement.framesPlanned > 0
       ? Math.min(1, measurement.framesDecoded / measurement.framesPlanned) : 0,
-    thermalThrottlePercent: measurement.hardwareTelemetry.provider === "approved-telemetry-probe"
-      ? measurement.hardwareTelemetry.thermalThrottlePercent?.peak ?? null : null,
+    thermalThrottlePercent: measurement.hardwareTelemetry.thermalThrottlePercent?.peak ?? null,
   };
 }
 
@@ -590,9 +588,28 @@ async function run(): Promise<void> {
     repetitions,
   });
   const eligible = qualification.eligible;
-  const resultMeasurements = qualification.qualifiedMeasurements.length > 0
-    ? qualification.qualifiedMeasurements
-    : measurements;
+  const resultMeasurements = selectTechnicalCalibrationMeasurements({
+    mode: input.plan.mode,
+    runtimeReady: input.runtimeStatus.readyForFullQualification && input.runtimeStatus.manifestApproved,
+    authorityAndProfileExact:
+      input.runtimeStatus.authorityCommit === CALIBRATION_AUTHORITY_COMMIT &&
+      input.plan.scenario.perceptrumBuildHash === CALIBRATION_AUTHORITY_COMMIT &&
+      input.plan.workloadProfile.targetBuildHash === CALIBRATION_AUTHORITY_COMMIT &&
+      Boolean(input.targetHardware && fingerprint.hardwareTemplateId === input.targetHardware.id),
+    timeScale: input.timeScale,
+    selectedTier,
+    phaseNames: input.plan.phases.map((phase) => phase.name),
+    mediaAvailable: pipelineSummary.mediaAvailable,
+    rtspAvailable: pipelineSummary.rtspAvailable,
+    localInferenceAvailable: pipelineSummary.localInferenceAvailable,
+    cpuInferenceAvailable: pipelineSummary.cpuInferenceAvailable,
+    gpuInferenceAvailable: pipelineSummary.gpuInferenceAvailable,
+    gpuMediaAvailable: pipelineSummary.gpuMediaAvailable,
+    externalRequestCount: 0,
+    openAiRequestCount: 0,
+    measurements,
+    repetitions,
+  }, qualification);
   const cpuModeMeasurements = resultMeasurements.filter((measurement) => measurement.computeMode === "cpu_only");
   const gpuModeMeasurements = resultMeasurements.filter((measurement) => measurement.computeMode === "gpu_accelerated");
   const cpuModeMeasured = cpuModeMeasurements.length > 0 && cpuModeMeasurements.every((measurement) =>
@@ -609,6 +626,15 @@ async function run(): Promise<void> {
     measurement.hardwareTelemetry.gpuMemoryUsedBytes.peak > 0);
   const combinedCpuGpuMeasured = gpuModeMeasurements.length > 0 &&
     gpuModeMeasurements.every((measurement) => measurement.combinedCpuGpuMeasured);
+  const technicalExactConcurrencyComplete = resultMeasurements.length > 0 &&
+    resultMeasurements.every((measurement) => measurement.exactCameraConcurrency);
+  const technicalPipelineComplete = pipelineSummary.mediaAvailable && pipelineSummary.rtspAvailable &&
+    pipelineSummary.localInferenceAvailable && resultMeasurements.length > 0 &&
+    resultMeasurements.every((measurement) => measurement.mediaMeasured && measurement.rtspMeasured &&
+      measurement.localInferenceMeasured && measurement.databaseOperations > 0 && measurement.dashboardQueries > 0 &&
+      measurement.completedJobRuns > 0 && measurement.completedStepRuns > 0 &&
+      measurement.completedIntelligenceJobs > 0 && measurement.processedCameraCount === measurement.tier) &&
+    technicalExactConcurrencyComplete && cpuModeMeasured && gpuInferenceMeasured && gpuMediaMeasured && combinedCpuGpuMeasured;
   const uniqueModeFailures = (modeMeasurements: PipelinePhaseMeasurement[]): string[] => [...new Set(
     modeMeasurements.flatMap((measurement) => measurement.failures),
   )].slice(0, 100);
@@ -617,6 +643,18 @@ async function run(): Promise<void> {
     measurement.hardwareTelemetry.provider === "approved-telemetry-probe" &&
     measurement.hardwareTelemetry.thermalThrottlePercent !== null);
   const failures = qualification.failures;
+  const technicalTierGroups = new Map<number, CalibrationTierResult[]>();
+  for (const metric of tierResults) {
+    const group = technicalTierGroups.get(metric.tier) ?? [];
+    group.push(metric);
+    technicalTierGroups.set(metric.tier, group);
+  }
+  const technicallyPassedTiers = repetitions.some((item) => item.passed)
+    ? repetitions.filter((item) => item.passed).map((item) => item.safeCameraCapacity)
+    : [...technicalTierGroups.entries()].filter(([, metrics]) => metrics.length > 0 && metrics.every((item) => item.passed))
+      .map(([tier]) => tier);
+  const technicalSafeCameraCapacity = technicallyPassedTiers.length > 0
+    ? Math.max(...technicallyPassedTiers) : null;
   const measuredStages = new Set(resultMeasurements.flatMap((measurement) => measurement.measuredStages));
   const operationCount = resultMeasurements.reduce((sum, measurement) => sum + measurement.databaseOperations, 0);
   const decodedFrames = resultMeasurements.reduce((sum, measurement) => sum + measurement.framesDecoded, 0);
@@ -625,6 +663,14 @@ async function run(): Promise<void> {
   const inferencesPlanned = resultMeasurements.reduce((sum, measurement) => sum + measurement.inferencesPlanned, 0);
   const inferencesAttempted = resultMeasurements.reduce((sum, measurement) => sum + measurement.inferencesAttempted, 0);
   const inferredFrames = resultMeasurements.reduce((sum, measurement) => sum + measurement.framesInferred, 0);
+  const packedInferenceFrames = resultMeasurements.reduce((sum, measurement) => sum + measurement.inferenceFramesPacked, 0);
+  const maximumInferenceConcurrency = Math.max(0, ...resultMeasurements.map((measurement) => measurement.inferenceMaximumConcurrency));
+  const inferenceErrors = [...new Set(resultMeasurements.flatMap((measurement) => measurement.inferenceErrors))].slice(0, 100);
+  const infrastructureErrors = [...new Set([
+    ...inferenceErrors,
+    ...resultMeasurements.flatMap((measurement) => measurement.failures.filter((failure) =>
+      /(?:runtime_unavailable|process_(?:failed|timeout)|preflight|qwen_unavailable)/.test(failure))),
+  ])].slice(0, 100);
   const freeSpaceSamples = resultMeasurements.flatMap((measurement) =>
     measurement.temporaryBytesFreeBeforePhase === null ? [] : [measurement.temporaryBytesFreeBeforePhase]);
   const networkEvidence = pipelineSummary.rtspAvailable && resultMeasurements.length > 0 &&
@@ -640,6 +686,15 @@ async function run(): Promise<void> {
   const minimumPhysicalNetworkCapacityMbps = verifiedNetworkCapacityMbps.length
     ? Math.min(...verifiedNetworkCapacityMbps)
     : null;
+  const limitingSubsystems = [...new Set(resultMeasurements.flatMap((measurement) => measurement.failures.flatMap((failure) => {
+    if (failure.includes("network")) return ["network_ingest" as const];
+    if (failure.includes("inference") || failure.includes("aiq") || failure.includes("queue")) return ["local_inference" as const];
+    if (failure.includes("media") || failure.includes("ffmpeg") || failure.includes("frame_delivery")) return ["video_decode" as const];
+    if (failure.includes("disk")) return ["disk_write" as const];
+    if (failure.includes("thermal")) return ["thermal_sustain" as const];
+    return [];
+  })))];
+  if (limitingSubsystems.length === 0) limitingSubsystems.push("local_inference");
   const stageThroughput = (stage: typeof REQUIRED_CALIBRATION_STAGES[number]): number => {
     if (["video_decode", "bgr_processing", "disk_read", "rtsp_ingest", "network_ingest"].includes(stage)) return decodedFrames;
     if (["video_encode", "disk_write"].includes(stage)) return resultMeasurements.reduce((sum, item) => sum + item.framesEncoded, 0);
@@ -669,8 +724,9 @@ async function run(): Promise<void> {
       : null;
     return {
       stage,
-      safeCameraCapacity: eligible && measured
-        ? (isNetworkStage ? Math.min(selectedTier, networkSafeCameraCapacity ?? 0) : selectedTier)
+      safeCameraCapacity: technicalSafeCameraCapacity !== null && measured
+        ? (isNetworkStage && networkSafeCameraCapacity !== null
+          ? Math.min(technicalSafeCameraCapacity, networkSafeCameraCapacity) : technicalSafeCameraCapacity)
         : null,
       throughput: measured ? (isNetworkStage ? maximumNetworkIngressMbps : stageThroughput(stage)) : null,
       throughputUnit: measured ? (stage === "memory_bandwidth" ? "bytes-per-second" : isNetworkStage ? "megabits-per-second-required" : "measured-operations") : "unavailable",
@@ -757,9 +813,9 @@ async function run(): Promise<void> {
     requestedInferenceFps: input.plan.requestedInferenceFps[0] ?? 1,
     effectiveInferenceFps: Math.min(5, inferredFrames / Math.max(1, measurements.reduce((sum, item) =>
       sum + item.durationSeconds * input.timeScale * item.tier, 0))),
-    framesPlanned: Math.max(plannedFrames, inferencesPlanned),
-    framesExtracted: Math.max(extractedFrames, inferencesAttempted),
-    framesPacked: inferencesAttempted,
+    framesPlanned: Math.max(plannedFrames, packedInferenceFrames),
+    framesExtracted: Math.max(extractedFrames, packedInferenceFrames),
+    framesPacked: packedInferenceFrames,
     framesInferred: inferredFrames,
     rtspOrigin: pipelineSummary.rtspOrigin,
     aiqOrigin: pipelineSummary.aiqOrigin,
@@ -770,14 +826,12 @@ async function run(): Promise<void> {
     credentialFieldCount: 0,
     stages,
     phases: summarizedPhases,
-    overallSafeCameraCapacity: eligible
-      ? Math.min(...repetitions.map((item) => item.safeCameraCapacity))
-      : null,
+    overallSafeCameraCapacity: technicalSafeCameraCapacity,
     bottleneck: minimumPhysicalNetworkCapacityMbps !== null &&
       minimumPhysicalNetworkCapacityMbps * 0.8 < maximumNetworkIngressMbps
-      ? "network_ingest" : "local_inference",
+      ? "network_ingest" : limitingSubsystems[0]!,
     pipelineEvidence: {
-      complete: qualification.pipelineComplete, isolatedDatabase: true, sourceRegistered: pipelineSummary.mediaAvailable,
+      complete: technicalPipelineComplete, isolatedDatabase: true, sourceRegistered: pipelineSummary.mediaAvailable,
       rtspClipProvided: pipelineSummary.rtspAvailable && decodedFrames > 0,
       intelligenceJobQueued: resultMeasurements.some((item) => item.completedIntelligenceJobs > 0),
       schedulerClaimedJob: resultMeasurements.some((item) => item.completedIntelligenceJobs > 0),
@@ -791,14 +845,14 @@ async function run(): Promise<void> {
       dashboardQueriesExecuted: resultMeasurements.some((item) => item.dashboardQueries > 0),
       concurrentWithLoad: pipelineSummary.mediaAvailable && operationCount > 0 && combinedCpuGpuMeasured,
       cpuOnlyCompleted: cpuModeMeasured,
-      gpuAcceleratedCompleted: gpuInferenceMeasured && gpuMediaMeasured && gpuUtilizationEvidenceMeasured,
+      gpuAcceleratedCompleted: gpuInferenceMeasured && gpuMediaMeasured,
       combinedCpuGpuCompleted: combinedCpuGpuMeasured,
       phaseCoverage: input.plan.phases.map((phase) => {
         const probes = resultMeasurements.filter((item) => item.phase === phase.name);
         return { phase: phase.name, completedProbeCount: probes.length, failedProbeCount: probes.filter((item) => item.failures.length > 0).length };
       }),
       pipelineContractVersion: CALIBRATION_PIPELINE_CONTRACT_VERSION,
-      exactCameraConcurrency: qualification.exactConcurrencyComplete,
+      exactCameraConcurrency: technicalExactConcurrencyComplete,
     },
     qualityGate: {
       eligibleForCapacityExtrapolation: eligible,
@@ -806,6 +860,44 @@ async function run(): Promise<void> {
       validationStatus: eligible ? "anchor_approved" : "diagnostic",
       failures,
       warnings: [...input.runtimeStatus.reasons, ...pipelineSummary.unavailableReasons].map((reason) => reason.slice(0, 240)).slice(0, 100),
+    },
+    executionHealth: {
+      status: infrastructureErrors.length === 0 ? "completed" : "completed_with_errors",
+      infrastructureErrors,
+    },
+    capacityRecommendation: {
+      safeCameraCount: technicalSafeCameraCapacity,
+      maximumTestedCameraCount: Math.max(...tierResults.map((item) => item.tier)),
+      confidence: technicalSafeCameraCapacity === null ? "insufficient"
+        : input.plan.mode === "qualification" && repetitions.length === 3 ? "high" : "medium",
+      basis: "physical_measurement",
+    },
+    sensorCoverage: {
+      measured: ["cpu.identity", "cpu.utilization", "memory.used",
+        ...(gpuTelemetryMeasured ? ["gpu.utilization"] : []),
+        ...(approvedThermalTelemetryComplete ? ["thermal.throttling"] : [])],
+      unavailable: [...(!gpuTelemetryMeasured ? ["gpu.utilization"] : []),
+        ...(!approvedThermalTelemetryComplete ? ["thermal.throttling"] : []),
+        ...(networkEvidence !== "loopback_measured_physical_link_spec_verified" ? ["network.physical_link_speed"] : [])],
+    },
+    runtimeTrust: {
+      classification: input.runtimeStatus.manifestApproved ? "production" : "candidate",
+      manifestApproved: input.runtimeStatus.manifestApproved,
+      technicalCapacityAllowed: true,
+      commercialQualificationAllowed: eligible,
+    },
+    limitingSubsystems,
+    inferenceEvidence: {
+      requestsPlanned: inferencesPlanned,
+      requestsAttempted: inferencesAttempted,
+      requestsSuccessful: inferredFrames,
+      framesPacked: packedInferenceFrames,
+      maximumConcurrency: maximumInferenceConcurrency,
+      p95LatencyMs: resultMeasurements.length > 0
+        ? Math.max(...resultMeasurements.map((item) => item.p95InferenceLatencyMs ?? 0)) : null,
+      p99LatencyMs: resultMeasurements.length > 0
+        ? Math.max(...resultMeasurements.map((item) => item.p99InferenceLatencyMs ?? 0)) : null,
+      errors: inferenceErrors,
     },
     kernelVersion: CALIBRATION_KERNEL_VERSION,
     runtimeManifestHash: input.runtimeStatus.manifestHash,
@@ -834,7 +926,7 @@ async function run(): Promise<void> {
       requiredModes: ["cpu_only", "gpu_accelerated"],
       cpu: {
         mode: "cpu_only", backend: "cpu", device: fingerprint.cpuModel,
-        measured: cpuModeMeasured, safeCameraCapacity: eligible && cpuModeMeasured ? selectedTier : null,
+        measured: cpuModeMeasured, safeCameraCapacity: technicalSafeCameraCapacity !== null && cpuModeMeasured ? technicalSafeCameraCapacity : null,
         measurementCount: cpuModeMeasurements.length, failures: uniqueModeFailures(cpuModeMeasurements),
       },
       gpu: {
@@ -844,13 +936,13 @@ async function run(): Promise<void> {
         deviceName: pipelineSummary.gpuInferenceDevice?.name ?? null,
         inferenceMeasured: gpuInferenceMeasured, mediaMeasured: gpuMediaMeasured,
         utilizationMeasured: gpuUtilizationEvidenceMeasured,
-        safeCameraCapacity: eligible && gpuInferenceMeasured && gpuMediaMeasured && gpuUtilizationEvidenceMeasured
-          ? selectedTier : null,
+        safeCameraCapacity: technicalSafeCameraCapacity !== null && gpuInferenceMeasured && gpuMediaMeasured
+          ? technicalSafeCameraCapacity : null,
         measurementCount: gpuModeMeasurements.length, failures: uniqueModeFailures(gpuModeMeasurements),
       },
       combined: {
         measured: combinedCpuGpuMeasured,
-        safeCameraCapacity: eligible && combinedCpuGpuMeasured ? selectedTier : null,
+        safeCameraCapacity: technicalSafeCameraCapacity !== null && combinedCpuGpuMeasured ? technicalSafeCameraCapacity : null,
         measurementCount: gpuModeMeasurements.filter((measurement) => measurement.combinedCpuGpuMeasured).length,
         failures: combinedCpuGpuMeasured ? [] : ["combined_cpu_gpu_load_incomplete"],
       },

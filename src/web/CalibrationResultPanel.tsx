@@ -52,9 +52,11 @@ export function CalibrationResultPanel({
 }): ReactElement {
   const status = validation(result);
   const separator = directory.includes("\\") ? "\\" : "/";
-  const artifactPath = result.artifact
+  const compactArtifactPath = result.artifact
     ? `${directory.replace(/[\\/]+$/, "")}${separator}${result.artifact.fileName}`
     : directory;
+  const portableArtifactPath = `${directory.replace(/[\\/]+$/, "")}${separator}${result.id}.qhcal`;
+  const readableSummaryPath = `${directory.replace(/[\\/]+$/, "")}${separator}${result.id}-resumo.txt`;
   const safeCapacity = result.overallSafeCameraCapacity === null
     ? (lang === "pt" ? "não validada" : "not validated")
     : Math.floor(result.overallSafeCameraCapacity);
@@ -62,12 +64,16 @@ export function CalibrationResultPanel({
     ? (lang === "pt" ? `Esta calibração completa mediu o pipeline de produção e foi aprovada como âncora local. A capacidade segura observada foi de ${safeCapacity} câmeras, limitada primeiro por ${result.bottleneck}.` : `This full production-pipeline calibration is an approved local anchor with ${safeCapacity} safe cameras, first limited by ${result.bottleneck}.`)
     : status === "invalid"
       ? (lang === "pt" ? `O ensaio terminou, mas não pode justificar uma compra. As falhas abaixo precisam ser corrigidas antes de usar esta máquina como âncora.` : "The run finished but cannot support a purchase. Resolve the failures before using it as an anchor.")
-      : (lang === "pt" ? `Este resultado é diagnóstico. Ele mostra o comportamento real deste computador, mas o teste rápido ou a cobertura parcial não podem, sozinhos, justificar uma compra.` : "This is a diagnostic result. It describes this computer but cannot by itself support a purchase.");
+      : result.capacityRecommendation?.safeCameraCount
+        ? (lang === "pt"
+          ? `A validação técnica terminou e recomenda com margem ${result.capacityRecommendation.safeCameraCount} câmeras para esta configuração. A confiança comercial do runtime é informada separadamente e não bloqueia a medição técnica.`
+          : `Technical validation completed and conservatively recommends ${result.capacityRecommendation.safeCameraCount} cameras for this configuration. Runtime commercial trust is reported separately and does not block the technical measurement.`)
+        : (lang === "pt" ? `Este resultado é diagnóstico. Ele mostra o comportamento real deste computador, mas ainda não produziu medições suficientes para recomendar uma capacidade.` : "This diagnostic describes the computer but did not yet produce enough evidence for a capacity recommendation.");
   const overall = result.resourceSummaries?.find((item) => item.phase === "sustained") ?? result.resourceSummaries?.at(-1);
   const cpuOverall = result.resourceSummaries?.find((item) => item.phase === "sustained" && item.computeMode === "cpu_only") ?? overall;
   const gpuOverall = result.resourceSummaries?.find((item) => item.phase === "sustained" && item.computeMode === "gpu_accelerated") ?? overall;
   const compute = result.computeEvidence;
-  const resultKind = result.schemaVersion.endsWith("3.0.0")
+  const resultKind = result.schemaVersion.endsWith("4.0.0") || result.schemaVersion.endsWith("3.0.0")
     ? (lang === "pt" ? "NÚCLEO AUTÔNOMO CPU + GPU" : "AUTONOMOUS CPU + GPU KERNEL")
     : result.schemaVersion.endsWith("2.0.0") ? "PIPELINE INTEGRAL"
       : result.schemaVersion.endsWith("1.1.0") ? "TELEMETRIA" : "LEGADO";
@@ -75,6 +81,7 @@ export function CalibrationResultPanel({
   return <section className="calibration-result" aria-labelledby="calibration-result-title">
     <div className="calibration-result-heading"><div><span>RESULTADO / {resultKind}</span><h3 id="calibration-result-title">{lang === "pt" ? "Resultado da calibração" : "Calibration result"}</h3></div><b className={`calibration-verdict ${status}`}>{status === "anchor_approved" ? (lang === "pt" ? "Âncora aprovada" : "Approved anchor") : status === "invalid" ? (lang === "pt" ? "Teste inválido" : "Invalid test") : (lang === "pt" ? "Diagnóstico" : "Diagnostic")}</b></div>
     <p className="calibration-natural-verdict">{verdict}</p>
+    {result.executionHealth && <div className={`info-box ${result.executionHealth.status === "completed" ? "success" : "warning"}`}><b>{lang === "pt" ? "Saúde da execução" : "Execution health"}: {result.executionHealth.status}</b><span>{result.executionHealth.infrastructureErrors.length === 0 ? (lang === "pt" ? "Nenhum erro de infraestrutura foi registrado." : "No infrastructure error was recorded.") : result.executionHealth.infrastructureErrors.join(" · ")}</span></div>}
     <div className="calibration-result-grid">
       <div><span>{lang === "pt" ? "Capacidade segura" : "Safe capacity"}</span><b>{safeCapacity} {result.overallSafeCameraCapacity === null ? "" : lang === "pt" ? "câmeras" : "cameras"}</b><small>{lang === "pt" ? "margem conservadora aplicada" : "conservative reserve applied"}</small></div>
       <div><span>{lang === "pt" ? "Primeiro gargalo" : "First bottleneck"}</span><b>{result.bottleneck}</b><small>{result.mode === "qualification" || result.mode === "full" ? "6–7 h" : result.mode === "validation" ? "60 min" : "10 min"}</small></div>
@@ -90,7 +97,7 @@ export function CalibrationResultPanel({
     </div>
     {compute && <div className="calibration-compute-grid">
       <div><span>CPU ONLY</span><b className={`evidence-state ${compute.cpu.measured ? "measured" : "failed"}`}>{compute.cpu.measured ? (lang === "pt" ? "medida" : "measured") : (lang === "pt" ? "incompleta" : "incomplete")}</b><small>{compute.cpu.backend} · {compute.cpu.device}<br />{compute.cpu.safeCameraCapacity ?? "—"} {lang === "pt" ? "câmeras seguras" : "safe cameras"}</small></div>
-      <div><span>GPU ACCELERATED</span><b className={`evidence-state ${compute.gpu.inferenceMeasured && compute.gpu.mediaMeasured && compute.gpu.utilizationMeasured ? "measured" : "failed"}`}>{compute.gpu.inferenceBackend} · {compute.gpu.mediaBackend}</b><small>{compute.gpu.deviceName ?? compute.gpu.deviceId ?? (lang === "pt" ? "dispositivo não comprovado" : "device not proven")}<br />{compute.gpu.safeCameraCapacity ?? "—"} {lang === "pt" ? "câmeras seguras" : "safe cameras"}</small></div>
+      <div><span>GPU ACCELERATED</span><b className={`evidence-state ${compute.gpu.inferenceMeasured && compute.gpu.mediaMeasured ? "measured" : "failed"}`}>{compute.gpu.inferenceBackend} · {compute.gpu.mediaBackend}</b><small>{compute.gpu.deviceName ?? compute.gpu.deviceId ?? (lang === "pt" ? "dispositivo não comprovado" : "device not proven")}<br />{compute.gpu.safeCameraCapacity ?? "—"} {lang === "pt" ? "câmeras seguras" : "safe cameras"}{!compute.gpu.utilizationMeasured ? (lang === "pt" ? " · sensor de utilização indisponível" : " · utilization sensor unavailable") : ""}</small></div>
       <div><span>CPU + GPU</span><b className={`evidence-state ${compute.combined.measured ? "measured" : "failed"}`}>{compute.combined.measured ? (lang === "pt" ? "concorrência comprovada" : "concurrency proven") : (lang === "pt" ? "não comprovada" : "not proven")}</b><small>{compute.combined.safeCameraCapacity ?? "—"} {lang === "pt" ? "câmeras seguras" : "safe cameras"} · {compute.combined.measurementCount} {lang === "pt" ? "medições" : "measurements"}</small></div>
     </div>}
     {result.phases.length > 0 && <div className="calibration-phases"><h4>{lang === "pt" ? "Fases do teste" : "Test phases"}</h4>{result.phases.map((phase) => <div key={phase.name}><span>{phase.name}</span><div><i style={{ width: `${Math.min(100, phase.loadPercent / 1.2)}%` }} /></div><b>{phase.loadPercent}% · {(phase.inferenceSuccessRate * 100).toFixed(1)}% AiQ · {((phase.frameDeliveryRate ?? 0) * 100).toFixed(1)}% RTSP</b></div>)}</div>}
@@ -105,8 +112,8 @@ export function CalibrationResultPanel({
     ].map((item) => { const [key, label] = item as [string, string]; const measured = result.pipelineEvidence?.[key] === true; return <div key={key}><span className={`evidence-state ${measured ? "measured" : "failed"}`}>{measured ? "measured" : "missing"}</span><b>{label}</b><small>{measured ? (lang === "pt" ? "comprovado no resultado" : "proven in result") : (lang === "pt" ? "ausente; bloqueia compra" : "missing; blocks purchase")}</small></div>; })}</details>}
     {result.telemetryCapabilities && <details className="calibration-sensors"><summary>{lang === "pt" ? "Sensores e capacidades de telemetria" : "Telemetry sensors and capabilities"}</summary>{result.telemetryCapabilities.map((item) => <div key={item.id}><span className={`evidence-state ${item.status}`}>{item.status}</span><b>{item.id}</b><small>{item.provider}{item.reason ? ` · ${item.reason}` : ""}</small></div>)}</details>}
     {(result.qualityGate?.failures.length || result.qualityGate?.warnings.length) ? <div className="calibration-findings">{result.qualityGate?.failures.map((item) => <div className="failure" key={item}>✕ {item}</div>)}{result.qualityGate?.warnings.map((item) => <div className="warning" key={item}>△ {item}</div>)}</div> : null}
-    <div className="calibration-artifact"><span>{lang === "pt" ? "Arquivo salvo antes da importação" : "File saved before import"}</span><code>{artifactPath || result.artifact?.fileName || "—"}</code><small>SHA-256: {result.artifact?.payloadSha256 ?? (lang === "pt" ? "não disponível na versão 1.0" : "not available in version 1.0")}</small></div>
-    <div className="catalog-actions"><button className="primary" type="button" onClick={onOpenDirectory}>{lang === "pt" ? "Abrir pasta do resultado" : "Open result folder"}</button><button className="secondary" type="button" onClick={() => void navigator.clipboard.writeText(artifactPath)}>{lang === "pt" ? "Copiar caminho" : "Copy path"}</button><button className="secondary" type="button" onClick={onExport}>{lang === "pt" ? "Exportar pacote .qhcal assinado" : "Export signed .qhcal package"}</button><button className="secondary" type="button" onClick={onRecalculate}>{lang === "pt" ? "Recalcular recomendações" : "Recalculate recommendations"}</button></div>
+    <div className="calibration-artifact"><span>{lang === "pt" ? "Pacote portátil assinado criado automaticamente" : "Signed portable package created automatically"}</span><code>{portableArtifactPath}</code><small>{lang === "pt" ? "Resumo legível" : "Readable summary"}: {readableSummaryPath}<br />{lang === "pt" ? "Evidência compacta" : "Compact evidence"}: {compactArtifactPath} · SHA-256: {result.artifact?.payloadSha256 ?? "—"}</small></div>
+    <div className="catalog-actions"><button className="primary" type="button" onClick={onOpenDirectory}>{lang === "pt" ? "Abrir pasta do resultado" : "Open result folder"}</button><button className="secondary" type="button" onClick={() => void navigator.clipboard.writeText(portableArtifactPath)}>{lang === "pt" ? "Copiar caminho" : "Copy path"}</button><button className="secondary" type="button" onClick={onExport}>{lang === "pt" ? "Baixar outra cópia .qhcal" : "Download another .qhcal copy"}</button><button className="secondary" type="button" onClick={onRecalculate}>{lang === "pt" ? "Recalcular recomendações" : "Recalculate recommendations"}</button></div>
     <details className="calibration-json"><summary>{lang === "pt" ? "Ver JSON completo" : "View complete JSON"}</summary><pre>{JSON.stringify(result, null, 2)}</pre></details>
   </section>;
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { REQUIRED_CALIBRATION_STAGES } from "../src/engine/calibration.js";
-import { evaluateCalibrationQualification } from "../src/server/calibrationQualification.js";
+import {
+  evaluateCalibrationQualification,
+  selectTechnicalCalibrationMeasurements,
+  type CalibrationQualificationInput,
+} from "../src/server/calibrationQualification.js";
 import type { PipelinePhaseMeasurement } from "../src/server/calibrationPipeline.js";
 import type { CalibrationPhaseMetric, CalibrationRepetitionResult, TelemetryMetricSummary } from "../src/shared/types.js";
 
@@ -35,7 +39,12 @@ function measurement(
     framesEncoded: 1_000,
     inferencesPlanned: 100,
     inferencesAttempted: 100,
+    inferenceFramesPacked: 100,
+    inferenceMaximumConcurrency: tier,
+    inferenceErrors: [],
+    inferenceIntervalMs: 60_000,
     framesInferred: 100,
+    p95InferenceLatencyMs: 900,
     p99InferenceLatencyMs: 1_000,
     databaseOperations: 100,
     dashboardQueries: 800,
@@ -86,7 +95,7 @@ function repetitions(): CalibrationRepetitionResult[] {
   }));
 }
 
-function validInput() {
+function validInput(): CalibrationQualificationInput {
   return {
     mode: "qualification" as const,
     runtimeReady: true,
@@ -128,6 +137,45 @@ describe("commercial calibration qualification", () => {
       failures: ["physical_network_capacity_below_20_percent_reserve"],
     });
     expect(evaluateCalibrationQualification(input).eligible).toBe(true);
+  });
+
+  it("keeps an expected failed upper discovery tier out of validation health evidence", () => {
+    const input = validInput();
+    input.mode = "validation";
+    input.selectedTier = 4;
+    input.repetitions = [{
+      repetition: 1,
+      tier: 4,
+      startedAt: "2026-07-23T00:00:00.000Z",
+      completedAt: "2026-07-23T01:00:00.000Z",
+      passed: true,
+      safeCameraCapacity: 4,
+      failures: [],
+    }];
+    const failedBoundaryProbe = {
+      ...measurement("warmup", "cpu_only"),
+      phase: "discovery" as const,
+      tier: 8,
+      localInferenceMeasured: false,
+      framesInferred: 0,
+      inferenceErrors: ["TimeoutError:The operation was aborted due to timeout"],
+      failures: [
+        "local_aiq_qwen_success_below_99_5_percent",
+        "local_inference:TimeoutError:The operation was aborted due to timeout",
+      ],
+    };
+    const passingValidation = phases.flatMap((phase) => [
+      { ...measurement(phase, "cpu_only"), tier: 4, actualConcurrentMediaPipelines: 4 },
+      { ...measurement(phase, "gpu_accelerated"), tier: 4, actualConcurrentMediaPipelines: 4 },
+    ]);
+    input.measurements = [failedBoundaryProbe, ...passingValidation];
+    const qualification = evaluateCalibrationQualification(input);
+    const selected = selectTechnicalCalibrationMeasurements(input, qualification);
+
+    expect(qualification.qualifiedMeasurements).toEqual([]);
+    expect(selected).toHaveLength(8);
+    expect(selected.every((item) => item.tier === 4 && item.phase !== "discovery")).toBe(true);
+    expect(selected.flatMap((item) => item.inferenceErrors)).toEqual([]);
   });
 
   it("fails closed when any mandatory proof is absent or external traffic is observed", () => {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createReadStream } from "node:fs";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
@@ -255,6 +256,17 @@ async function fileExists(file: string): Promise<boolean> {
   }
 }
 
+async function sha256File(file: string): Promise<string> {
+  const hash = createHash("sha256");
+  await new Promise<void>((resolveHash, rejectHash) => {
+    const stream = createReadStream(file);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.once("end", resolveHash);
+    stream.once("error", rejectHash);
+  });
+  return hash.digest("hex");
+}
+
 async function verifyPackage(paths: PackagePaths): Promise<void> {
   await stat(paths.executable);
   await stat(paths.asar);
@@ -342,10 +354,17 @@ async function verifyPackage(paths: PackagePaths): Promise<void> {
   assert.equal(sourceLock.assets?.length, 9);
   const selectedTarget = process.platform === "darwin" ? "darwin-arm64" : process.platform === "win32" ? "win32-x64" : "linux-x64";
   const telemetryArtifact = runtimeManifest.assets?.find((asset) => asset.id === "telemetry-probe")?.artifacts?.[selectedTarget];
-  assert(telemetryArtifact && telemetryArtifact.sha256 === null && telemetryArtifact.sizeBytes === null,
-    "the main application must not embed a native telemetry probe");
+  assert(telemetryArtifact?.sha256 && telemetryArtifact.sizeBytes && telemetryArtifact.sizeBytes > 0,
+    "the native package must describe its target telemetry probe");
   const selectedRuntimeRoot = join(dirname(paths.asar), "resources", "calibration", selectedTarget);
-  assert.equal(await fileExists(selectedRuntimeRoot), false, "native runtime files must be installed only from a signed .qhruntime");
+  assert.equal(await fileExists(selectedRuntimeRoot), true, "the native package must embed only its target runtime");
+  for (const asset of runtimeManifest.assets ?? []) {
+    const artifact = asset.artifacts?.[selectedTarget];
+    assert(artifact?.sha256 && artifact.sizeBytes && artifact.sizeBytes > 0, `${asset.id} is incomplete for ${selectedTarget}`);
+    const packagedAsset = join(selectedRuntimeRoot, artifact.relativePath);
+    assert.equal((await stat(packagedAsset)).size, artifact.sizeBytes, `${asset.id} packaged size mismatch`);
+    assert.equal(await sha256File(packagedAsset), artifact.sha256, `${asset.id} packaged hash mismatch`);
+  }
   const trust = JSON.parse(await readFile(join(dirname(paths.asar), "resources", "calibration", "runtime-trust.json"), "utf8")) as { keys?: unknown[] };
   assert((trust.keys?.length ?? 0) > 0, "runtime public trust keys must be packaged");
 }
@@ -471,7 +490,9 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert(htmlResponse.headers.get("content-security-policy")?.includes("frame-ancestors 'none'"));
   assert(!/http-equiv=["']Content-Security-Policy/i.test(html), "CSP must have a single HTTP-header source");
 
-  const scenario = createDefaultScenario(4);
+  // Keep the packaged-app smoke bounded to one real camera. The physical
+  // validation below exercises the user's full eight-camera workload.
+  const scenario = createDefaultScenario(1);
   scenario.projectName = "Packaged desktop smoke test";
   const created = await api<ScenarioRecord>(application.origin, "/api/scenarios", {
     method: "POST",
@@ -491,23 +512,20 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   const runtime = await api<{
     readyForQuickTest: boolean;
     readyForFullQualification: boolean;
+    runtimeAssetsVerified: boolean;
+    manifestApproved: boolean;
     authorityCommit: string;
     assets: Array<{ id: string; status: string }>;
     reasons: string[];
   }>(application.origin, "/api/calibrations/runtime-status");
   assert.equal(runtime.readyForQuickTest, true);
-  assert.equal(runtime.readyForFullQualification, false, "diagnostic runtime must fail closed for commercial qualification");
+  assert.equal(runtime.readyForFullQualification, true, "verified native assets must enable complete physical validation");
+  assert.equal(runtime.runtimeAssetsVerified, true);
+  assert.equal(runtime.manifestApproved, false, "candidate runtime must remain fail-closed for commercial approval");
   assert.equal(runtime.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
-  assert.equal(runtime.assets.find((asset) => asset.id === "telemetry-probe")?.status, "missing");
+  assert.equal(runtime.assets.find((asset) => asset.id === "telemetry-probe")?.status, "verified");
+  assert(runtime.assets.every((asset) => asset.status === "verified"));
   assert(runtime.reasons.length > 0);
-
-  const fullAttempt = await fetch(`${application.origin}/api/calibration-sessions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ recommendationId: recommendation.id, mode: "qualification", targetHardwareTemplateId: null, advancedTelemetry: true }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  assert.equal(fullAttempt.status, 503, "full qualification must remain blocked without verified packaged assets");
 
   const startedCalibration = await api<{
     delivery: string;
@@ -540,15 +558,16 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(completedCalibration.result?.developmentOnly, true);
   assert.equal(completedCalibration.result?.externalRequestCount, 0);
   assert.equal(completedCalibration.result?.openAiRequestCount, 0);
-  assert.equal(completedCalibration.result?.overallSafeCameraCapacity, null);
-  assert.equal(completedCalibration.result?.pipelineEvidence?.complete, false);
+  assert((completedCalibration.result?.capacityRecommendation?.safeCameraCount ?? 0) > 0,
+    "functional measurements must produce a technical camera recommendation");
+  assert.equal(completedCalibration.result?.overallSafeCameraCapacity,
+    completedCalibration.result?.capacityRecommendation?.safeCameraCount);
   assert.equal(completedCalibration.result?.qualityGate?.eligibleForCapacityExtrapolation, false);
   assert(completedCalibration.result?.artifact?.fileName);
   const completedEvidencePath = join(application.userData, "calibration-evidence", completedCalibration.result.artifact.fileName);
   assert.equal(await fileExists(completedEvidencePath), true, "the compact successful evidence must survive temporary cleanup");
   assert((await stat(completedEvidencePath)).size <= 10 * 1024 * 1024, "successful evidence must respect the 10 MB limit");
-  assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "unavailable");
-  assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "thermal_sustain")?.evidenceStatus, "unavailable");
+  assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "measured");
   for (const stage of ["job_scheduler", "intelligence_scheduler", "database_persistence", "dashboard_queries"] as const) {
     assert.equal(completedCalibration.result?.stages.find((item) => item.stage === stage)?.evidenceStatus, "measured");
   }
@@ -558,6 +577,9 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(completedCalibration.result?.pipelineEvidence?.dashboardQueriesExecuted, true);
   assert.equal(await fileExists(join(tmpdir(), "qual-hardware-calibration", startedCalibration.session.id)), false,
     "the exact calibration session directory must be removed after persistence");
+  const portableEvidencePath = join(application.userData, "calibration-evidence", `${completedCalibration.result!.id}.qhcal`);
+  assert.equal(await fileExists(portableEvidencePath), true, "the signed portable .qhcal must be exported automatically");
+  assert.deepEqual([...(await readFile(portableEvidencePath)).subarray(0, 2)], [0x1f, 0x8b], ".qhcal must be real gzip");
   const calibrationStatus = await api<{ calibrationRuns: number }>(application.origin, "/api/calibrations/status");
   assert.equal(calibrationStatus.calibrationRuns, 1, "the diagnostic run must be committed before the session reaches 100%");
   const assessments = await api<Array<{

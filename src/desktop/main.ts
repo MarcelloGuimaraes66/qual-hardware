@@ -101,6 +101,11 @@ async function startLocalApplication(): Promise<string> {
     temporaryRoot: join(app.getPath("temp"), "qual-hardware-calibration"),
     evidenceDirectory: paths.calibrationEvidenceDirectory,
     resourceRoot: applicationResourceRoot,
+    // The embedded runtime is allowed to execute the complete local validation
+    // when every target asset passes the manifest, license and SBOM checks.
+    // Commercial approval remains independently fail-closed through
+    // manifestApproved/runtimeTrust and is never inferred from this flag.
+    featureMode: "full",
     runtimePackageProvider: async () => {
       const [activeRoot, status] = await Promise.all([
         calibrationRuntimePackages?.activeResourceRoot(),
@@ -143,7 +148,10 @@ async function startLocalApplication(): Promise<string> {
   // must never hold the window behind a chain of remote release requests.
   await updates.initialize({ refreshRemote: false });
   await refreshCalibrationEvidence();
-  if (process.env.QUAL_HARDWARE_CATALOG_STARTUP_REFRESH !== "0") {
+  // Calibration must be immediately available after launch and must never
+  // overlap a remote catalog request. Startup refresh is opt-in; the regular
+  // 24-hour refresh remains deferred whenever calibration is active.
+  if (process.env.QUAL_HARDWARE_CATALOG_STARTUP_REFRESH === "1") {
     catalogStartupRefreshTimer = setTimeout(() => {
       catalogStartupRefreshTimer = null;
       if (calibrationKernel?.hasActiveSession()) {

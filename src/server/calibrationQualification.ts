@@ -38,6 +38,32 @@ export interface CalibrationQualificationResult {
   combinedCpuGpuComplete: boolean;
 }
 
+/**
+ * Selects the measurements that prove the final technical capacity.
+ *
+ * Adaptive discovery is expected to stop on the first tier that exceeds the
+ * hardware limit. A timeout or queue failure at that upper tier is capacity
+ * evidence, not an infrastructure failure in the lower tier that subsequently
+ * completes every validation phase. Commercial qualification already exposes
+ * its exact three-repetition set through `qualifiedMeasurements`; validation
+ * uses the final successful repetition, while quick diagnostics retain their
+ * discovery measurements.
+ */
+export function selectTechnicalCalibrationMeasurements(
+  input: CalibrationQualificationInput,
+  qualification: CalibrationQualificationResult,
+): PipelinePhaseMeasurement[] {
+  if (qualification.qualifiedMeasurements.length > 0) return qualification.qualifiedMeasurements;
+  const completeSuccessfulRepetitionSet = input.repetitions.length > 0 && input.repetitions.every((item) =>
+    item.passed && item.tier === input.selectedTier && item.safeCameraCapacity === input.selectedTier);
+  const measurementsPerRepetition = input.phaseNames.length * REQUIRED_CALIBRATION_COMPUTE_MODES.length;
+  const expectedMeasurements = input.repetitions.length * measurementsPerRepetition;
+  if (completeSuccessfulRepetitionSet && expectedMeasurements > 0 && input.measurements.length >= expectedMeasurements) {
+    return input.measurements.slice(-expectedMeasurements);
+  }
+  return input.measurements;
+}
+
 function repetitionVariability(repetitions: CalibrationRepetitionResult[]): number {
   const capacities = repetitions.map((item) => item.safeCameraCapacity).filter((value) => value > 0);
   if (capacities.length !== 3) return 100;

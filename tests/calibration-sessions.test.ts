@@ -154,11 +154,29 @@ describe("secure cross-platform autonomous calibration", () => {
     expect(await resolveCalibrationDirectory({ platform: "linux", home: "/home/test", env: { QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR: "/mnt/docs" } })).toBe("/mnt/docs/Qual Hardware/Calibracoes");
   });
 
+  it("uses the exact evidence directory supplied by the desktop application", async () => {
+    expect(await resolveCalibrationDirectory({
+      directory: "/Users/test/Library/Application Support/Qual Hardware/calibration-evidence",
+      documentsDirectory: "/Users/test/Documents",
+      platform: "darwin",
+      env: {},
+    })).toBe("/Users/test/Library/Application Support/Qual Hardware/calibration-evidence");
+    expect(await resolveCalibrationDirectory({
+      directory: "C:\\Users\\test\\AppData\\Roaming\\Qual Hardware\\calibration-evidence",
+      documentsDirectory: "C:\\Users\\test\\Documents",
+      platform: "win32",
+      env: {},
+    })).toBe("C:\\Users\\test\\AppData\\Roaming\\Qual Hardware\\calibration-evidence");
+  });
+
   it("normalizes untrusted progress without allowing unbounded UI data", () => {
     const progress = normalizeCalibrationProgress({ phase: "sustained", stage: "x".repeat(500), percent: 180, message: "m".repeat(2_000) });
     expect(progress.percent).toBe(100);
+    expect(progress.overallPercent).toBe(100);
     expect(progress.stage).toHaveLength(120);
     expect(progress.message).toHaveLength(1_000);
+    expect(normalizeCalibrationProgress({ stage: "completed", percent: 100, overallPercent: 98 }).overallPercent).toBe(100);
+    expect(normalizeCalibrationProgress({ stage: "cleanup", percent: 99, overallPercent: 98 }).overallPercent).toBe(99);
   });
 
   it("retries cleanup for a known interrupted internal session when the application starts", async () => {

@@ -22,7 +22,7 @@
     "desktop:smoke": "tsx scripts/smoke-desktop.ts",
     "start": "npm run desktop:run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.calibration-tools.json",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=4",
     "test:watch": "vitest",
     "catalog:collect": "tsx src/server/worker.ts --once",
     "catalog:publisher": "tsx scripts/catalog-publisher.ts",

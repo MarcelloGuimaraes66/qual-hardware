@@ -38,6 +38,17 @@ describe("mandatory CPU and GPU calibration compute paths", () => {
     });
   });
 
+  it("recognizes the MTL identifier emitted by llama.cpp on Apple Silicon", () => {
+    const devices = parseLlamaGpuDevices([
+      "Available devices:",
+      "  MTL0: Apple M5 Pro (18186 MiB, 16832 MiB free)",
+      "  BLAS: Accelerate (0 MiB, 0 MiB free)",
+    ].join("\n"));
+    expect(devices).toEqual([{ id: "MTL0", name: "Apple M5 Pro (18186 MiB, 16832 MiB free)", backend: "metal" }]);
+    expect(selectLlamaGpuDevice({ devices, expectedBackend: "metal", gpuModel: "Apple M5 Pro" })?.id).toBe("MTL0");
+    expect(llamaComputeArguments("gpu_accelerated", devices[0]!)).toContain("MTL0");
+  });
+
   it("requires both NVIDIA decode and encoders before declaring GPU media available", () => {
     const available = selectFfmpegGpuMediaBackend({
       platform: "win32",

@@ -3,7 +3,11 @@
   "kernelVersion": "qual-hardware-calibration-kernel/2.0.0",
   "authorityCommit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
   "pipelineImplementation": "perceptrum-equivalent-v1",
-  "supportedTargets": ["darwin-arm64", "win32-x64", "linux-x64"],
+  "supportedTargets": [
+    "darwin-arm64",
+    "win32-x64",
+    "linux-x64"
+  ],
   "authorityContract": {
     "relativePath": "contracts/calibration-kernel-authority-v1.json",
     "sha256": "ff8f066d5b2cabdf957b2b2ce07803b8526d31eb92db599c531b0859a4de7168"
@@ -18,75 +22,414 @@
   },
   "assets": [
     {
-      "id": "ffmpeg", "kind": "executable", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "ffmpeg",
+      "kind": "executable",
+      "version": "8.1.2_1-homebrew-darwin-arm64",
+      "licenseSpdx": "GPL-2.0-or-later",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "bin/ffmpeg", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "bin/ffmpeg.exe", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "bin/ffmpeg", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "bin/ffmpeg",
+          "sha256": "dad4b30b36a1a999bfa4b6ffbde138bd17ee496c69e12eef638227dff2c6415c",
+          "sizeBytes": 426224,
+          "licenseEvidence": {
+            "relativePath": "licenses/ffmpeg.txt",
+            "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/ffmpeg.cdx.json",
+            "sha256": "a9375f0712efe4707bbe971589066f623e6e0638507398dd1332036f5f26435b"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "bin/ffmpeg.exe",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "bin/ffmpeg",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "ffprobe", "kind": "executable", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "ffprobe",
+      "kind": "executable",
+      "version": "8.1.2_1-homebrew-darwin-arm64",
+      "licenseSpdx": "GPL-2.0-or-later",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "bin/ffprobe", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "bin/ffprobe.exe", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "bin/ffprobe", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "bin/ffprobe",
+          "sha256": "cfeefcc9207eb3fa424679228fe3848db2921b15537d26c1ccc4a7a61de95d00",
+          "sizeBytes": 236912,
+          "licenseEvidence": {
+            "relativePath": "licenses/ffprobe.txt",
+            "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/ffprobe.cdx.json",
+            "sha256": "42024982c2fbe6929b73b15b151461d4be59a9f79d920dfad7f0f71b91aeb264"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "bin/ffprobe.exe",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "bin/ffprobe",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "mediamtx", "kind": "executable", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "mediamtx",
+      "kind": "executable",
+      "version": "1.18.2",
+      "licenseSpdx": "MIT",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "bin/mediamtx", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "bin/mediamtx.exe", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "bin/mediamtx", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "bin/mediamtx",
+          "sha256": "42c3848cc26e896d8da845dd8a78ce8898fcd4107816ef185f3e8ffc4f38ddf8",
+          "sizeBytes": 51925394,
+          "licenseEvidence": {
+            "relativePath": "licenses/mediamtx.txt",
+            "sha256": "ecae73b0a23185a35a1222edc0aae5245bb9739420bad0125b0c42e935301a80"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/mediamtx.cdx.json",
+            "sha256": "2341dd71a2d99c3248f9949fb7e12cc4356b8a521ed44c76545b174d9c7a9e63"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "bin/mediamtx.exe",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "bin/mediamtx",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "llama-server", "kind": "executable", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "llama-server",
+      "kind": "executable",
+      "version": "b9637-macos-arm64-metal",
+      "licenseSpdx": "MIT",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "bin/llama-server", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "bin/llama-server.exe", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "bin/llama-server", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "bin/llama-server",
+          "sha256": "c68b4016e18701e8293e3730a8f13272d8d2d6c10139c8b00421332604b06347",
+          "sizeBytes": 33472,
+          "licenseEvidence": {
+            "relativePath": "licenses/llama-server.txt",
+            "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/llama-server.cdx.json",
+            "sha256": "107f2aacdb78265a1d0733eda8a6b0c8fbe57ef66cf90173ca3852fa69a690a9"
+          },
+          "companionFiles": [
+            {
+              "relativePath": "bin/libllama-server-impl.dylib",
+              "sha256": "b5a6971c53633c7d766a056ae66942fdd6a29aeabd790506daa9041bc2b9be0d",
+              "sizeBytes": 8533000
+            },
+            {
+              "relativePath": "bin/libllama-common.0.dylib",
+              "sha256": "521f8af9de9d31c168602f020287e583fd4a20d56abdf5fe02cdcf3e65eeabd9",
+              "sizeBytes": 7523592
+            },
+            {
+              "relativePath": "bin/libmtmd.0.dylib",
+              "sha256": "977281445b3ab2ceb9faaa0da5835068ace88f4f4089e4851de4646efb5bfd4e",
+              "sizeBytes": 1031584
+            },
+            {
+              "relativePath": "bin/libllama.0.dylib",
+              "sha256": "2b0d6f098258cf279fdeb0ff5fae538ed82eb63a01989931a24528b869f49b79",
+              "sizeBytes": 2485712
+            },
+            {
+              "relativePath": "bin/libggml.0.dylib",
+              "sha256": "147fce74227047e2550b9c374c39deb0813cf676e2ba1b4e90337a38a4e2fcbf",
+              "sizeBytes": 59872
+            },
+            {
+              "relativePath": "bin/libggml-cpu.0.dylib",
+              "sha256": "1c66814aa5ce115a2f117de8dcb590b59a263fc71b854d3d38d6aa4e93353bc6",
+              "sizeBytes": 900912
+            },
+            {
+              "relativePath": "bin/libggml-blas.0.dylib",
+              "sha256": "5c70f1824514b72113c7f35187ca986634b2d45d7fe92933838970c5795474d4",
+              "sizeBytes": 58776
+            },
+            {
+              "relativePath": "bin/libggml-metal.0.dylib",
+              "sha256": "f9b4133c5c3e5025d0e06feb3f0e3aefd766983e241f333875f05ab571d65adc",
+              "sizeBytes": 832440
+            },
+            {
+              "relativePath": "bin/libggml-rpc.0.dylib",
+              "sha256": "b6b5beb86bb2e4398e2d41c1a633d775c2c486e8755a3240f57fcc95ff8dda9c",
+              "sizeBytes": 133392
+            },
+            {
+              "relativePath": "bin/libggml-base.0.dylib",
+              "sha256": "2f390f1b7de09677a7d5a6e35d12b8cce937c5c9fe037fe5281000448a3fe03e",
+              "sizeBytes": 710040
+            }
+          ]
+        },
+        "win32-x64": {
+          "relativePath": "bin/llama-server.exe",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "bin/llama-server",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "telemetry-probe", "kind": "executable", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "telemetry-probe",
+      "kind": "executable",
+      "version": "0.1.0",
+      "licenseSpdx": "NOASSERTION",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "bin/telemetry-probe", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "bin/telemetry-probe.exe", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "bin/telemetry-probe", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "bin/telemetry-probe",
+          "sha256": "5a62d169acb3fe02221c8685547b8a0a4aeb57e75c0d3f4bc31d81b32fabf62e",
+          "sizeBytes": 2385234,
+          "licenseEvidence": {
+            "relativePath": "licenses/telemetry-probe.txt",
+            "sha256": "bc904625b2685c78df78e6aa1f56c875da43121a64247ef2300edd67e026fed3"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/telemetry-probe.cdx.json",
+            "sha256": "c05aba933cb2c2caac83f524cb8b13ab726abfa137dd9d6e17a1a7cb895a8416"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "bin/telemetry-probe.exe",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "bin/telemetry-probe",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "qwen-core-gguf", "kind": "model", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "qwen-core-gguf",
+      "kind": "model",
+      "version": "52d6c8ffea26cc873ac5ad116f8631268d7eb503:Q4_K_M",
+      "licenseSpdx": "Apache-2.0",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "models/qwen3-vl-2b-core.gguf", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "models/qwen3-vl-2b-core.gguf", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "models/qwen3-vl-2b-core.gguf", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "models/qwen3-vl-2b-core.gguf",
+          "sha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae",
+          "sizeBytes": 1107409952,
+          "licenseEvidence": {
+            "relativePath": "licenses/qwen-core-gguf.txt",
+            "sha256": "2f7f75122a301c7022d16f23c98023c1cc31aca3296fcb62b4e77999a3406421"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/qwen-core-gguf.cdx.json",
+            "sha256": "7ce7fb50497e6ca62d2e6eb36b1397b0aeca154688f1f0f0fdc40501a1b679f2"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "models/qwen3-vl-2b-core.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "models/qwen3-vl-2b-core.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "qwen-core-mmproj", "kind": "model", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "qwen-core-mmproj",
+      "kind": "model",
+      "version": "52d6c8ffea26cc873ac5ad116f8631268d7eb503:mmproj-Q8_0",
+      "licenseSpdx": "Apache-2.0",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "models/qwen3-vl-2b-core-mmproj.gguf", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "models/qwen3-vl-2b-core-mmproj.gguf", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "models/qwen3-vl-2b-core-mmproj.gguf", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "models/qwen3-vl-2b-core-mmproj.gguf",
+          "sha256": "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82",
+          "sizeBytes": 445053216,
+          "licenseEvidence": {
+            "relativePath": "licenses/qwen-core-mmproj.txt",
+            "sha256": "2f7f75122a301c7022d16f23c98023c1cc31aca3296fcb62b4e77999a3406421"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/qwen-core-mmproj.cdx.json",
+            "sha256": "a0c0668d78da5a0adc319c02dae28ca87cef4d74f1d0ece9287fb023c4868797"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "models/qwen3-vl-2b-core-mmproj.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "models/qwen3-vl-2b-core-mmproj.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "qwen-core-max-gguf", "kind": "model", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "qwen-core-max-gguf",
+      "kind": "model",
+      "version": "1cd86afb9a95c410a6038ab3b40d8b578c892266:Q4_K_M",
+      "licenseSpdx": "Apache-2.0",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "models/qwen3-vl-4b-core-max.gguf", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "models/qwen3-vl-4b-core-max.gguf", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "models/qwen3-vl-4b-core-max.gguf", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "models/qwen3-vl-4b-core-max.gguf",
+          "sha256": "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a",
+          "sizeBytes": 2497281664,
+          "licenseEvidence": {
+            "relativePath": "licenses/qwen-core-max-gguf.txt",
+            "sha256": "3d50ed633b88c42249a9fd9771899d751b3e75a57f698ec35babcd3a0c7b6110"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/qwen-core-max-gguf.cdx.json",
+            "sha256": "e41549854503da1cc5e5f93f604863823d958580fa7bb235eafa9571722a58d4"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "models/qwen3-vl-4b-core-max.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "models/qwen3-vl-4b-core-max.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     },
     {
-      "id": "qwen-core-max-mmproj", "kind": "model", "version": null, "licenseSpdx": null, "sbomRef": null, "requiredForFull": true,
+      "id": "qwen-core-max-mmproj",
+      "kind": "model",
+      "version": "1cd86afb9a95c410a6038ab3b40d8b578c892266:mmproj-Q8_0",
+      "licenseSpdx": "Apache-2.0",
+      "sbomRef": null,
+      "requiredForFull": true,
       "artifacts": {
-        "darwin-arm64": { "relativePath": "models/qwen3-vl-4b-core-max-mmproj.gguf", "sha256": null, "sizeBytes": null },
-        "win32-x64": { "relativePath": "models/qwen3-vl-4b-core-max-mmproj.gguf", "sha256": null, "sizeBytes": null },
-        "linux-x64": { "relativePath": "models/qwen3-vl-4b-core-max-mmproj.gguf", "sha256": null, "sizeBytes": null }
+        "darwin-arm64": {
+          "relativePath": "models/qwen3-vl-4b-core-max-mmproj.gguf",
+          "sha256": "30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d",
+          "sizeBytes": 453974304,
+          "licenseEvidence": {
+            "relativePath": "licenses/qwen-core-max-mmproj.txt",
+            "sha256": "3d50ed633b88c42249a9fd9771899d751b3e75a57f698ec35babcd3a0c7b6110"
+          },
+          "sbomEvidence": {
+            "relativePath": "sbom/qwen-core-max-mmproj.cdx.json",
+            "sha256": "40ddb12d861c50b95d3b912f1fb2d0f328d98f481de365647f101d5853c75a59"
+          },
+          "companionFiles": []
+        },
+        "win32-x64": {
+          "relativePath": "models/qwen3-vl-4b-core-max-mmproj.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        },
+        "linux-x64": {
+          "relativePath": "models/qwen3-vl-4b-core-max-mmproj.gguf",
+          "sha256": null,
+          "sizeBytes": null,
+          "licenseEvidence": null,
+          "sbomEvidence": null,
+          "companionFiles": []
+        }
       }
     }
   ]

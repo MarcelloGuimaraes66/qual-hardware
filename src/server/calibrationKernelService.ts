@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { link, lstat, mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { canonicalSha256 } from "../engine/calibrationProfile.js";
+import { currentHostPlatform } from "../platform/index.js";
 import type {
   CalibrationCleanupStatus,
   CalibrationCheckpoint,
@@ -483,17 +483,7 @@ export class CalibrationKernelService implements CalibrationKernelPort {
   }
 
   private async stopProcessTree(pid: number, force: boolean): Promise<void> {
-    if (!Number.isSafeInteger(pid) || pid <= 0) return;
-    if (process.platform === "win32") {
-      await new Promise<void>((resolveStop) => {
-        execFile("taskkill.exe", ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])], { windowsHide: true }, () => resolveStop());
-      });
-      return;
-    }
-    try { process.kill(-pid, force ? "SIGKILL" : "SIGTERM"); }
-    catch {
-      try { process.kill(pid, force ? "SIGKILL" : "SIGTERM"); } catch { /* The process group already exited. */ }
-    }
+    await currentHostPlatform.terminateProcessTree(pid, force);
   }
 
   private async persistEvidence(result: LocalCalibrationRun): Promise<LocalCalibrationRun> {

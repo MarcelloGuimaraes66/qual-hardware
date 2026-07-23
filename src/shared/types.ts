@@ -724,6 +724,37 @@ export interface LocalCalibrationRun {
     failures: string[];
     warnings: string[];
   };
+  executionHealth?: {
+    status: "completed" | "completed_with_errors";
+    infrastructureErrors: string[];
+  };
+  capacityRecommendation?: {
+    safeCameraCount: number | null;
+    maximumTestedCameraCount: number;
+    confidence: "high" | "medium" | "insufficient";
+    basis: "physical_measurement";
+  };
+  sensorCoverage?: {
+    measured: string[];
+    unavailable: string[];
+  };
+  runtimeTrust?: {
+    classification: "candidate" | "production";
+    manifestApproved: boolean;
+    technicalCapacityAllowed: true;
+    commercialQualificationAllowed: boolean;
+  };
+  limitingSubsystems?: CalibrationStage[];
+  inferenceEvidence?: {
+    requestsPlanned: number;
+    requestsAttempted: number;
+    requestsSuccessful: number;
+    framesPacked: number;
+    maximumConcurrency: number;
+    p95LatencyMs: number | null;
+    p99LatencyMs: number | null;
+    errors: string[];
+  };
   kernelVersion?: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/1.0.0";
   runtimeManifestHash?: string;
   runtimeProvenance?: {

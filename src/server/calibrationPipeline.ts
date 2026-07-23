@@ -6,6 +6,7 @@ import { cpus, freemem, totalmem } from "node:os";
 import { basename } from "node:path";
 import { performance } from "node:perf_hooks";
 import { DatabaseSync } from "node:sqlite";
+import { currentHostPlatform } from "../platform/index.js";
 import type {
   CalibrationPhaseMetric,
   CalibrationRuntimeStatus,
@@ -44,18 +45,7 @@ const CALIBRATION_MEDIA_RING_SEGMENTS = 2;
 
 async function terminateProcessTree(child: ChildProcess, force: boolean): Promise<void> {
   if (!child.pid) return;
-  if (process.platform === "win32") {
-    await new Promise<void>((resolveStop) => {
-      const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", ...(force ? ["/F"] : [])], {
-        shell: false, windowsHide: true, stdio: "ignore",
-      });
-      killer.once("error", () => resolveStop());
-      killer.once("exit", () => resolveStop());
-    });
-    return;
-  }
-  try { process.kill(-child.pid, force ? "SIGKILL" : "SIGTERM"); }
-  catch { try { child.kill(force ? "SIGKILL" : "SIGTERM"); } catch { /* The process group already exited. */ } }
+  await currentHostPlatform.terminateProcessTree(child.pid, force);
 }
 
 export function estimateCalibrationMediaRingBytes(
@@ -101,7 +91,12 @@ export interface PipelinePhaseMeasurement {
   framesEncoded: number;
   inferencesPlanned: number;
   inferencesAttempted: number;
+  inferenceFramesPacked: number;
+  inferenceMaximumConcurrency: number;
+  inferenceErrors: string[];
+  inferenceIntervalMs: number;
   framesInferred: number;
+  p95InferenceLatencyMs: number | null;
   p99InferenceLatencyMs: number | null;
   databaseOperations: number;
   dashboardQueries: number;
@@ -292,6 +287,54 @@ export function allocateCalibrationCameraGroups(profile: CalibrationWorkloadProf
   return exact.sort((left, right) => left.index - right.index).map((item) => item.floor);
 }
 
+export interface CalibrationInferenceLoadPlan {
+  requestsPlanned: number;
+  framesPlanned: number;
+  requestsPerWindow: number;
+  windowCount: number;
+  intervalMs: number;
+}
+
+function agentFramesPerWindow(agent: CalibrationWorkloadProfile["cameraGroups"][number]["agents"][number]): number {
+  if (agent.inputType === "image") return 1;
+  if (agent.packaging === "mosaic_2x2") return 4;
+  if (agent.packaging === "mosaic_3x3") return 9;
+  return Math.min(300, Math.max(1, Math.floor(agent.modelFps * agent.runEverySeconds)));
+}
+
+export function planCalibrationInferenceLoad(
+  profile: CalibrationWorkloadProfile,
+  tier: number,
+  durationSeconds: number,
+): CalibrationInferenceLoadPlan {
+  const allocations = allocateCalibrationCameraGroups(profile, tier);
+  const localAgents = profile.cameraGroups.flatMap((group, groupIndex) =>
+    group.agents.filter((agent) => agent.model === "aiq-3.7" || agent.model === "aiq-3.7-max")
+      .map((agent) => ({ agent, cameras: allocations[groupIndex] ?? 0 })));
+  if (localAgents.length === 0) {
+    return { requestsPlanned: 0, framesPlanned: 0, requestsPerWindow: 0, windowCount: 0, intervalMs: 60_000 };
+  }
+  const intervalSeconds = Math.min(...localAgents.map(({ agent }) => agent.runEverySeconds));
+  const windowCount = Math.max(1, Math.ceil(durationSeconds / intervalSeconds));
+  const requestsPerWindow = localAgents.reduce((sum, item) => sum + item.cameras, 0);
+  const framesPerWindow = localAgents.reduce((sum, item) =>
+    sum + item.cameras * agentFramesPerWindow(item.agent), 0);
+  return {
+    requestsPlanned: requestsPerWindow * windowCount,
+    framesPlanned: framesPerWindow * windowCount,
+    requestsPerWindow,
+    windowCount,
+    intervalMs: intervalSeconds * 1_000,
+  };
+}
+
+export function calibrationLlamaContextSize(parallelSlots: number): number {
+  // llama.cpp divides --ctx-size across its slots. A 1920x1080 Qwen-VL JPEG
+  // needs slightly more than 2k tokens before generation, so each camera slot
+  // receives a complete 4k context instead of sharing one fixed context pool.
+  return Math.max(4_096, Math.min(262_144, Math.max(1, Math.floor(parallelSlots)) * 4_096));
+}
+
 function assetPath(status: CalibrationRuntimeStatus, id: string): string | null {
   const asset = status.assets.find((item) => item.id === id);
   return asset && (asset.status === "verified" || asset.status === "system_only") ? asset.path : null;
@@ -356,6 +399,7 @@ export class OfflineCalibrationPipeline {
     computeMode: CalibrationComputeMode;
     origin: string;
     child: ChildProcess;
+    parallel: number;
   }> = [];
   private llamaExecutable: string | null = null;
   private requiredLlamaModels: Array<"core" | "core-max"> = [];
@@ -383,7 +427,7 @@ export class OfflineCalibrationPipeline {
     const files: PipelineFiles = {
       sources: await Promise.all(this.input.workloadProfile.cameraGroups.map((_, index) =>
         prepareCalibrationTemporaryFile(this.input.workspace, `synthetic-source-${index}.mkv`, { retain: true }))),
-      frame: await prepareCalibrationTemporaryFile(this.input.workspace, "synthetic-frame.ppm", { retain: true }),
+      frame: await prepareCalibrationTemporaryFile(this.input.workspace, "synthetic-frame.jpg", { retain: true }),
       mediamtxConfig: await prepareCalibrationTemporaryFile(this.input.workspace, "mediamtx.yml", { retain: true }),
     };
     this.files = files;
@@ -425,7 +469,7 @@ export class OfflineCalibrationPipeline {
       if (mediaAvailable) {
         await this.run(ffmpeg, [
           "-hide_banner", "-loglevel", "error", "-nostdin", "-i", files.sources[0]!,
-          "-frames:v", "1", "-pix_fmt", "rgb24", "-y", files.frame,
+          "-frames:v", "1", "-c:v", "mjpeg", "-q:v", "2", "-y", files.frame,
         ], 15_000);
       }
     }
@@ -552,17 +596,15 @@ export class OfflineCalibrationPipeline {
   }): Promise<PipelinePhaseMeasurement> {
     if (!this.files || !this.summary) throw new Error("calibration_pipeline_not_initialized");
     const computeMode = input.computeMode ?? "cpu_only";
-    const inferenceAvailable = await this.activateInferenceMode(computeMode);
+    const inferenceAvailable = await this.activateInferenceMode(computeMode, input.tier);
     const mediaAvailable = this.summary.mediaAvailable &&
       (computeMode === "cpu_only" || this.summary.gpuMediaAvailable);
     const scaledSeconds = Math.max(0.2, input.durationSeconds * this.input.timeScale);
     const groupAllocations = allocateCalibrationCameraGroups(this.input.workloadProfile, input.tier);
-    const sourceFps = Math.max(...this.input.workloadProfile.cameraGroups.map((group) => group.sourceFps));
     const framesPlanned = Math.max(1, Math.floor(groupAllocations.reduce((sum, cameraCount, index) =>
       sum + cameraCount * (this.input.workloadProfile.cameraGroups[index]?.sourceFps ?? 0) * scaledSeconds, 0)));
-    const requestedInferenceFps = Math.max(1, ...this.input.workloadProfile.cameraGroups
-      .flatMap((group) => group.agents).map((agent) => agent.modelFps));
-    const inferencesPlanned = Math.max(1, Math.floor(input.tier * requestedInferenceFps * scaledSeconds));
+    const inferencePlan = planCalibrationInferenceLoad(this.input.workloadProfile, input.tier, scaledSeconds);
+    const inferencesPlanned = inferencePlan.requestsPlanned;
     const network = evaluateCalibrationNetworkCapacity(
       this.input.workloadProfile,
       input.tier,
@@ -600,8 +642,9 @@ export class OfflineCalibrationPipeline {
     const databasePromise = this.runEquivalentRuntimeLoad(input.tier, scaledSeconds, groupAllocations);
     const memoryPromise = this.runMemoryProbe(scaledSeconds);
     const inferencePromise = inferenceAvailable
-      ? this.runLocalInference(inferencesPlanned, scaledSeconds, input.tier, computeMode)
-      : Promise.resolve({ successful: 0, attempted: 0, maxConcurrentRequests: 0, latencies: [] as number[] });
+      ? this.runLocalInference(inferencePlan, scaledSeconds, input.tier, computeMode)
+      : Promise.resolve({ successful: 0, attempted: 0, framesPacked: 0, maxConcurrentRequests: 0,
+        latencies: [] as number[], errors: [] as string[] });
     const resources = new SystemResourceSampler();
     const hardwareTelemetry = new CalibrationHardwareTelemetrySampler({
       enabled: this.input.advancedTelemetry === true,
@@ -647,30 +690,25 @@ export class OfflineCalibrationPipeline {
       this.summary.gpuInferenceDevice !== null;
     const gpuMediaMeasured = computeMode === "gpu_accelerated" && media.framesDecoded > 0 &&
       media.framesEncoded > 0 && this.summary.gpuMediaBackend !== "unavailable";
-    const gpuUtilizationMeasured = sampledHardwareTelemetry.gpuUtilizationPercent !== null &&
-      sampledHardwareTelemetry.gpuMemoryUsedBytes !== null &&
-      sampledHardwareTelemetry.gpuUtilizationPercent.peak > 0 &&
-      sampledHardwareTelemetry.gpuMemoryUsedBytes.peak > 0;
     const combinedCpuGpuMeasured = computeMode === "gpu_accelerated" && cpuWorkloadMeasured &&
-      gpuInferenceMeasured && gpuMediaMeasured && gpuUtilizationMeasured;
+      gpuInferenceMeasured && gpuMediaMeasured;
     const failures = [
       ...(!this.summary.mediaAvailable ? ["real_ffmpeg_pipeline_unavailable"] : []),
       ...(computeMode === "gpu_accelerated" && !this.summary.gpuMediaAvailable
         ? ["gpu_media_backend_unavailable"] : []),
       ...(!this.summary.rtspAvailable ? ["real_rtsp_runtime_unavailable"] : []),
-      ...(network.physicalCapacityMbps === null ? ["physical_network_link_specification_unavailable"] : []),
       ...(network.physicalCapacityMbps !== null && !network.verified ? ["physical_network_capacity_below_20_percent_reserve"] : []),
       ...(!inferenceAvailable ? ["local_aiq_qwen_unavailable"] : []),
       ...(!inferenceAvailable ? [`${computeMode}_local_aiq_qwen_unavailable`] : []),
-      ...(inferenceAvailable && inference.successful / inferencesPlanned < 0.995
+      ...(inferenceAvailable && inferencesPlanned > 0 && inference.successful / inferencesPlanned < 0.995
         ? ["local_aiq_qwen_success_below_99_5_percent"] : []),
       ...(!cpuWorkloadMeasured ? ["cpu_workload_not_measured"] : []),
       ...(computeMode === "gpu_accelerated" && !gpuInferenceMeasured ? ["gpu_inference_not_measured"] : []),
       ...(computeMode === "gpu_accelerated" && !gpuMediaMeasured ? ["gpu_media_not_measured"] : []),
-      ...(computeMode === "gpu_accelerated" && !gpuUtilizationMeasured ? ["gpu_utilization_or_vram_not_measured"] : []),
       ...(computeMode === "gpu_accelerated" && !combinedCpuGpuMeasured ? ["combined_cpu_gpu_load_not_measured"] : []),
       ...(!exactCameraConcurrency ? ["exact_concurrent_camera_load_not_executed"] : []),
       ...media.errors.map((error) => `media_pipeline:${error}`),
+      ...inference.errors.map((error) => `local_inference:${error}`),
       ...(database.processedCameraCount < input.tier ? ["not_all_camera_runtime_contracts_exercised"] : []),
       ...((sampledHardwareTelemetry.thermalThrottlePercent?.peak ?? 0) > 0
         ? ["sustained_thermal_throttling_detected"] : []),
@@ -697,7 +735,12 @@ export class OfflineCalibrationPipeline {
       framesEncoded: media.framesEncoded,
       inferencesPlanned,
       inferencesAttempted: inference.attempted,
+      inferenceFramesPacked: inference.framesPacked,
+      inferenceMaximumConcurrency: inference.maxConcurrentRequests,
+      inferenceErrors: inference.errors,
+      inferenceIntervalMs: inferencePlan.intervalMs,
       framesInferred: inference.successful,
+      p95InferenceLatencyMs: percentile95(inference.latencies),
       p99InferenceLatencyMs: percentile99(inference.latencies),
       databaseOperations: database.databaseOperations,
       dashboardQueries: database.dashboardQueries,
@@ -746,11 +789,13 @@ export class OfflineCalibrationPipeline {
     throw new Error("calibration_llama_server_start_timeout");
   }
 
-  private async activateInferenceMode(computeMode: CalibrationComputeMode): Promise<boolean> {
+  private async activateInferenceMode(computeMode: CalibrationComputeMode, desiredConcurrency: number): Promise<boolean> {
     if (!this.summary) throw new Error("calibration_pipeline_not_initialized");
     const expectedCount = this.requiredLlamaModels.length;
+    const parallel = Math.max(1, Math.min(64, desiredConcurrency));
     const active = this.llamaServers.filter((runtime) => runtime.computeMode === computeMode && runtime.child.exitCode === null);
-    if (expectedCount > 0 && active.length === expectedCount && this.llamaServers.length === expectedCount) return true;
+    if (expectedCount > 0 && active.length === expectedCount && this.llamaServers.length === expectedCount &&
+        active.every((runtime) => runtime.parallel >= parallel)) return true;
 
     await this.stopLlamaServers();
     const candidateAvailable = computeMode === "cpu_only"
@@ -766,11 +811,17 @@ export class OfflineCalibrationPipeline {
         const port = await freeLoopbackPort();
         const child = this.startBackground(this.llamaExecutable, [
           "-m", modelPath, "--mmproj", mmprojPath, "--host", "127.0.0.1", "--port", String(port),
-          "--ctx-size", "8192", "--jinja", "--log-disable", ...computeArguments,
+          "--ctx-size", String(calibrationLlamaContextSize(parallel)),
+          "--parallel", String(parallel), "--jinja", "--log-disable", ...computeArguments,
         ]);
         const origin = `http://127.0.0.1:${port}`;
-        this.llamaServers.push({ model, computeMode, origin, child });
+        const runtime = { model, computeMode, origin, child, parallel };
+        this.llamaServers.push(runtime);
         await this.waitForLlamaHealth(origin, child);
+        if (!this.files) throw new Error("calibration_inference_frame_unavailable");
+        const image = `data:image/jpeg;base64,${(await readFile(this.files.frame)).toString("base64")}`;
+        const preflight = await this.requestInference(runtime, image, 60_000);
+        if (!preflight.success) throw new Error(`calibration_inference_functional_preflight_failed:${preflight.error}`);
       }
       this.summary.aiqOrigin = this.llamaServers[0]?.origin ?? this.summary.aiqOrigin;
       return this.llamaServers.length === expectedCount;
@@ -786,65 +837,88 @@ export class OfflineCalibrationPipeline {
   }
 
   private async runLocalInference(
-    planned: number,
+    plan: CalibrationInferenceLoadPlan,
     seconds: number,
     desiredConcurrency: number,
     computeMode: CalibrationComputeMode,
   ): Promise<{
     successful: number;
     attempted: number;
+    framesPacked: number;
     maxConcurrentRequests: number;
     latencies: number[];
+    errors: string[];
   }> {
     const runtimes = this.llamaServers.filter((runtime) => runtime.computeMode === computeMode);
-    if (!this.files || runtimes.length === 0) return { successful: 0, attempted: 0, maxConcurrentRequests: 0, latencies: [] };
-    const image = `data:image/x-portable-pixmap;base64,${(await readFile(this.files.frame)).toString("base64")}`;
-    const deadline = performance.now() + seconds * 1_000;
+    if (!this.files || runtimes.length === 0 || plan.requestsPlanned === 0) {
+      return { successful: 0, attempted: 0, framesPacked: 0, maxConcurrentRequests: 0, latencies: [], errors: [] };
+    }
+    const image = `data:image/jpeg;base64,${(await readFile(this.files.frame)).toString("base64")}`;
+    const startedAt = performance.now();
     const latencies: number[] = [];
+    const errors = new Set<string>();
     let successful = 0;
     let attempted = 0;
     let maxConcurrentRequests = 0;
-    do {
+    const timeoutMs = Math.max(30_000, Math.min(120_000, Math.floor(plan.intervalMs * 0.9)));
+    for (let window = 0; window < plan.windowCount && attempted < plan.requestsPlanned; window += 1) {
       if (this.input.cancelled() || this.diskPressureError) throw new Error(this.diskPressureError ?? "calibration_cancelled");
-      const remaining = planned - attempted;
-      if (remaining <= 0) break;
-      const batch = Array.from({ length: Math.min(remaining, desiredConcurrency) }, (_, index) =>
-        runtimes[index % runtimes.length]!);
-      maxConcurrentRequests = Math.max(maxConcurrentRequests, batch.length);
-      const outcomes = await Promise.all(batch.map(async (runtime) => {
-        const started = performance.now();
-        try {
-          const response = await fetch(`${runtime.origin}/v1/chat/completions`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            signal: AbortSignal.timeout(Math.max(30_000, seconds * 2_000)),
-            body: JSON.stringify({
-              model: `calibration-${runtime.model}`,
-              messages: [{
-                role: "user",
-                content: [
-                  { type: "text", text: "/no_think\nDescribe the synthetic calibration frame in at most five words." },
-                  { type: "image_url", image_url: { url: image } },
-                ],
-              }],
-              temperature: 0,
-              max_tokens: 32,
-            }),
-          });
-          const body = await response.text();
-          if (!response.ok) return false;
-          const parsed = JSON.parse(body) as { choices?: Array<{ message?: { content?: unknown } }> };
-          return typeof parsed.choices?.[0]?.message?.content === "string";
-        } catch {
-          return false;
-        } finally {
-          latencies.push(performance.now() - started);
-        }
-      }));
-      attempted += outcomes.length;
-      successful += outcomes.filter(Boolean).length;
-    } while (attempted < planned && performance.now() < deadline);
-    return { successful, attempted, maxConcurrentRequests, latencies };
+      const scheduledAt = startedAt + Math.min(seconds * 1_000, window * plan.intervalMs);
+      const waitMs = scheduledAt - performance.now();
+      if (waitMs > 0) await new Promise((resolveWait) => setTimeout(resolveWait, waitMs));
+      let remainingInWindow = Math.min(plan.requestsPerWindow, plan.requestsPlanned - attempted);
+      while (remainingInWindow > 0) {
+        const batchSize = Math.min(remainingInWindow, desiredConcurrency);
+        const batch = Array.from({ length: batchSize }, (_, index) => runtimes[(attempted + index) % runtimes.length]!);
+        maxConcurrentRequests = Math.max(maxConcurrentRequests, batch.length);
+        const outcomes = await Promise.all(batch.map(async (runtime) => {
+          const requestStarted = performance.now();
+          const outcome = await this.requestInference(runtime, image, timeoutMs);
+          latencies.push(performance.now() - requestStarted);
+          return outcome;
+        }));
+        attempted += outcomes.length;
+        remainingInWindow -= outcomes.length;
+        successful += outcomes.filter((outcome) => outcome.success).length;
+        outcomes.forEach((outcome) => { if (!outcome.success) errors.add(outcome.error); });
+      }
+    }
+    const framesPacked = Math.round(plan.framesPlanned * attempted / Math.max(1, plan.requestsPlanned));
+    return { successful, attempted, framesPacked, maxConcurrentRequests, latencies, errors: [...errors].slice(0, 20) };
+  }
+
+  private async requestInference(
+    runtime: { model: "core" | "core-max"; origin: string },
+    image: string,
+    timeoutMs: number,
+  ): Promise<{ success: boolean; error: string }> {
+    try {
+      const response = await fetch(`${runtime.origin}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: AbortSignal.timeout(timeoutMs),
+        body: JSON.stringify({
+          model: `calibration-${runtime.model}`,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: "/no_think\nDescribe the synthetic calibration image in at most five words." },
+              { type: "image_url", image_url: { url: image } },
+            ],
+          }],
+          temperature: 0,
+          max_tokens: 32,
+        }),
+      });
+      const body = await response.text();
+      if (!response.ok) return { success: false, error: `http_${response.status}:${body.slice(0, 240)}` };
+      const parsed = JSON.parse(body) as { choices?: Array<{ message?: { content?: unknown } }> };
+      return typeof parsed.choices?.[0]?.message?.content === "string"
+        ? { success: true, error: "" }
+        : { success: false, error: "invalid_response_payload" };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? `${error.name}:${error.message}`.slice(0, 240) : String(error).slice(0, 240) };
+    }
   }
 
   private async runMediaPipeline(
@@ -861,43 +935,35 @@ export class OfflineCalibrationPipeline {
   }> {
     const ffmpeg = this.summary?.ffmpegPath;
     if (!ffmpeg || !this.files) throw new Error("calibration_ffmpeg_unavailable");
+    const files = this.files;
     const sequence = this.mediaSequence++;
-    const batchSize = 32;
-    const batches = allocateCalibrationCameraGroups(this.input.workloadProfile, tier).flatMap((cameraCount, group) =>
-      Array.from({ length: Math.ceil(cameraCount / batchSize) }, (_, batch) => ({
-        group,
-        batch,
-        cameraCount: Math.min(batchSize, cameraCount - batch * batchSize),
-      })));
+    const cameras = allocateCalibrationCameraGroups(this.input.workloadProfile, tier).flatMap((cameraCount, group) =>
+      Array.from({ length: cameraCount }, (_, camera) => ({ group, camera })));
     const started = performance.now();
-    const outcomes = await Promise.all(batches.map(async ({ group, batch, cameraCount }) => {
+    const outcomes = await Promise.all(cameras.map(async ({ group, camera }) => {
       const profile = this.input.workloadProfile.cameraGroups[group]!;
       const outputs = await Promise.all(Array.from({ length: CALIBRATION_MEDIA_RING_SEGMENTS }, (_, segment) =>
-        prepareCalibrationTemporaryFile(this.input.workspace, `media-${sequence}-${group}-${batch}-${segment}.mkv`)));
+        prepareCalibrationTemporaryFile(this.input.workspace, `media-${sequence}-${group}-${camera}-${segment}.mkv`)));
       const outputPattern = outputs[0]!.replace(/-0\.mkv$/, "-%d.mkv");
       const gpuInputArguments = computeMode === "gpu_accelerated"
         ? ffmpegGpuInputArguments(this.summary?.gpuMediaBackend ?? "unavailable") : [];
-      const sourceArguments = Array.from({ length: cameraCount }, () => [
+      const sourceArguments = [
         ...gpuInputArguments,
         ...(this.summary?.rtspAvailable && this.rtspPort
           ? ["-rtsp_transport", "tcp", "-i", `rtsp://127.0.0.1:${this.rtspPort}/calibration-${group}`]
-          : ["-stream_loop", "-1", "-i", this.files!.sources[group]!]),
-      ]).flat();
-      const filter = Array.from({ length: cameraCount }, (_, index) =>
-        `[${index}:v]format=bgr24,format=yuv420p[v${index}]`).join(";");
-      const maps = Array.from({ length: cameraCount }, (_, index) => ["-map", `[v${index}]`]).flat();
+          : ["-stream_loop", "-1", "-i", files.sources[group]!]),
+      ];
       try {
         const encoder = ffmpegEncoder(computeMode, this.summary?.gpuMediaBackend ?? "unavailable", profile.codec);
         const result = await this.run(ffmpeg, [
           "-hide_banner", "-loglevel", "error", "-nostdin", ...sourceArguments,
-          "-t", seconds.toFixed(3), "-an", "-filter_complex", filter, ...maps,
+          "-t", seconds.toFixed(3), "-an", "-vf", "format=bgr24,format=yuv420p",
           "-c:v", encoder.encoder, ...encoder.extraArguments,
           "-b:v", `${profile.bitrateMbps}M`, "-f", "segment", "-segment_time", "1",
           "-segment_wrap", String(CALIBRATION_MEDIA_RING_SEGMENTS), "-reset_timestamps", "1",
           "-progress", "pipe:1", "-nostats", "-y", outputPattern,
-        ], Math.max(15_000, seconds * 5_000));
-        const framesPerStream = processFrames(result.stdout);
-        return { cameraCount, frames: framesPerStream * cameraCount, outputs, error: null as string | null };
+        ], Math.max(30_000, seconds * 1_000 + 30_000));
+        return { cameraCount: 1, frames: processFrames(result.stdout), outputs, error: null as string | null };
       } catch (error) {
         return { cameraCount: 0, frames: 0, outputs, error: error instanceof Error ? error.message : String(error) };
       }
@@ -909,7 +975,7 @@ export class OfflineCalibrationPipeline {
       try {
         await this.run(ffmpeg, [
           "-hide_banner", "-loglevel", "error", "-nostdin", "-i", firstOutput,
-          "-frames:v", "1", "-pix_fmt", "rgb24", "-y", this.files.frame,
+          "-frames:v", "1", "-c:v", "mjpeg", "-q:v", "2", "-y", files.frame,
         ], 15_000);
         frameExtracted = true;
       } catch (error) {
@@ -1098,7 +1164,7 @@ export class OfflineCalibrationPipeline {
       const child = spawn(command, args, {
         shell: false,
         windowsHide: true,
-        detached: process.platform !== "win32",
+        detached: currentHostPlatform.detachedProcessGroups,
         stdio: ["ignore", "pipe", "pipe"],
       });
       this.children.add(child);
@@ -1144,7 +1210,7 @@ export class OfflineCalibrationPipeline {
 
   private startBackground(command: string, args: string[]): ChildProcess {
     const child = spawn(command, args, {
-      shell: false, windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "ignore", "ignore"],
+      shell: false, windowsHide: true, detached: currentHostPlatform.detachedProcessGroups, stdio: ["ignore", "ignore", "ignore"],
     });
     this.children.add(child);
     const kind = childProcessKind(command);

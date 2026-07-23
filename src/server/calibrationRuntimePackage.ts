@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import yauzl, { type Entry, type ZipFile } from "yauzl";
 import { z } from "zod";
+import { currentHostPlatform, trySelectHostPlatform } from "../platform/index.js";
 import {
   CALIBRATION_KERNEL_VERSION,
   type CalibrationRuntimeInstallation,
@@ -121,9 +122,8 @@ async function relativeFileInventory(root: string, directory = root): Promise<st
   return files.sort();
 }
 
-function targetFor(platform: NodeJS.Platform = process.platform, architecture: string = process.arch): typeof TARGETS[number] | null {
-  const candidate = `${platform}-${architecture}`;
-  return TARGETS.includes(candidate as typeof TARGETS[number]) ? candidate as typeof TARGETS[number] : null;
+function targetFor(platform: NodeJS.Platform = currentHostPlatform.nodePlatform, architecture: string = process.arch): typeof TARGETS[number] | null {
+  return trySelectHostPlatform(platform)?.runtimeTarget(architecture) ?? null;
 }
 
 function semverTuple(value: string): [number, number, number] {
@@ -257,7 +257,7 @@ async function extractArchive(path: string, staging: string, manifest: Calibrati
           });
           await pipeline(stream, meter, createWriteStream(destination, { flags: "wx" }));
           if (bytes !== definition.sizeBytes || digest.digest("hex") !== definition.sha256) throw new Error("runtime_package_file_hash_mismatch");
-          if (process.platform !== "win32") await chmod(destination, definition.permissions);
+          if (currentHostPlatform.nodePlatform !== "win32") await chmod(destination, definition.permissions);
           zip.readEntry();
         })().catch(rejectEntries);
       });
@@ -474,7 +474,7 @@ export class CalibrationRuntimePackageManager {
       const path = safeInstallPath(root, file.path);
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink() || info.size !== file.sizeBytes || await sha256Path(path) !== file.sha256) return false;
-      if (process.platform !== "win32" && (info.mode & 0o777) !== file.permissions) return false;
+      if (currentHostPlatform.nodePlatform !== "win32" && (info.mode & 0o777) !== file.permissions) return false;
     }
     return true;
   }

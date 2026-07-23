@@ -183,7 +183,6 @@ export function createApp(
   options: ApplicationOptions = {},
 ): Hono {
   const app = new Hono();
-  const calibrationDirectoryOptions = options.documentsDirectory ? { documentsDirectory: options.documentsDirectory } : {};
   const resourceRoot = options.resourceRoot ?? process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
   const applicationVersion = options.appVersion ?? "0.1.0";
   const calibrationFeatures = {
@@ -193,6 +192,11 @@ export function createApp(
   };
   const calibrationEvidenceDirectory = options.calibrationEvidenceDirectory ??
     join(options.documentsDirectory ?? process.cwd(), "Qual Hardware", "Calibracoes");
+  // The package writer, recovery flow and UI must share one authoritative
+  // directory. Desktop builds intentionally keep signed evidence under the
+  // application user-data root instead of presenting a nonexistent Documents
+  // path to the user.
+  const calibrationDirectoryOptions = { directory: calibrationEvidenceDirectory };
   const calibrationKernel = options.calibrationKernel ?? new CalibrationKernelService({
     temporaryRoot: options.calibrationTemporaryRoot ?? join(tmpdir(), "qual-hardware-calibration"),
     evidenceDirectory: calibrationEvidenceDirectory,
@@ -224,6 +228,62 @@ export function createApp(
       kernelVersion: status.kernelVersion,
       runtimeManifestHash: status.manifestHash,
     }, calibrationFeatures.evidencePolicy);
+  }
+
+  async function ensurePortableCalibrationResult(
+    run: LocalCalibrationRun,
+    workloadProfile: CalibrationSessionRecord["plan"]["workloadProfile"],
+  ): Promise<void> {
+    if (!calibrationFeatures.exchange || run.schemaVersion !== AUTONOMOUS_LOCAL_CALIBRATION_VERSION) return;
+    const [identity, exported, events] = await Promise.all([
+      calibrationExchange.localIdentity(),
+      calibrationExchange.exportRun(run, workloadProfile),
+      store.listCalibrationExportEvents(),
+    ]);
+    await store.saveCalibrationDeviceIdentity(identity);
+    if (!events.some((event) => event.format === "qhcal" && event.runIds.includes(run.id) &&
+        event.packageDigest === exported.packageDigest)) {
+      await store.saveCalibrationExportEvent({
+        id: randomUUID(), format: "qhcal", runIds: [run.id], packageDigest: exported.packageDigest,
+        sizeBytes: exported.bytes.byteLength, createdAt: new Date().toISOString(),
+      });
+    }
+    const summaryPath = join(calibrationEvidenceDirectory, `${run.id}-resumo.txt`);
+    const safeCameras = run.capacityRecommendation?.safeCameraCount ?? run.overallSafeCameraCapacity;
+    const summary = [
+      "QUAL HARDWARE — RESUMO DA VALIDAÇÃO",
+      `Execução: ${run.id}`,
+      `Concluída em: ${run.completedAt}`,
+      `Sistema: ${run.fingerprint.operatingSystem} ${run.fingerprint.operatingSystemVersion}`,
+      `CPU: ${run.fingerprint.cpuModel}`,
+      `GPU: ${run.fingerprint.gpuModel}`,
+      `Saúde da execução: ${run.executionHealth?.status ?? "não informada"}`,
+      `Quantidade técnica segura: ${safeCameras ?? "não determinada"} câmeras`,
+      `Maior nível testado: ${run.capacityRecommendation?.maximumTestedCameraCount ?? run.maxTestedTier ?? "não informado"} câmeras`,
+      `Gargalo: ${run.bottleneck}`,
+      `Subsistemas limitantes: ${run.limitingSubsystems?.join(", ") || "nenhum erro limitante observado"}`,
+      `Sensores indisponíveis: ${run.sensorCoverage?.unavailable.join(", ") || "nenhum"}`,
+      `Runtime: ${run.runtimeTrust?.classification ?? "não informado"} (aprovação comercial: ${run.runtimeTrust?.commercialQualificationAllowed === true ? "sim" : "não"})`,
+      `Erros de infraestrutura: ${run.executionHealth?.infrastructureErrors.join("; ") || "nenhum"}`,
+      `Pacote assinado: ${join(calibrationEvidenceDirectory, exported.fileName)}`,
+      `Evidência compacta: ${join(calibrationEvidenceDirectory, run.artifact?.fileName ?? `${run.id}.qhcal.json.gz`)}`,
+      "",
+    ].join("\n");
+    await mkdir(calibrationEvidenceDirectory, { recursive: true });
+    await writeFile(summaryPath, summary, { flag: "wx", mode: 0o600 }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "EEXIST") throw error;
+    });
+  }
+
+  async function recoverPortableCalibrationResults(): Promise<void> {
+    if (!calibrationFeatures.exchange) return;
+    const [runs, sessions] = await Promise.all([store.listCalibrationRuns(), store.listCalibrationSessions()]);
+    const profiles = new Map(sessions.map((session) => [session.planId, session.plan.workloadProfile]));
+    for (const run of runs) {
+      const profile = profiles.get(run.planId);
+      if (!profile) continue;
+      await ensurePortableCalibrationResult(run, profile);
+    }
   }
   app.use("*", async (context, next) => {
     await next();
@@ -269,6 +329,7 @@ export function createApp(
       { kernelVersion: runtimeStatus.kernelVersion, runtimeManifestHash: runtimeStatus.manifestHash },
     );
     await store.commitCalibrationRun(run, predictions);
+    await ensurePortableCalibrationResult(run, session.plan.workloadProfile);
     const derived = deriveComponentCatalog(hardware);
     const components = [...new Map([...derived.components, ...storedComponents].map((item) => [item.id, item])).values()];
     const builds = buildHistoricalComponentBuilds(hardware, components, observations, [run, ...existingRuns]).map((candidate) => {
@@ -364,6 +425,8 @@ export function createApp(
   void store.listCalibrationSessions()
     .then((sessions) => Promise.all(sessions.map(reconcileCalibrationSession)))
     .catch((error: unknown) => console.error("calibration_cleanup_recovery_failed", safeError(error)));
+  void recoverPortableCalibrationResults()
+    .catch((error: unknown) => console.error("calibration_portable_result_recovery_failed", safeError(error)));
 
   async function startCalibrationKernelSession(
     launching: CalibrationSessionRecord,

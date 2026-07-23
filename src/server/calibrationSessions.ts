@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import { promisify } from "node:util";
+import { currentHostPlatform } from "../platform/index.js";
 import {
   AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
   CALIBRATION_KERNEL_VERSION,
@@ -149,7 +150,10 @@ export function normalizeCalibrationProgress(input: unknown): CalibrationSession
     ...(typeof value.phase === "string" ? { phase: value.phase.slice(0, 120) } : {}),
     ...(typeof value.stage === "string" ? { stage: value.stage.slice(0, 120) } : {}),
     percent: normalizedPercent,
-    overallPercent: Math.min(100, number("overallPercent", normalizedPercent)),
+    // `percent` is the authoritative lifecycle value. Older progress events
+    // may carry a stale `overallPercent` (notably 98 during finalization), so
+    // never allow that compatibility field to move the visible bar backwards.
+    overallPercent: Math.min(100, Math.max(normalizedPercent, number("overallPercent", normalizedPercent))),
     phasePercent: Math.min(100, number("phasePercent", 0)),
     ...(typeof value.message === "string" ? { message: value.message.slice(0, 1_000) } : {}),
     ...(Number.isInteger(Number(value.tier)) ? { tier: Math.max(1, Math.min(4_096, Number(value.tier))) } : {}),
@@ -195,21 +199,23 @@ async function linuxDocuments(home: string, env: NodeJS.ProcessEnv): Promise<str
 }
 
 export async function resolveCalibrationDirectory(options: {
+  directory?: string;
   documentsDirectory?: string;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   home?: string;
   resolveWindowsDocuments?: (home: string) => Promise<string>;
 } = {}): Promise<string> {
-  const platform = options.platform ?? process.platform;
+  const platform = options.platform ?? currentHostPlatform.nodePlatform;
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();
   const pathApi = platform === "win32" ? win32 : posix;
+  if (options.directory) return pathApi.resolve(options.directory);
   if (options.documentsDirectory) return pathApi.resolve(options.documentsDirectory, "Qual Hardware", "Calibracoes");
   const override = env.QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR?.trim();
   if (override) return pathApi.resolve(override, "Qual Hardware", "Calibracoes");
   const documents = platform === "win32"
-    ? await (options.resolveWindowsDocuments ?? (process.platform === "win32" && options.platform === undefined && options.home === undefined
+    ? await (options.resolveWindowsDocuments ?? (currentHostPlatform.nodePlatform === "win32" && options.platform === undefined && options.home === undefined
       ? windowsDocuments
       : async (candidateHome: string) => win32.join(candidateHome, "Documents")))(home)
     : platform === "linux" ? await linuxDocuments(home, env)

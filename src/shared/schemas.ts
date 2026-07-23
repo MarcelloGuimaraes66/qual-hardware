@@ -266,6 +266,37 @@ export const localCalibrationRunSchema = z.object({
     failures: z.array(z.string().max(240)).max(100),
     warnings: z.array(z.string().max(240)).max(100),
   }).optional(),
+  executionHealth: z.object({
+    status: z.enum(["completed", "completed_with_errors"]),
+    infrastructureErrors: z.array(z.string().min(1).max(500)).max(100),
+  }).optional(),
+  capacityRecommendation: z.object({
+    safeCameraCount: z.number().int().min(1).max(4_096).nullable(),
+    maximumTestedCameraCount: z.number().int().min(1).max(4_096),
+    confidence: z.enum(["high", "medium", "insufficient"]),
+    basis: z.literal("physical_measurement"),
+  }).optional(),
+  sensorCoverage: z.object({
+    measured: z.array(z.string().min(1).max(160)).max(200),
+    unavailable: z.array(z.string().min(1).max(160)).max(200),
+  }).optional(),
+  runtimeTrust: z.object({
+    classification: z.enum(["candidate", "production"]),
+    manifestApproved: z.boolean(),
+    technicalCapacityAllowed: z.literal(true),
+    commercialQualificationAllowed: z.boolean(),
+  }).optional(),
+  limitingSubsystems: z.array(calibrationStageSchema).max(20).optional(),
+  inferenceEvidence: z.object({
+    requestsPlanned: z.number().int().nonnegative(),
+    requestsAttempted: z.number().int().nonnegative(),
+    requestsSuccessful: z.number().int().nonnegative(),
+    framesPacked: z.number().int().nonnegative(),
+    maximumConcurrency: z.number().int().nonnegative(),
+    p95LatencyMs: z.number().nonnegative().nullable(),
+    p99LatencyMs: z.number().nonnegative().nullable(),
+    errors: z.array(z.string().min(1).max(500)).max(100),
+  }).optional(),
   kernelVersion: z.union([z.literal("qual-hardware-calibration-kernel/1.0.0"), z.literal("qual-hardware-calibration-kernel/2.0.0")]).optional(),
   runtimeManifestHash: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
   runtimeProvenance: z.object({

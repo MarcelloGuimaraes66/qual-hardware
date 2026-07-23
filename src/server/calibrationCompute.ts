@@ -48,13 +48,14 @@ export function parseLlamaGpuDevices(output: string): CalibrationGpuDevice[] {
   const devices: CalibrationGpuDevice[] = [];
   const seen = new Set<string>();
   for (const line of output.split(/\r?\n/)) {
-    const match = line.match(/^\s*(CUDA|Metal|Vulkan|ROCm)(\d*)\s*:\s*(.+?)\s*$/i);
+    const match = line.match(/^\s*(CUDA|Metal|MTL|Vulkan|ROCm|HIP)(\d*)\s*:\s*(.+?)\s*$/i);
     if (!match) continue;
     const prefix = match[1]!.toLowerCase();
-    const backend = prefix === "cuda" ? "cuda" : prefix === "metal" ? "metal"
-      : prefix === "rocm" ? "rocm" : "vulkan";
-    const canonicalPrefix = backend === "cuda" ? "CUDA" : backend === "rocm" ? "ROCm"
-      : backend === "metal" ? "Metal" : "Vulkan";
+    const backend = prefix === "cuda" ? "cuda" : prefix === "metal" || prefix === "mtl" ? "metal"
+      : prefix === "rocm" || prefix === "hip" ? "rocm" : "vulkan";
+    const canonicalPrefix = prefix === "mtl" ? "MTL" : prefix === "hip" ? "HIP"
+      : backend === "cuda" ? "CUDA" : backend === "rocm" ? "ROCm"
+        : backend === "metal" ? "Metal" : "Vulkan";
     const id = `${canonicalPrefix}${match[2] ?? ""}`;
     if (seen.has(id.toLowerCase())) continue;
     seen.add(id.toLowerCase());

@@ -13,6 +13,45 @@ import { REQUIRED_RUNTIME_ASSET_IDS, inspectCalibrationRuntime } from "../src/se
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const roots: string[] = [];
 
+async function copyProvisioningFixture(root: string): Promise<void> {
+  for (const relativePath of [
+    "resources/calibration/runtime-manifest.json",
+    "resources/calibration/asset-sources.lock.json",
+    "contracts/calibration-kernel-authority-v1.json",
+    "contracts/calibration-pipeline-contract-v1.json",
+  ]) {
+    const destination = join(root, relativePath);
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(join(projectRoot, relativePath), destination);
+  }
+  const manifestPath = join(root, "resources/calibration/runtime-manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    assets: Array<{
+      version: string | null;
+      licenseSpdx: string | null;
+      artifacts: Record<string, {
+        sha256: string | null;
+        sizeBytes: number | null;
+        licenseEvidence?: unknown;
+        sbomEvidence?: unknown;
+        companionFiles?: unknown[];
+      }>;
+    }>;
+  };
+  for (const asset of manifest.assets) {
+    asset.version = null;
+    asset.licenseSpdx = null;
+    for (const artifact of Object.values(asset.artifacts)) {
+      artifact.sha256 = null;
+      artifact.sizeBytes = null;
+      artifact.licenseEvidence = null;
+      artifact.sbomEvidence = null;
+      artifact.companionFiles = [];
+    }
+  }
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
@@ -21,16 +60,7 @@ describe("calibration runtime asset provisioning", () => {
   it("plans without mutation, then atomically installs one complete verified target with a manifest backup", async () => {
     const root = await mkdtemp(join(tmpdir(), "qual-hardware-runtime-provisioning-test-"));
     roots.push(root);
-    for (const relativePath of [
-      "resources/calibration/runtime-manifest.json",
-      "resources/calibration/asset-sources.lock.json",
-      "contracts/calibration-kernel-authority-v1.json",
-      "contracts/calibration-pipeline-contract-v1.json",
-    ]) {
-      const destination = join(root, relativePath);
-      await mkdir(dirname(destination), { recursive: true });
-      await copyFile(join(projectRoot, relativePath), destination);
-    }
+    await copyProvisioningFixture(root);
     const sourceRoot = join(root, "external-approved-input");
     await mkdir(sourceRoot, { recursive: true });
     const assets = [];
@@ -96,16 +126,7 @@ describe("calibration runtime asset provisioning", () => {
   it("refuses provisioning before mutation when the calibration disk reserve would be crossed", async () => {
     const root = await mkdtemp(join(tmpdir(), "qual-hardware-runtime-provisioning-reserve-test-"));
     roots.push(root);
-    for (const relativePath of [
-      "resources/calibration/runtime-manifest.json",
-      "resources/calibration/asset-sources.lock.json",
-      "contracts/calibration-kernel-authority-v1.json",
-      "contracts/calibration-pipeline-contract-v1.json",
-    ]) {
-      const destination = join(root, relativePath);
-      await mkdir(dirname(destination), { recursive: true });
-      await copyFile(join(projectRoot, relativePath), destination);
-    }
+    await copyProvisioningFixture(root);
     const sourceRoot = join(root, "approved-input");
     await mkdir(sourceRoot, { recursive: true });
     const assets = [];

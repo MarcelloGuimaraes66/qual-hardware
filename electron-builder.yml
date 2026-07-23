@@ -31,6 +31,19 @@ win:
       arch:
         - x64
   artifactName: Qual-Hardware-${version}-windows-${arch}-portable.${ext}
+  extraResources:
+    - from: resources/calibration/runtime-manifest.json
+      to: resources/calibration/runtime-manifest.json
+    - from: resources/calibration/asset-sources.lock.json
+      to: resources/calibration/asset-sources.lock.json
+    - from: resources/calibration/runtime-trust.json
+      to: resources/calibration/runtime-trust.json
+    - from: resources/calibration/win32-x64
+      to: resources/calibration/win32-x64
+    - from: contracts/calibration-kernel-authority-v1.json
+      to: contracts/calibration-kernel-authority-v1.json
+    - from: contracts/calibration-pipeline-contract-v1.json
+      to: contracts/calibration-pipeline-contract-v1.json
 
 portable:
   # A per-launch extraction directory prevents a second portable bootstrap
@@ -58,6 +71,19 @@ mac:
         127.0.0.1:
           NSIncludesSubdomains: false
           NSTemporaryExceptionAllowsInsecureHTTPLoads: true
+  extraResources:
+    - from: resources/calibration/runtime-manifest.json
+      to: resources/calibration/runtime-manifest.json
+    - from: resources/calibration/asset-sources.lock.json
+      to: resources/calibration/asset-sources.lock.json
+    - from: resources/calibration/runtime-trust.json
+      to: resources/calibration/runtime-trust.json
+    - from: resources/calibration/darwin-arm64
+      to: resources/calibration/darwin-arm64
+    - from: contracts/calibration-kernel-authority-v1.json
+      to: contracts/calibration-kernel-authority-v1.json
+    - from: contracts/calibration-pipeline-contract-v1.json
+      to: contracts/calibration-pipeline-contract-v1.json
 
 linux:
   icon: build/icon.png
@@ -73,6 +99,19 @@ linux:
     - target: deb
       arch:
         - x64
+  extraResources:
+    - from: resources/calibration/runtime-manifest.json
+      to: resources/calibration/runtime-manifest.json
+    - from: resources/calibration/asset-sources.lock.json
+      to: resources/calibration/asset-sources.lock.json
+    - from: resources/calibration/runtime-trust.json
+      to: resources/calibration/runtime-trust.json
+    - from: resources/calibration/linux-x64
+      to: resources/calibration/linux-x64
+    - from: contracts/calibration-kernel-authority-v1.json
+      to: contracts/calibration-kernel-authority-v1.json
+    - from: contracts/calibration-pipeline-contract-v1.json
+      to: contracts/calibration-pipeline-contract-v1.json
 
 appImage:
   artifactName: Qual-Hardware-${version}-linux-${arch}.${ext}

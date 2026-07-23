@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import { access, readFile, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
+import { currentHostPlatform, trySelectHostPlatform } from "../platform/index.js";
 import {
   CALIBRATION_KERNEL_VERSION,
   PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
@@ -112,9 +113,7 @@ export function safeChildPath(root: string, relativePath: string): string {
 }
 
 function targetKey(platform: NodeJS.Platform, architecture: string): SupportedRuntimeTarget | null {
-  const candidate = `${platform}-${architecture}`;
-  return SUPPORTED_RUNTIME_TARGETS.includes(candidate as SupportedRuntimeTarget)
-    ? candidate as SupportedRuntimeTarget : null;
+  return trySelectHostPlatform(platform)?.runtimeTarget(architecture) ?? null;
 }
 
 export async function sha256File(path: string): Promise<string> {
@@ -148,8 +147,9 @@ async function referencedEvidenceVerified(
 }
 
 async function executableOnPath(name: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): Promise<string | null> {
+  const adapter = trySelectHostPlatform(platform);
   const candidates = (env.PATH ?? "").split(delimiter).filter(Boolean)
-    .map((directory) => join(directory, platform === "win32" ? `${name}.exe` : name));
+    .map((directory) => join(directory, adapter?.executableName(name) ?? name));
   for (const candidate of candidates) {
     try {
       await access(candidate, constants.X_OK);
@@ -170,9 +170,10 @@ export async function inspectCalibrationRuntime(options: {
   executableAccess?: (path: string, platform: NodeJS.Platform) => Promise<boolean>;
   manifestApproved?: boolean;
 }): Promise<CalibrationRuntimeStatus> {
-  const platform = options.platform ?? process.platform;
+  const platform = options.platform ?? currentHostPlatform.nodePlatform;
   const architecture = options.architecture ?? process.arch;
   const selectedTarget = targetKey(platform, architecture);
+  const platformAdapter = trySelectHostPlatform(platform);
   const manifestPath = safeChildPath(options.resourceRoot, "resources/calibration/runtime-manifest.json");
   const raw = await readFile(manifestPath, "utf8");
   const manifest = runtimeManifestSchema.parse(JSON.parse(raw));
@@ -218,8 +219,7 @@ export async function inspectCalibrationRuntime(options: {
         const executableAllowed = definition.kind !== "executable" || !options.executableAccess ||
           await options.executableAccess(packagedPath, platform);
         if (!executableAllowed) throw new Error("calibration_runtime_executable_permission_missing");
-        const accessMode = definition.kind === "executable" && platform !== "win32" && process.platform !== "win32"
-          ? constants.R_OK | constants.X_OK : constants.R_OK;
+        const accessMode = platformAdapter?.executableAccessMode(definition.kind) ?? constants.R_OK;
         await access(packagedPath, accessMode);
         const info = await stat(packagedPath);
         const actualHash = await sha256File(packagedPath);
