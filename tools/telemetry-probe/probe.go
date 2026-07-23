@@ -23,6 +23,7 @@ type telemetryResult struct {
 	gpuThermalMeasured     bool
 	gpuDetected            bool
 	systemCoversGPU        bool
+	gpuDevices             []gpuDeviceTelemetry
 	sources                []string
 	warnings               []string
 }
@@ -89,6 +90,19 @@ func (result *telemetryResult) merge(other telemetryResult) {
 	result.gpuThermalMeasured = result.gpuThermalMeasured || other.gpuThermalMeasured
 	result.gpuDetected = result.gpuDetected || other.gpuDetected
 	result.systemCoversGPU = result.systemCoversGPU || other.systemCoversGPU
+	for _, device := range other.gpuDevices {
+		found := false
+		for index := range result.gpuDevices {
+			if result.gpuDevices[index].UUID == device.UUID && device.UUID != "" {
+				result.gpuDevices[index] = device
+				found = true
+				break
+			}
+		}
+		if !found {
+			result.gpuDevices = append(result.gpuDevices, device)
+		}
+	}
 	result.sources = appendUnique(result.sources, other.sources...)
 	result.warnings = appendUnique(result.warnings, other.warnings...)
 }
@@ -124,6 +138,7 @@ func (result telemetryResult) payload() probePayload {
 		CPUTemperatureCelsius:  result.cpuTemperatureCelsius,
 		ThermalThrottlePercent: result.thermalThrottlePercent,
 		ThermalThrottleCounter: result.thermalThrottleCounter,
+		GPUDevices:             append([]gpuDeviceTelemetry{}, result.gpuDevices...),
 		Warnings:               append([]string{}, result.warnings...),
 	}
 }

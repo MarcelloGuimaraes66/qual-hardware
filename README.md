@@ -50,11 +50,11 @@ npm ci
 npm run desktop:package
 ```
 
-Cada artefato é compilado no sistema operacional de destino. A versão `0.3.0` produz:
+Cada artefato é compilado no sistema operacional de destino. A versão `0.4.0` produz:
 
-- Windows: `release/Qual-Hardware-0.3.0-windows-x64-portable.exe`.
-- macOS: `release/Qual-Hardware-0.3.0-macos-arm64.dmg`.
-- Ubuntu: `release/Qual-Hardware-0.3.0-linux-x64.AppImage` e `release/qual-hardware_0.3.0_amd64.deb`.
+- Windows: `release/Qual-Hardware-0.4.0-windows-x64-portable.exe`.
+- macOS: `release/Qual-Hardware-0.4.0-macos-arm64.dmg`.
+- Ubuntu: `release/Qual-Hardware-0.4.0-linux-x64.AppImage` e `release/qual-hardware_0.4.0_amd64.deb`.
 
 Os pacotes desktop contêm Electron, fontes e dependências dos relatórios, abrem uma janela própria e iniciam a API somente em uma porta aleatória de `127.0.0.1`. O usuário final não precisa instalar Node.js. O runtime pesado de calibração é um arquivo assinado `.qhruntime`, instalado separadamente pelo seletor nativo do próprio aplicativo. Os pacotes desktop internos não são assinados e podem exibir SmartScreen ou Gatekeeper; a publicação de cada GitHub Release é manual.
 
@@ -70,11 +70,11 @@ O catálogo ativo aparece nessa mesma janela e inclui faixas econômicas. A vers
 
 Apple Silicon é uma opção explícita de plataforma. Os Macs usam memória unificada e não são tratados como se possuíssem VRAM NVIDIA dedicada. O Perceptrum macOS e o AiQ/Qwen local participam com CPU decode até uma calibração comprovar aceleração diferente. O catálogo inclui o MacBook Pro M4 Max de 36 GB deste laboratório como perfil de âncora, sem atribuir seus resultados a outro Mac.
 
-O botão destacado **BAIXAR RELATÓRIO PDF** gera `qual-hardware-recomendacoes.pdf` com a estrutura do relatório comparativo original: narrativa, três configurações, outras máquinas, carga e três propostas completas. O PDF principal não contém o anexo neutro nem uma Parte II. A auditoria extensa e as especificações detalhadas permanecem no XLSX/JSON; os requisitos sem marca ficam no anexo neutro separado. O XLSX inclui a aba **Especificações detalhadas** e o JSON usa `capacity-recommendation-export/6.0.0` com `componentTechnicalSpecifications`.
+O botão destacado **BAIXAR RELATÓRIO PDF** gera `qual-hardware-recomendacoes.pdf` com a estrutura do relatório comparativo original: narrativa, três configurações, outras máquinas, carga e três propostas completas. O PDF principal não contém o anexo neutro nem uma Parte II. A auditoria extensa e as especificações detalhadas permanecem no XLSX/JSON; os requisitos sem marca ficam no anexo neutro separado. O XLSX inclui a aba **Especificações detalhadas** e o JSON usa `capacity-recommendation-export/7.0.0` com `componentTechnicalSpecifications`.
 
 Os botões **ANEXO DOCX/PDF/JSON** ficam recolhidos na área **Documentos para licitação - anexo neutro separado**. Eles geram outro documento, sem preço, vendedor, fabricante, modelo, SKU, MPN ou URL comercial. Esse anexo não é o relatório de recomendações. Ele informa método de comprovação, aceite, quantidade por nó, quantidade do projeto e risco de direcionamento. Enquanto benchmarks, calibrações físicas, especificações oficiais ou concorrência forem insuficientes, recebe a marca **NÃO UTILIZAR COMO ESPECIFICAÇÃO DE AQUISIÇÃO**. Consulte `docs/PROCUREMENT_NEUTRAL_SPECIFICATIONS.md` e `docs/TR_TECHNICAL_ANNEX_GUIDE.md`.
 
-O SQLite v9 preserva integralmente v1–v8 e registra observações imutáveis no nível de cada campo oficial. A resolução mantém autoridade, parser, SKU/MPN, valor original e normalizado, unidade, URL, data, localização da evidência, hash e conflitos, sem promover um valor legado só porque o componente possui um link genérico. Antes da primeira migração persistente para v9, o aplicativo cria uma cópia SQLite consistente no subdiretório `schema-backups`. Dados sem evidência de campo continuam visíveis como legados/ambíguos e não liberam contratação. Somente `validated_local` e `extrapolated_high` aparecem como aptos para aquisição; as demais opções ficam separadas como planejamento ou referência.
+O SQLite v10 preserva integralmente v1–v9, registra observações imutáveis no nível de cada campo oficial e acrescenta topologia multi-dispositivo, evidência por CPU/GPU, fronteiras de capacidade e planos de frota. A resolução mantém autoridade, parser, SKU/MPN, valor original e normalizado, unidade, URL, data, localização da evidência, hash e conflitos, sem promover um valor legado só porque o componente possui um link genérico. Antes da primeira migração persistente para v10, o aplicativo cria uma cópia SQLite consistente no subdiretório `schema-backups`. Dados sem evidência de campo continuam visíveis como legados/ambíguos e não liberam contratação. Somente `validated_local` e `extrapolated_high` aparecem como aptos para aquisição; as demais opções ficam separadas como planejamento ou referência.
 
 A primeira fotografia oficial revisada contém dados determinísticos dos SKUs exatos **Intel Core Ultra 9 285K** e **NVIDIA GeForce RTX 5090**. Ela não é apresentada como cobertura de todo o mercado: o processador Intel já satisfaz o perfil de completude técnica atual; a GPU NVIDIA permanece incompleta nos campos oficiais ainda não publicados/coletados. AMD e os demais componentes continuam visíveis e bloqueados até seus conectores e evidências por campo serem concluídos. Especificação de fabricante e benchmark de desempenho são gates independentes.
 

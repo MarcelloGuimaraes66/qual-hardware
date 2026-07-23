@@ -55,7 +55,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await reopenedStore.close();
   });
 
-  it("keeps schema v9 while storing all autonomous session states as append-only events", async () => {
+  it("keeps schema v10 while storing all autonomous session states as append-only events", async () => {
     const directory = await mkdtemp(join(tmpdir(), "qual-hardware-calibration-extension-"));
     cleanupDirectories.push(directory);
     const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
@@ -73,17 +73,62 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await store.close();
 
     const database = new DatabaseSync(databasePath, { readOnly: true });
-    expect((database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(9);
+    expect((database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(10);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_sessions").get() as { count: number }).count).toBe(0);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_sessions_v2").get() as { count: number }).count).toBe(1);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_session_events").get() as { count: number }).count).toBe(3);
-    expect((database.prepare("SELECT extension_version FROM calibration_extension_metadata WHERE singleton=1").get() as { extension_version: number }).extension_version).toBe(2);
+    expect((database.prepare("SELECT extension_version FROM calibration_extension_metadata WHERE singleton=1").get() as { extension_version: number }).extension_version).toBe(3);
     for (const table of ["calibration_checkpoints", "calibration_session_lineage", "calibration_device_identities",
       "measured_system_identities", "calibration_run_provenance", "calibration_import_batches",
       "calibration_import_items", "calibration_export_events", "calibration_collection_snapshots"]) {
       expect(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)).toBeTruthy();
     }
     database.close();
+  });
+
+  it("backs up and migrates the v9 tier constraint without losing rows", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-v9-tier-migration-"));
+    cleanupDirectories.push(directory);
+    const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
+    const first = new SqlitePlannerStore(databasePath);
+    await first.close();
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec(`
+      DROP INDEX IF EXISTS calibration_tier_results_run_idx;
+      DROP TABLE calibration_tier_results;
+      CREATE TABLE calibration_tier_results (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES calibration_runs_v2(id),
+        tier INTEGER NOT NULL CHECK (tier BETWEEN 1 AND 4096),
+        repetition INTEGER CHECK (repetition BETWEEN 1 AND 3),
+        phase TEXT NOT NULL,
+        result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+        completed_at TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX calibration_tier_results_run_idx
+        ON calibration_tier_results(run_id,tier,repetition,phase);
+      INSERT INTO calibration_runs_v2
+        (id,run_digest,run_json,completed_at,recorded_at)
+      VALUES
+        ('legacy-run','legacy-run-digest','{}','2026-07-23T00:00:00.000Z','2026-07-23T00:00:00.000Z');
+      INSERT INTO calibration_tier_results
+        (id,run_id,tier,repetition,phase,result_json,completed_at)
+      VALUES
+        ('legacy-tier','legacy-run',4096,1,'legacy','{}','2026-07-23T00:00:00.000Z');
+      PRAGMA user_version=9;
+    `);
+    legacy.close();
+
+    const migrated = new SqlitePlannerStore(databasePath);
+    await migrated.close();
+    const check = new DatabaseSync(databasePath);
+    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(10);
+    const tierSql = (check.prepare("SELECT sql FROM sqlite_master WHERE name='calibration_tier_results'").get() as { sql: string }).sql;
+    expect(tierSql).toContain("1000000");
+    expect((check.prepare("SELECT tier FROM calibration_tier_results WHERE id='legacy-tier'").get() as { tier: number }).tier).toBe(4096);
+    expect((check.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check).toBe("ok");
+    check.close();
+    expect(await readdir(join(directory, "schema-backups"))).toHaveLength(1);
   });
 
   it("backs up and transactionally migrates the legacy v2 session-state constraint", async () => {
@@ -185,7 +230,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await store.close();
     const backups = await readdir(join(directory, "schema-backups"));
     expect(backups).toHaveLength(1);
-    expect(backups[0]).toMatch(/^qual-hardware-pre-calibration-extension-.*-[0-9a-f-]{36}\.sqlite$/);
+    expect(backups[0]).toMatch(/^qual-hardware-pre-v10-.*-[0-9a-f-]{36}\.sqlite$/);
     const backup = new DatabaseSync(join(directory, "schema-backups", backups[0]!), { readOnly: true });
     expect(Object.values(backup.prepare("PRAGMA integrity_check").get() as Record<string, unknown>)[0]).toBe("ok");
     expect((backup.prepare("SELECT value FROM preserved_user_data WHERE id='one'").get() as { value: string }).value).toBe("keep");

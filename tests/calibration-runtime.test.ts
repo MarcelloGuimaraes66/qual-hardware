@@ -178,7 +178,7 @@ describe("offline calibration runtime manifest", () => {
     expect(disabled.reasons).toContain("feature-mode:disabled:full-disabled");
   });
 
-  it("ships only the v2 manifest contract", async () => {
+  it("ships only the v3 manifest contract", async () => {
     const manifest = JSON.parse(await readFile(join(projectRoot, "resources/calibration/runtime-manifest.json"), "utf8")) as MutableManifest;
     expect(manifest.schemaVersion).toBe(CALIBRATION_RUNTIME_MANIFEST_VERSION);
     expect(manifest.assets).toHaveLength(9);

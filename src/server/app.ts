@@ -602,7 +602,7 @@ export function createApp(
     architecture: process.arch,
     processId: process.pid,
     storage: store.storageKind,
-    sqliteSchemaVersion: 9,
+    sqliteSchemaVersion: 10,
     databasePath: options.diagnostics?.databasePath ?? null,
     logDirectory: options.diagnostics?.logDirectory ?? null,
     catalog: catalogUpdates.status,
@@ -1017,7 +1017,9 @@ export function createApp(
       return context.json({ error: "calibration_target_hardware_required_for_qualification" }, 422);
     }
     const catalog = await store.getCatalog();
-    const advancedTelemetry = request.mode !== "quick" || request.advancedTelemetry;
+    // Capacity evidence always uses complete telemetry. The request field is
+    // retained only so older clients remain wire-compatible.
+    const advancedTelemetry = true;
     const targetHardware = request.targetHardwareTemplateId
       ? catalog.find((item) => item.id === request.targetHardwareTemplateId) ?? null : null;
     const plan = createCalibrationPlan(scenario.scenario, request.mode, request.targetHardwareTemplateId);

@@ -18,6 +18,16 @@ export interface CalibrationHardwareTelemetrySummary {
   gpuPowerWatts: TelemetryMetricSummary | null;
   cpuTemperatureCelsius: TelemetryMetricSummary | null;
   thermalThrottlePercent: TelemetryMetricSummary | null;
+  gpuDevices?: Array<{
+    deviceId: string;
+    index: number;
+    name: string;
+    utilizationPercent: TelemetryMetricSummary | null;
+    memoryUsedBytes: TelemetryMetricSummary | null;
+    temperatureCelsius: TelemetryMetricSummary | null;
+    powerWatts: TelemetryMetricSummary | null;
+    thermalThrottlePercent: TelemetryMetricSummary | null;
+  }>;
 }
 
 export interface HardwareTelemetrySample {
@@ -31,6 +41,16 @@ export interface HardwareTelemetrySample {
   probeThermalEvidence?: ProbeThermalEvidence;
   approvedThermalEvidence?: boolean;
   diagnosticProvider?: "nvidia-smi-diagnostic" | "operating-system";
+  gpuDevices?: Array<{
+    deviceId: string;
+    index: number;
+    name: string;
+    utilizationPercent?: number;
+    memoryUsedBytes?: number;
+    temperatureCelsius?: number;
+    powerWatts?: number;
+    thermalThrottlePercent?: number;
+  }>;
 }
 
 const percentageSchema = z.number().finite().min(0).max(100);
@@ -54,6 +74,17 @@ const telemetryProbePayloadSchema = z.object({
   cpuTemperatureCelsius: temperatureSchema.optional(),
   thermalThrottlePercent: percentageSchema.optional(),
   thermalThrottleCounter: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  gpuDevices: z.array(z.object({
+    index: z.number().int().nonnegative().max(1024),
+    uuid: z.string().min(1).max(240),
+    pciBusId: z.string().max(160),
+    name: z.string().min(1).max(500),
+    utilizationPercent: percentageSchema.optional(),
+    memoryUsedBytes: z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    temperatureCelsius: temperatureSchema.optional(),
+    powerWatts: z.number().finite().min(0).max(1_000_000).optional(),
+    thermalThrottlePercent: percentageSchema.optional(),
+  }).strict()).max(1024).optional(),
   warnings: z.array(z.string().min(1).max(200)).max(64),
 }).strict();
 
@@ -123,6 +154,18 @@ export function parseApprovedTelemetryProbe(output: string): HardwareTelemetrySa
       ...(parsed.cpuTemperatureCelsius === undefined ? {} : { cpuTemperatureCelsius: parsed.cpuTemperatureCelsius }),
       ...(parsed.thermalThrottlePercent === undefined ? {} : { thermalThrottlePercent: parsed.thermalThrottlePercent }),
       ...(parsed.thermalThrottleCounter === undefined ? {} : { thermalThrottleCounter: parsed.thermalThrottleCounter }),
+      ...(parsed.gpuDevices === undefined ? {} : {
+        gpuDevices: parsed.gpuDevices.map((device) => ({
+          deviceId: device.uuid || device.pciBusId || `gpu:${device.index}`,
+          index: device.index,
+          name: device.name,
+          ...(device.utilizationPercent === undefined ? {} : { utilizationPercent: device.utilizationPercent }),
+          ...(device.memoryUsedBytes === undefined ? {} : { memoryUsedBytes: device.memoryUsedBytes }),
+          ...(device.temperatureCelsius === undefined ? {} : { temperatureCelsius: device.temperatureCelsius }),
+          ...(device.powerWatts === undefined ? {} : { powerWatts: device.powerWatts }),
+          ...(device.thermalThrottlePercent === undefined ? {} : { thermalThrottlePercent: device.thermalThrottlePercent }),
+        })),
+      }),
       probeThermalEvidence: evidence,
       approvedThermalEvidence: evidence === "measured",
     };
@@ -190,6 +233,14 @@ export class CalibrationHardwareTelemetrySampler {
         : this.samples.some((sample) => sample.diagnosticProvider === "operating-system")
           ? "operating-system"
           : "unavailable";
+    const deviceSamples = new Map<string, NonNullable<HardwareTelemetrySample["gpuDevices"]>>();
+    for (const sample of this.samples) {
+      for (const device of sample.gpuDevices ?? []) {
+        const samples = deviceSamples.get(device.deviceId) ?? [];
+        samples.push(device);
+        deviceSamples.set(device.deviceId, samples);
+      }
+    }
     return {
       provider,
       sampleCount: this.samples.length,
@@ -199,6 +250,21 @@ export class CalibrationHardwareTelemetrySampler {
       gpuPowerWatts: summary(values("gpuPowerWatts")),
       cpuTemperatureCelsius: summary(values("cpuTemperatureCelsius")),
       thermalThrottlePercent: summary(values("thermalThrottlePercent")),
+      gpuDevices: [...deviceSamples.entries()].map(([deviceId, samples]) => ({
+        deviceId,
+        index: samples[0]?.index ?? 0,
+        name: samples[0]?.name ?? deviceId,
+        utilizationPercent: summary(samples.flatMap((sample) =>
+          sample.utilizationPercent === undefined ? [] : [sample.utilizationPercent])),
+        memoryUsedBytes: summary(samples.flatMap((sample) =>
+          sample.memoryUsedBytes === undefined ? [] : [sample.memoryUsedBytes])),
+        temperatureCelsius: summary(samples.flatMap((sample) =>
+          sample.temperatureCelsius === undefined ? [] : [sample.temperatureCelsius])),
+        powerWatts: summary(samples.flatMap((sample) =>
+          sample.powerWatts === undefined ? [] : [sample.powerWatts])),
+        thermalThrottlePercent: summary(samples.flatMap((sample) =>
+          sample.thermalThrottlePercent === undefined ? [] : [sample.thermalThrottlePercent])),
+      })),
     };
   }
 

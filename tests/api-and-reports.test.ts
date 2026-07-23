@@ -54,7 +54,7 @@ describe("Qual Hardware API and reports", () => {
     expect(json.headers.get("content-type")).toContain("application/json");
     expect(json.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-relatorio-comercial-e-neutro.json"');
     const jsonReport = await json.json() as { schemaVersion: string; recommendations: CapacityRecommendation[]; executiveNarrative: { paragraphs: string[]; cautions: string[] }; qualifiedOptions: unknown[]; planningOptions: unknown[]; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string; requirements: unknown[] } }> };
-    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/6.0.0");
+    expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/7.0.0");
     expect(jsonReport.recommendations.map((item) => item.policy)).toEqual(["minimum", "recommended", "n_plus_one"]);
     expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("FPS de leitura RTSP");
     expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("AiQ/Qwen local");
@@ -123,7 +123,7 @@ describe("Qual Hardware API and reports", () => {
     expect(Array.from(spreadsheetBytes.slice(0, 2))).toEqual([0x50, 0x4b]);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(spreadsheetBytes.buffer);
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Qualified Options", "Planning Only", "Commercial Reference", "Detailed Specifications", "Neutral TR Specification", "TR Compliance Matrix", "Market Competition", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Fleet Plan", "Qualified Options", "Planning Only", "Commercial Reference", "Detailed Specifications", "Neutral TR Specification", "TR Compliance Matrix", "Market Competition", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
     expect(workbook.getWorksheet("Executive Summary")!.getCell("B2").value).toContain("RTSP");
     const configurations = workbook.getWorksheet("3 Configurations")!;
     expect(configurations.rowCount).toBe(4);

@@ -1,18 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import {
+  calibrationProcessorGroups,
   calibrationHardwareMatchesTemplate,
   detectCalibrationHardware,
 } from "../src/server/calibrationHardware.js";
 
 describe("calibration hardware preflight", () => {
+  it.each([
+    { logicalProcessors: 24, groupSizes: [24] },
+    { logicalProcessors: 96, groupSizes: [64, 32] },
+    { logicalProcessors: 192, groupSizes: [64, 64, 64] },
+    { logicalProcessors: 384, groupSizes: [64, 64, 64, 64, 64, 64] },
+  ])("models every Windows processor group for $logicalProcessors logical processors", ({ logicalProcessors, groupSizes }) => {
+    const groups = calibrationProcessorGroups(logicalProcessors);
+    expect(groups.map((group) => group.logicalProcessorCount)).toEqual(groupSizes);
+    expect(groups.reduce((sum, group) => sum + group.logicalProcessorCount, 0)).toBe(logicalProcessors);
+  });
+
   it("detects the local machine without exposing its hostname or credentials", async () => {
     const detected = await detectCalibrationHardware();
-    expect(detected.schemaVersion).toBe("qual-hardware-calibration-hardware/1.0.0");
+    expect(detected.schemaVersion).toBe("qual-hardware-calibration-hardware/2.0.0");
     expect(detected.cpuModel.length).toBeGreaterThan(0);
     expect(detected.logicalCores).toBeGreaterThan(0);
     expect(detected.physicalCores).toBeGreaterThan(0);
     expect(detected.ramBytes).toBeGreaterThan(0);
+    expect(detected.cpuPackages?.length).toBeGreaterThan(0);
+    expect(detected.processorGroups?.length).toBeGreaterThan(0);
+    expect(detected.numaNodes?.length).toBeGreaterThan(0);
+    expect(detected.cpuPackages?.reduce((sum, item) => sum + item.physicalCores, 0)).toBe(detected.physicalCores);
+    for (const device of detected.gpuDevices ?? []) {
+      expect(device.id.length).toBeGreaterThan(0);
+      expect(["compute", "media_only", "display_only", "unavailable"]).toContain(device.classification);
+    }
     expect(["windows", "macos", "ubuntu"]).toContain(detected.operatingSystem);
     expect(JSON.stringify(detected)).not.toMatch(/hostname|credential|password/i);
     for (const link of detected.networkLinks) {

@@ -14,6 +14,7 @@ import type {
 } from "../shared/types.js";
 import {
   AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
+  CALIBRATION_COMPUTE_EVIDENCE_VERSION,
   CALIBRATION_PLAN_VERSION,
   CALIBRATION_KERNEL_VERSION,
   PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
@@ -70,6 +71,16 @@ function calibrationRunEligible(
   const variability = capacities.length === 3
     ? (Math.max(...capacities) - Math.min(...capacities)) / Math.max(1, [...capacities].sort((a, b) => a - b)[1]!) * 100
     : Number.POSITIVE_INFINITY;
+  const deviceEvidenceComplete = compute?.schemaVersion !== CALIBRATION_COMPUTE_EVIDENCE_VERSION ||
+    (compute.allocation.allEligibleDevicesReceivedLoad &&
+      compute.allocation.allLoadedDevicesHaveTelemetry &&
+      compute.devices.filter((device) => device.classification === "compute")
+        .every((device) => device.receivedLoad && device.telemetryMeasured));
+  const boundaryEvidenceComplete = compute?.schemaVersion !== CALIBRATION_COMPUTE_EVIDENCE_VERSION ||
+    (run.capacityBound === "exact" &&
+      run.capacityBoundary?.adjacentBoundaryConfirmed === true &&
+      run.capacityBoundary.highestPassingCameraCount !== null &&
+      run.capacityBoundary.firstFailingCameraCount === run.capacityBoundary.highestPassingCameraCount + 1);
   return run.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION &&
     (!compatibility || (run.kernelVersion === compatibility.kernelVersion &&
       run.runtimeManifestHash === compatibility.runtimeManifestHash)) &&
@@ -95,6 +106,7 @@ function calibrationRunEligible(
     compute.gpu.inferenceBackend !== "unavailable" && compute.gpu.mediaBackend !== "unavailable" &&
     compute.gpu.deviceId !== null && compute.gpu.safeCameraCapacity !== null &&
     compute.combined.measured && compute.combined.safeCameraCapacity !== null &&
+    deviceEvidenceComplete && boundaryEvidenceComplete &&
     run.overallSafeCameraCapacity !== null && run.overallSafeCameraCapacity === Math.min(
       compute.cpu.safeCameraCapacity, compute.gpu.safeCameraCapacity, compute.combined.safeCameraCapacity,
     ) &&
@@ -291,15 +303,23 @@ export function createCalibrationPlan(
     kernelVersion: CALIBRATION_KERNEL_VERSION,
     strategy: "adaptive",
     workloadProfile,
-    cameraTiers: [1, 4, 8, 16, 32, 64, 128, 256, 512, 1_024, 2_048, 4_096],
-    discovery: quick
-      ? { stabilizationSeconds: 10, sampleSeconds: 20 }
-      : validation
-        ? { stabilizationSeconds: 5, sampleSeconds: 10 }
-        : { stabilizationSeconds: 30, sampleSeconds: 90 },
+    // Compatibility field: the request contributes only the first probe. The
+    // completed run replaces this list with the adaptive search trace.
+    cameraTiers: [scenario.totalCameras],
+    discovery: {
+      ...(quick
+        ? { stabilizationSeconds: 10, sampleSeconds: 20 }
+        : validation
+          ? { stabilizationSeconds: 5, sampleSeconds: 10 }
+          : { stabilizationSeconds: 30, sampleSeconds: 90 }),
+      seedCameraCount: scenario.totalCameras,
+      generatorCameraLimit: 1_000_000,
+      confirmationRuns: mode === "qualification" ? 3 : 1,
+      operationalHeadroomPercent: 20,
+    },
     qualification: {
       repetitions: mode === "qualification" ? 3 : 1,
-      cooldownSeconds: mode === "qualification" ? 600 : 0,
+      cooldownSeconds: mode === "qualification" ? 1_800 : 0,
       maximumVariabilityPercent: 10,
     },
     targetHardwareTemplateId,
@@ -323,10 +343,10 @@ export function createCalibrationPlan(
           { name: "surge", durationSeconds: 345, loadPercent: 120 },
         ]
         : [
-          { name: "warmup", durationSeconds: 600, loadPercent: 100 },
-          { name: "ramp", durationSeconds: 1200, loadPercent: 100 },
-          { name: "sustained", durationSeconds: 1200, loadPercent: 100 },
-          { name: "surge", durationSeconds: 600, loadPercent: 120 },
+          { name: "warmup", durationSeconds: 1_800, loadPercent: 80 },
+          { name: "ramp", durationSeconds: 1_800, loadPercent: 100 },
+          { name: "sustained", durationSeconds: 23_400, loadPercent: 100 },
+          { name: "surge", durationSeconds: 1_800, loadPercent: 120 },
         ],
     sourceProfiles: scenario.cameraGroups.map((group) => ({ ...group.source })),
     // The currently packaged AiQ/Qwen Core path is fixed to one effective
@@ -342,7 +362,7 @@ export function createCalibrationPlan(
         ? "This ten-minute diagnostic is not commercial purchase evidence."
         : mode === "validation"
           ? "This sixty-minute engineering validation is not commercial purchase evidence."
-          : "Commercial qualification requires three repetitions, full runtime trust and no accelerated time scale.",
+          : "Commercial qualification requires three eight-hour production blocks, thirty-minute cooldowns, full runtime trust and no accelerated time scale.",
     ],
   };
 }
@@ -389,6 +409,11 @@ export function buildCapacityPredictions(
         confidenceClass: "A",
         safeCameraMinimum: Math.floor((exact.overallSafeCameraCapacity ?? 0) * 0.9),
         safeCameraMaximum: Math.floor(exact.overallSafeCameraCapacity ?? 0),
+        highestPassingCameraCount: exact.capacityBoundary?.highestPassingCameraCount ?? null,
+        firstFailingCameraCount: exact.capacityBoundary?.firstFailingCameraCount ?? null,
+        capacityBound: exact.capacityBound ?? null,
+        degradedSafeCameraMaximum: exact.computeEvidence?.schemaVersion === CALIBRATION_COMPUTE_EVIDENCE_VERSION
+          ? exact.computeEvidence.degraded.safeCameraCapacity : null,
         bottleneck: exact.bottleneck,
         reservePercent: 20,
         exactCalibrationRunId: exact.id,

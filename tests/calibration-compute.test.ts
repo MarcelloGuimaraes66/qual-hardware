@@ -3,10 +3,14 @@ import {
   expectedGpuInferenceBackend,
   ffmpegEncoder,
   ffmpegGpuInputArguments,
+  ffmpegGpuDeviceArguments,
   llamaComputeArguments,
+  llamaCpuTopologyArguments,
   parseLlamaGpuDevices,
   selectFfmpegGpuMediaBackend,
   selectLlamaGpuDevice,
+  selectLlamaGpuDevices,
+  weightedRoundRobin,
 } from "../src/server/calibrationCompute.js";
 
 describe("mandatory CPU and GPU calibration compute paths", () => {
@@ -36,6 +40,18 @@ describe("mandatory CPU and GPU calibration compute paths", () => {
     expect(ffmpegEncoder("cpu_only", "cuda_nvenc", "h265")).toEqual({
       encoder: "libx265", extraArguments: ["-preset", "ultrafast"],
     });
+  });
+
+  it("automatically divides CPU threads and enables NUMA distribution", () => {
+    expect(llamaCpuTopologyArguments({
+      logicalCores: 192,
+      numaNodes: [
+        { id: 0, processorGroupIds: [0, 1], logicalProcessorCount: 96, memoryBytes: 256 * 1024 ** 3, cpuPackageIds: ["CPU0"] },
+        { id: 1, processorGroupIds: [2, 3], logicalProcessorCount: 96, memoryBytes: 256 * 1024 ** 3, cpuPackageIds: ["CPU1"] },
+      ],
+    } as never, 4)).toEqual([
+      "--threads", "48", "--threads-batch", "48", "--numa", "distribute",
+    ]);
   });
 
   it("recognizes the MTL identifier emitted by llama.cpp on Apple Silicon", () => {
@@ -110,5 +126,55 @@ describe("mandatory CPU and GPU calibration compute paths", () => {
       .toBe("unavailable");
     expect(selectLlamaGpuDevice({ devices: [], expectedBackend: "cuda", gpuModel: "RTX 5090" })).toBeNull();
     expect(() => llamaComputeArguments("gpu_accelerated", null)).toThrow("calibration_gpu_inference_device_unavailable");
+  });
+
+  it("keeps every eligible GPU and distributes work by measured weight and queue pressure", () => {
+    const devices = selectLlamaGpuDevices({
+      devices: [
+        { id: "CUDA1", name: "NVIDIA RTX 4000", backend: "cuda" },
+        { id: "CUDA0", name: "NVIDIA RTX 6000", backend: "cuda" },
+        { id: "Vulkan0", name: "Intel Graphics", backend: "vulkan" },
+      ],
+      expectedBackend: "cuda",
+      gpuModel: "NVIDIA RTX 6000 + NVIDIA RTX 4000",
+    });
+    expect(devices.map((device) => device.id).sort()).toEqual(["CUDA0", "CUDA1"]);
+
+    const schedule = weightedRoundRobin([
+      { value: "CUDA0", weight: 2, queueDepth: 0 },
+      { value: "CUDA1", weight: 1, queueDepth: 0 },
+    ], 12);
+    expect(schedule.filter((device) => device === "CUDA0")).toHaveLength(8);
+    expect(schedule.filter((device) => device === "CUDA1")).toHaveLength(4);
+    expect(weightedRoundRobin([
+      { value: "CUDA0", weight: 2, queueDepth: 9 },
+      { value: "CUDA1", weight: 1, queueDepth: 0 },
+    ], 10).filter((device) => device === "CUDA1").length).toBeGreaterThan(5);
+  });
+
+  it.each([1, 2, 4, 8])("keeps all %i eligible GPUs addressable and scheduled", (gpuCount) => {
+    const devices = selectLlamaGpuDevices({
+      devices: Array.from({ length: gpuCount }, (_, index) => ({
+        id: `CUDA${index}`,
+        name: `NVIDIA RTX 6000 GPU ${index}`,
+        backend: "cuda" as const,
+      })),
+      expectedBackend: "cuda",
+      gpuModel: "NVIDIA RTX 6000",
+    });
+    expect(devices).toHaveLength(gpuCount);
+    const schedule = weightedRoundRobin(devices.map((device) => ({
+      value: device.id,
+      weight: 1,
+      queueDepth: 0,
+    })), gpuCount * 4);
+    for (const device of devices) expect(schedule).toContain(device.id);
+  });
+
+  it("pins FFmpeg decode and encode to an individual NVIDIA GPU", () => {
+    expect(ffmpegGpuDeviceArguments("cuda_nvenc", 2)).toEqual({
+      inputArguments: ["-hwaccel", "cuda", "-hwaccel_device", "2"],
+      encoderArguments: ["-gpu", "2"],
+    });
   });
 });

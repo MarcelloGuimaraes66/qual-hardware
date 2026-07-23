@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests use Node.js `24.18.0`, npm `11.16.0` and Go `1.26.5` for the same typecheck, complete test suite, build, unpacked package and packaged smoke on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates native architecture, desktop-only ASAR, random loopback origin, health, CSP, sandbox, the automatic catalog channel, 22-profile fallback catalog, Windows/Ubuntu/macOS recommendation targets, SQLite v9, reports, single-instance behavior, persistence and worker cleanup. On Windows it also launches the real portable bootstrap.
+Pull requests use Node.js `24.18.0`, npm `11.16.0` and Go `1.26.5` for the same typecheck, complete test suite, build, unpacked package and packaged smoke on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates native architecture, desktop-only ASAR, random loopback origin, health, CSP, sandbox, the automatic catalog channel, 22-profile fallback catalog, Windows/Ubuntu/macOS recommendation targets, SQLite v10, reports, single-instance behavior, persistence and worker cleanup. On Windows it also launches the real portable bootstrap.
 
 ```sh
 npm ci
@@ -57,4 +57,4 @@ Run `PERCEPTRUM_SOURCE_ROOT=/path/to/perceptrum npm run audit:source` whenever P
 - PDF, XLSX, JSON, DOCX and neutral PDF/JSON are generated from the same decorated recommendation set. Every format preserves quantities, proof method, acceptance criteria, status and market gate.
 - A specification is official only when an immutable field observation resolves to the exact SKU/MPN through a deterministic parser. Component-level links and legacy JSON values remain ambiguous.
 - The primary PDF contains only the complete original comparative report, with alternatives and all six blocks of every proposal. It must not contain a Part II or the neutral annex. Internal audit and detailed specifications stay in XLSX/JSON, while neutral requirements stay in their clearly separated annex. Visual review and searchable-text extraction are required.
-- SQLite v9 migration must preserve every v1–v8 row and create a consistent pre-migration backup before opening a persistent older database.
+- SQLite v10 migration must preserve every v1–v9 row and create a consistent pre-migration backup before opening a persistent older database.

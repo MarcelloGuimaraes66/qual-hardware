@@ -103,7 +103,7 @@ describe("calibration runtime asset provisioning", () => {
     const applied = await applyCalibrationRuntimeProvisioning({ repositoryRoot: root, intake, diskStatus: ampleDiskStatus });
     expect(applied.targetRoot).toBe(join(root, "resources/calibration/linux-x64"));
     expect(applied.targetBackupPath).toBeNull();
-    expect(JSON.parse(await readFile(applied.backupPath, "utf8"))).toMatchObject({ schemaVersion: "qual-hardware-calibration-runtime-manifest/2.0.0" });
+    expect(JSON.parse(await readFile(applied.backupPath, "utf8"))).toMatchObject({ schemaVersion: "qual-hardware-calibration-runtime-manifest/3.0.0" });
     expect((await readdir(join(root, "resources/calibration"))).some((entry) => entry.startsWith(".staging-"))).toBe(false);
     const status = await inspectCalibrationRuntime({ resourceRoot: root, platform: "linux", architecture: "x64", env: { PATH: "" }, featureMode: "full" });
     expect(status.assets.every((asset) => asset.status === "verified")).toBe(true);

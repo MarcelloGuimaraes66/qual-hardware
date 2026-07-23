@@ -13,11 +13,17 @@ export interface CalibrationDurationEstimate {
 
 const REQUIRED_COMPUTE_MODE_COUNT = 2;
 
+function discoveryProbeEstimate(plan: CalibrationPlan): number {
+  const limit = plan.discovery.generatorCameraLimit ?? plan.scenario.totalCameras;
+  return Math.max(4, Math.ceil(Math.log2(Math.max(2, limit))) + 2 +
+    (plan.discovery.confirmationRuns ?? 1) * 2);
+}
+
 export function estimateCalibrationDuration(plan: CalibrationPlan): CalibrationDurationEstimate {
   const phaseSeconds = plan.phases.reduce((sum, phase) => sum + phase.durationSeconds, 0) * REQUIRED_COMPUTE_MODE_COUNT;
   const discoveryPerTier = (plan.discovery.stabilizationSeconds + plan.discovery.sampleSeconds) * REQUIRED_COMPUTE_MODE_COUNT;
   const discoveryMinimum = discoveryPerTier;
-  const discoveryMaximum = discoveryPerTier * plan.cameraTiers.length;
+  const discoveryMaximum = discoveryPerTier * discoveryProbeEstimate(plan);
   if (plan.mode === "quick") {
     const expectedSeconds = discoveryMinimum + phaseSeconds;
     return {
@@ -29,11 +35,10 @@ export function estimateCalibrationDuration(plan: CalibrationPlan): CalibrationD
   const qualification = phaseSeconds * plan.qualification.repetitions +
     plan.qualification.cooldownSeconds * (plan.qualification.repetitions - 1);
   const expectedSeconds = discoveryMaximum * 0.6 + qualification;
-  const worstQualificationRetries = qualification * plan.cameraTiers.length;
   return {
     minimumSeconds: Math.max(1, Math.floor(discoveryMinimum + qualification)),
     expectedSeconds: Math.max(1, Math.ceil(expectedSeconds)),
-    maximumSeconds: Math.max(1, Math.ceil(discoveryMaximum + worstQualificationRetries)),
+    maximumSeconds: Math.max(1, Math.ceil(discoveryMaximum + qualification * 1.1)),
   };
 }
 
@@ -149,7 +154,7 @@ export class CalibrationProgressTracker {
   }
 
   private segmentBudget(phase: string): number {
-    if (phase === "discovery") return 28 / Math.max(1, this.plan.cameraTiers.length * REQUIRED_COMPUTE_MODE_COUNT);
+    if (phase === "discovery") return 28 / Math.max(1, discoveryProbeEstimate(this.plan) * REQUIRED_COMPUTE_MODE_COUNT);
     if (["warmup", "ramp", "sustained", "surge"].includes(phase)) {
       return 65 / Math.max(1, this.plan.phases.length * this.plan.qualification.repetitions * REQUIRED_COMPUTE_MODE_COUNT);
     }

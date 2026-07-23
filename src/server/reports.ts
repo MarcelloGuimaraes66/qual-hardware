@@ -300,6 +300,37 @@ export async function xlsxReport({ scenario, recommendations: input, components 
     };
   }));
 
+  appendSheet(workbook, "Fleet Plan", recommendations.map((recommendation) => {
+    const design = recommendation.primary;
+    const fleet = design.fleetPlan;
+    return {
+      policy: recommendation.policy,
+      status: fleet?.status ?? "legacy_unavailable",
+      workloadSignature: fleet?.workloadSignature ?? null,
+      projectCameras: fleet?.projectCameraCount ?? scenario.scenario.totalCameras,
+      safeCamerasPerServer: fleet?.safeCamerasPerServer ?? null,
+      activeServers: fleet?.activeServers ?? design.activeNodeCount,
+      reserveServers: fleet?.reserveServers ?? design.nodeCount - design.activeNodeCount,
+      totalServers: fleet?.totalServers ?? design.nodeCount,
+      redundancyPolicy: fleet?.redundancyPolicy ?? null,
+      cpuSocketsPerServer: fleet?.perServer.cpuSockets ?? design.hardware.cpuSocketCount ?? 1,
+      physicalCoresPerServer: fleet?.perServer.physicalCores ?? design.hardware.physicalCores,
+      logicalCoresPerServer: fleet?.perServer.logicalCores ?? design.hardware.physicalCores,
+      gpuPerServer: fleet?.perServer.gpuCount ?? design.hardware.gpuCount,
+      ramGbPerServer: fleet ? Math.ceil(fleet.perServer.ramBytes / 1024 ** 3) : design.hardware.ramGb,
+      networkGbpsPerServer: fleet?.perServer.networkGbps ?? design.hardware.nicGbps,
+      totalCpuSockets: fleet?.totals.cpuSockets ?? null,
+      totalPhysicalCores: fleet?.totals.physicalCores ?? null,
+      totalGpu: fleet?.totals.gpuCount ?? null,
+      totalRamGb: fleet ? Math.ceil(fleet.totals.ramBytes / 1024 ** 3) : null,
+      totalNetworkGbps: fleet?.totals.networkGbps ?? null,
+      degradedSafeCamerasPerServer: fleet?.degradedSafeCamerasPerServer ?? null,
+      maximumAdditionalCameras: fleet?.maximumAdditionalCameras ?? design.maximumAdditionalCameras,
+      bottleneck: fleet?.bottleneck ?? design.bottleneck,
+      clusterPilotRequired: fleet?.status === "planning_only",
+    };
+  }));
+
   appendSheet(workbook, "Qualified Options", qualifiedOptions(recommendations).map((design, index) => ({
     costOrder: index + 1,
     hardware: design.hardware.name,
@@ -532,6 +563,7 @@ export async function xlsxReport({ scenario, recommendations: input, components 
     policy: recommendation.policy,
     proposal: POLICY_LABELS[recommendation.policy],
     node: node.nodeIndex,
+    representedNodes: node.representedNodeCount ?? 1,
     role: node.role,
     cameras: node.cameraGroups.reduce((sum, group) => sum + group.cameras, 0),
     groups: node.cameraGroups.map((group) => `${group.groupName}:${group.cameras}`).join("; "),

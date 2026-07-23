@@ -19,8 +19,9 @@ import type {
   RecommendationPolicy,
   RecommendationVariant,
   ResourceDemand,
+  FleetPlan,
 } from "../shared/types.js";
-import { WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
+import { FLEET_PLAN_VERSION, WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
 
 const RESOURCE_KEYS: Array<keyof ResourceDemand> = [
   "cpuCores",
@@ -443,6 +444,47 @@ function allocateGroups(
 ): NodeAllocation[] | null {
   const capacity = nodeCapacity(template);
   const effectiveCapacity = scaleDemand(capacity, utilizationLimit);
+  if (activeNodes > 256) {
+    const remainders = groups.map((group) => group.count % activeNodes).filter((value) => value > 0);
+    const boundaries = [...new Set([0, ...remainders, activeNodes])].sort((left, right) => left - right);
+    const compact: NodeAllocation[] = [];
+    for (let boundaryIndex = 0; boundaryIndex < boundaries.length - 1; boundaryIndex += 1) {
+      const start = boundaries[boundaryIndex]!;
+      const end = boundaries[boundaryIndex + 1]!;
+      if (end <= start) continue;
+      let demand = splitFixedDemand(fixed, activeNodes);
+      const cameraGroups: NodeAllocation["cameraGroups"] = [];
+      for (const group of groups) {
+        const cameras = Math.floor(group.count / activeNodes) + (start < group.count % activeNodes ? 1 : 0);
+        if (cameras === 0) continue;
+        demand = addDemand(demand, scaleDemand(group.perCamera, cameras));
+        cameraGroups.push({ groupId: group.groupId, groupName: group.groupName, cameras });
+      }
+      if (ratioFor(demand, effectiveCapacity).value > 1 + 1e-9) return null;
+      const utilization = Object.fromEntries(RESOURCE_KEYS.map((key) =>
+        [key, capacity[key] > 0 ? demand[key] / capacity[key] : 0])) as Record<keyof ResourceDemand, number>;
+      compact.push({
+        nodeIndex: start + 1,
+        representedNodeCount: end - start,
+        role: "active",
+        cameraGroups,
+        demand,
+        utilization,
+      });
+    }
+    const reserveNodes = totalNodes - activeNodes;
+    if (reserveNodes > 0) {
+      compact.push({
+        nodeIndex: activeNodes + 1,
+        representedNodeCount: reserveNodes,
+        role: "reserve",
+        cameraGroups: [],
+        demand: emptyDemand(),
+        utilization: Object.fromEntries(RESOURCE_KEYS.map((key) => [key, 0])) as Record<keyof ResourceDemand, number>,
+      });
+    }
+    return compact;
+  }
   const allocations: NodeAllocation[] = Array.from({ length: totalNodes }, (_, index) => ({
     nodeIndex: index + 1,
     role: index < activeNodes ? "active" : "reserve",
@@ -451,34 +493,44 @@ function allocateGroups(
     utilization: Object.fromEntries(RESOURCE_KEYS.map((key) => [key, 0])) as Record<keyof ResourceDemand, number>,
   }));
 
-  const cameras = groups.flatMap((group) =>
-    Array.from({ length: group.count }, () => ({ group, demand: group.perCamera })),
-  ).sort((left, right) => {
-    const leftRatio = ratioFor(left.demand, effectiveCapacity).value;
-    const rightRatio = ratioFor(right.demand, effectiveCapacity).value;
-    return rightRatio - leftRatio;
-  });
-
-  for (const camera of cameras) {
-    let bestIndex = -1;
-    let bestRatio = Number.POSITIVE_INFINITY;
-    for (let index = 0; index < activeNodes; index += 1) {
-      const allocation = allocations[index];
-      if (!allocation) continue;
-      const nextDemand = addDemand(allocation.demand, camera.demand);
-      const ratio = ratioFor(nextDemand, effectiveCapacity).value;
-      if (ratio <= 1 && ratio < bestRatio) {
-        bestRatio = ratio;
-        bestIndex = index;
+  const orderedGroups = [...groups].sort((left, right) =>
+    ratioFor(right.perCamera, effectiveCapacity).value - ratioFor(left.perCamera, effectiveCapacity).value);
+  for (const group of orderedGroups) {
+    let remaining = group.count;
+    const candidates = allocations.slice(0, activeNodes).map((allocation, index) => {
+      let maximumFit = Number.POSITIVE_INFINITY;
+      for (const key of SIZING_RESOURCE_KEYS) {
+        if (group.perCamera[key] <= 0) continue;
+        maximumFit = Math.min(maximumFit, Math.floor(
+          Math.max(0, effectiveCapacity[key] - allocation.demand[key]) / group.perCamera[key],
+        ));
       }
+      return {
+        index,
+        allocation,
+        maximumFit: Number.isFinite(maximumFit) ? maximumFit : remaining,
+        currentRatio: ratioFor(allocation.demand, effectiveCapacity).value,
+      };
+    }).filter((candidate) => candidate.maximumFit > 0)
+      .sort((left, right) => left.currentRatio - right.currentRatio || right.maximumFit - left.maximumFit);
+    for (const [candidateIndex, candidate] of candidates.entries()) {
+      if (remaining <= 0) break;
+      const chunk = Math.min(
+        remaining,
+        candidate.maximumFit,
+        Math.max(1, Math.ceil(remaining / (candidates.length - candidateIndex))),
+      );
+      candidate.allocation.demand = addDemand(candidate.allocation.demand, scaleDemand(group.perCamera, chunk));
+      const existing = candidate.allocation.cameraGroups.find((entry) => entry.groupId === group.groupId);
+      if (existing) existing.cameras += chunk;
+      else candidate.allocation.cameraGroups.push({
+        groupId: group.groupId,
+        groupName: group.groupName,
+        cameras: chunk,
+      });
+      remaining -= chunk;
     }
-    if (bestIndex < 0) return null;
-    const allocation = allocations[bestIndex];
-    if (!allocation) return null;
-    allocation.demand = addDemand(allocation.demand, camera.demand);
-    const existing = allocation.cameraGroups.find((entry) => entry.groupId === camera.group.groupId);
-    if (existing) existing.cameras += 1;
-    else allocation.cameraGroups.push({ groupId: camera.group.groupId, groupName: camera.group.groupName, cameras: 1 });
+    if (remaining > 0) return null;
   }
 
   for (const allocation of allocations) {
@@ -487,6 +539,78 @@ function allocateGroups(
     }
   }
   return allocations;
+}
+
+function reserveServerCount(activeServers: number): number {
+  return activeServers <= 9 ? 1 : Math.max(2, Math.ceil(activeServers * 0.1));
+}
+
+function buildFleetPlan(input: {
+  scenario: CapacityScenario;
+  template: HardwareNodeTemplate;
+  prediction?: CapacityPrediction;
+  activeServers: number;
+  reserveServers: number;
+  bottleneck: keyof ResourceDemand;
+  maximumAdditionalCameras: number;
+  procurementEligibility: RecommendationAlternative["procurementEligibility"];
+}): FleetPlan {
+  const safeCamerasPerServer = input.prediction?.safeCameraMaximum ??
+    Math.max(1, Math.ceil(input.scenario.totalCameras / input.activeServers));
+  const totalServers = input.activeServers + input.reserveServers;
+  const cpuSockets = input.template.cpuSocketCount ?? 1;
+  const logicalCores = input.template.physicalCores;
+  const ramBytes = input.template.ramGb * 1024 ** 3;
+  const gpuVramBytes = input.template.gpuVramGbTotal > 0 ? input.template.gpuVramGbTotal * 1024 ** 3 : null;
+  const storageBytes = input.template.usableStorageTb * 1_000_000_000_000;
+  return {
+    schemaVersion: FLEET_PLAN_VERSION,
+    status: input.procurementEligibility === "blocked"
+      ? "blocked"
+      : totalServers > 1 ? "planning_only" : "single_node_validated",
+    workloadSignature: buildCalibrationWorkloadProfile(input.scenario).signature,
+    projectCameraCount: input.scenario.totalCameras,
+    safeCamerasPerServer,
+    activeServers: input.activeServers,
+    reserveServers: input.reserveServers,
+    totalServers,
+    redundancyPolicy: input.activeServers <= 9 ? "n_plus_one" : "ten_percent_minimum_two",
+    perServer: {
+      cpuSockets,
+      physicalCores: input.template.physicalCores,
+      logicalCores,
+      ramBytes,
+      gpuCount: input.template.gpuCount,
+      gpuVramBytes,
+      networkGbps: input.template.nicGbps,
+      storageBytes,
+    },
+    totals: {
+      cpuSockets: cpuSockets * totalServers,
+      physicalCores: input.template.physicalCores * totalServers,
+      logicalCores: logicalCores * totalServers,
+      ramBytes: ramBytes * totalServers,
+      gpuCount: input.template.gpuCount * totalServers,
+      gpuVramBytes: gpuVramBytes === null ? null : gpuVramBytes * totalServers,
+      networkGbps: input.template.nicGbps * totalServers,
+      storageBytes: storageBytes * totalServers,
+    },
+    bottleneck: input.prediction?.bottleneck ?? input.bottleneck,
+    maximumAdditionalCameras: input.maximumAdditionalCameras,
+    degradedSafeCamerasPerServer: input.prediction?.degradedSafeCameraMaximum ?? null,
+    assumptions: [
+      "Per-node capacity is valid only for the recorded workload signature, build, models and runtime.",
+      "Twenty percent operational headroom is already reserved inside each qualified node.",
+      "Fleet capacity is not extrapolated linearly from unmeasured GPU or CPU scaling.",
+    ],
+    requiredClusterPilotTests: totalServers > 1 ? [
+      "load_balancing",
+      "node_failure_and_recovery",
+      "gpu_failure_and_degraded_capacity",
+      "storage_and_network_saturation",
+      "database_recovery",
+    ] : [],
+  };
 }
 
 function estimateAdditionalCameras(
@@ -539,13 +663,18 @@ function evaluateTemplate(
   const adjustedCapacity = scaleDemand(capacity, utilizationLimit);
   const highest = ratioFor(aggregate, adjustedCapacity);
   let activeNodes = Math.max(1, Math.ceil(highest.value));
+  const calibratedCapacity = prediction?.safeCameraMaximum ?? null;
+  if (prediction?.procurementEligibility === "eligible" && calibratedCapacity !== null) {
+    activeNodes = Math.max(activeNodes, Math.ceil(scenario.totalCameras / calibratedCapacity));
+  }
   if (!Number.isFinite(activeNodes)) return null;
-  const reserveRequired = policy === "n_plus_one" || (policy === "recommended" && scenario.totalCameras >= 64);
-  let totalNodes = activeNodes + (reserveRequired ? 1 : 0);
+  let reserveNodes = reserveServerCount(activeNodes);
+  let totalNodes = activeNodes + reserveNodes;
 
   let allocations: NodeAllocation[] | null = null;
   for (let attempt = 0; attempt < 256; attempt += 1) {
-    totalNodes = activeNodes + (reserveRequired ? 1 : 0);
+    reserveNodes = reserveServerCount(activeNodes);
+    totalNodes = activeNodes + reserveNodes;
     if (scenario.constraints.maxNodes !== null && totalNodes > scenario.constraints.maxNodes) return null;
     allocations = allocateGroups(groups, fixed, template, activeNodes, totalNodes, utilizationLimit);
     if (allocations) break;
@@ -554,7 +683,6 @@ function evaluateTemplate(
   if (!allocations) return null;
 
   const activeAllocations = allocations.filter((allocation) => allocation.role === "active");
-  const calibratedCapacity = prediction?.safeCameraMaximum ?? null;
   if (prediction?.procurementEligibility === "eligible" && calibratedCapacity !== null &&
       activeAllocations.some((allocation) => allocation.cameraGroups.reduce((sum, group) => sum + group.cameras, 0) > calibratedCapacity)) {
     return null;
@@ -581,7 +709,9 @@ function evaluateTemplate(
   }
   if (!prediction || prediction.status === "reference_only") candidateWarnings.push("physical_calibration_or_comparable_public_evidence_required");
   else if (prediction.status.startsWith("extrapolated")) candidateWarnings.push(`capacity_${prediction.status}_not_physically_validated`);
-  if (reserveRequired && policy !== "n_plus_one") candidateWarnings.push("n_plus_one_required_for_64_or_more_cameras");
+  candidateWarnings.push(activeNodes <= 9
+    ? "automatic_n_plus_one_reserve"
+    : "automatic_ten_percent_reserve_minimum_two");
 
   const predictionEligibility = prediction?.procurementEligibility ?? (
     prediction?.status === "validated_local" || prediction?.status === "extrapolated_high"
@@ -597,6 +727,24 @@ function evaluateTemplate(
   if (procurementEligibility === "blocked") candidateWarnings.push("not_eligible_for_hardware_acquisition");
   if (procurementEligibility === "planning_only") candidateWarnings.push("planning_only_not_approved_for_hardware_acquisition");
 
+  const maximumAdditionalCameras = procurementEligibility === "blocked" ? 0 : estimateAdditionalCameras(
+    aggregate,
+    fixed,
+    template,
+    activeNodes,
+    utilizationLimit,
+    scenario.totalCameras,
+  );
+  const fleetPlan = buildFleetPlan({
+    scenario,
+    template,
+    ...(prediction ? { prediction } : {}),
+    activeServers: activeNodes,
+    reserveServers: reserveNodes,
+    bottleneck: worst.key,
+    maximumAdditionalCameras,
+    procurementEligibility,
+  });
   return {
     id: randomUUID(),
     variant: "balanced",
@@ -607,18 +755,12 @@ function evaluateTemplate(
     aggregateDemand: aggregate,
     headroomPercent,
     bottleneck: worst.key,
-    maximumAdditionalCameras: procurementEligibility === "blocked" ? 0 : estimateAdditionalCameras(
-        aggregate,
-        fixed,
-        template,
-        activeNodes,
-        utilizationLimit,
-        scenario.totalCameras,
-      ),
+    maximumAdditionalCameras,
     price,
     procurementEligibility,
     warnings: [...new Set(candidateWarnings)],
     ...(prediction ? { calibration: prediction } : {}),
+    fleetPlan,
   };
 }
 

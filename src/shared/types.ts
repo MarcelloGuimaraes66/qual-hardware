@@ -34,7 +34,12 @@ export const BENCHMARK_OBSERVATION_VERSION = "qual-hardware-benchmark-observatio
 export const COMPONENT_BUILD_VERSION = "qual-hardware-component-build/1.0.0" as const;
 export const EVIDENCE_CATALOG_VERSION = "qual-hardware-evidence-catalog/4.0.0" as const;
 export const CAPACITY_PREDICTION_VERSION = "qual-hardware-capacity-prediction/3.0.0" as const;
-export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/6.0.0" as const;
+export const CAPACITY_RECOMMENDATION_EXPORT_VERSION = "capacity-recommendation-export/7.0.0" as const;
+export const CALIBRATION_HARDWARE_VERSION = "qual-hardware-calibration-hardware/2.0.0" as const;
+export const CALIBRATION_COMPUTE_EVIDENCE_VERSION = "qual-hardware-calibration-compute-evidence/2.0.0" as const;
+export const CALIBRATION_RUNTIME_MANIFEST_VERSION = "qual-hardware-calibration-runtime-manifest/3.0.0" as const;
+export const FLEET_PLAN_VERSION = "qual-hardware-fleet-plan/1.0.0" as const;
+export const MAX_PROJECT_CAMERAS = 1_000_000 as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
 export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
 
@@ -118,7 +123,8 @@ export type CalibrationGpuMediaBackend =
   | "d3d11va_amf"
   | "vaapi"
   | "unavailable";
-export type CalibrationCapacityBound = "exact" | "at_least";
+export type CalibrationCapacityBound = "exact" | "at_least" | "uncertain";
+export type CalibrationGpuClassification = "compute" | "media_only" | "display_only" | "unavailable";
 export type CalibrationNetworkEvidence =
   | "loopback_measured_physical_link_unverified"
   | "loopback_measured_physical_link_spec_verified"
@@ -251,6 +257,9 @@ export interface HardwareNodeTemplate {
   cpuModel: string;
   cpuArchitecture?: string;
   physicalCores: number;
+  /** Additive topology fields. Legacy catalog entries are interpreted as one socket. */
+  cpuSocketCount?: number;
+  coresPerSocket?: number;
   /** Conservative sustained factor until a matching Perceptrum benchmark replaces it. */
   sustainedComputeFactor?: number;
   /** Explicit pipeline limits for thermally/power-constrained computers. */
@@ -510,10 +519,49 @@ export interface ComponentCostEstimate {
 
 export interface NodeAllocation {
   nodeIndex: number;
+  /** Number of identical nodes represented by this row in very large fleets. */
+  representedNodeCount?: number;
   role: "active" | "reserve";
   cameraGroups: Array<{ groupId: string; groupName: string; cameras: number }>;
   demand: ResourceDemand;
   utilization: Record<keyof ResourceDemand, number>;
+}
+
+export interface FleetPlan {
+  schemaVersion: typeof FLEET_PLAN_VERSION;
+  status: "single_node_validated" | "planning_only" | "blocked";
+  workloadSignature: string;
+  projectCameraCount: number;
+  safeCamerasPerServer: number;
+  activeServers: number;
+  reserveServers: number;
+  totalServers: number;
+  redundancyPolicy: "n_plus_one" | "ten_percent_minimum_two";
+  perServer: {
+    cpuSockets: number;
+    physicalCores: number;
+    logicalCores: number;
+    ramBytes: number;
+    gpuCount: number;
+    gpuVramBytes: number | null;
+    networkGbps: number;
+    storageBytes: number;
+  };
+  totals: {
+    cpuSockets: number;
+    physicalCores: number;
+    logicalCores: number;
+    ramBytes: number;
+    gpuCount: number;
+    gpuVramBytes: number | null;
+    networkGbps: number;
+    storageBytes: number;
+  };
+  bottleneck: CalibrationStage | keyof ResourceDemand;
+  maximumAdditionalCameras: number;
+  degradedSafeCamerasPerServer: number | null;
+  assumptions: string[];
+  requiredClusterPilotTests: string[];
 }
 
 export interface RecommendationAlternative {
@@ -540,6 +588,8 @@ export interface RecommendationAlternative {
   commercialReference?: CommercialRecommendationReference;
   procurementNeutralSpecification?: ProcurementNeutralSpecification;
   marketCompetitionAssessment?: MarketCompetitionAssessment;
+  /** Additive v7 multi-server plan. */
+  fleetPlan?: FleetPlan;
 }
 
 export interface CapacityRecommendation {
@@ -586,6 +636,10 @@ export interface HardwareFingerprint {
   aiqModel: string;
   aiqModelHash: string;
   inferenceBackend: string;
+  cpuPackages?: CalibrationCpuPackage[];
+  processorGroups?: CalibrationProcessorGroup[];
+  numaNodes?: CalibrationNumaNode[];
+  gpuDevices?: CalibrationGpuDevice[];
 }
 
 export interface CalibrationStageMetric {
@@ -650,6 +704,7 @@ export interface CalibrationResourceSummary {
   gpuTemperatureCelsius?: TelemetryMetricSummary | null;
   gpuPowerWatts?: TelemetryMetricSummary | null;
   cpuPowerWatts?: TelemetryMetricSummary | null;
+  gpuDeviceId?: string;
   [key: string]: string | TelemetryMetricSummary | null | undefined;
 }
 
@@ -660,6 +715,145 @@ export interface CalibrationProcessGroupSummary {
   residentMemoryBytes?: TelemetryMetricSummary | null;
   cumulativeCpuSeconds?: TelemetryMetricSummary | null;
   [key: string]: string | number | TelemetryMetricSummary | null | undefined;
+}
+
+export interface CalibrationCpuPackage {
+  id: string;
+  model: string;
+  physicalCores: number;
+  logicalCores: number;
+  processorGroupIds: number[];
+  numaNodeIds: number[];
+}
+
+export interface CalibrationProcessorGroup {
+  id: number;
+  logicalProcessorCount: number;
+  activeProcessorMask: string | null;
+}
+
+export interface CalibrationNumaNode {
+  id: number;
+  processorGroupIds: number[];
+  logicalProcessorCount: number;
+  memoryBytes: number | null;
+  cpuPackageIds: string[];
+}
+
+export interface CalibrationGpuDevice {
+  id: string;
+  uuid: string | null;
+  pciBusId: string | null;
+  index: number;
+  name: string;
+  vendor: GpuVendor;
+  driver: string;
+  architecture: string;
+  inferenceBackend: CalibrationGpuInferenceBackend;
+  mediaBackend: CalibrationGpuMediaBackend;
+  classification: CalibrationGpuClassification;
+  vramBytes: number | null;
+  numaNodeId: number | null;
+  computeEligible: boolean;
+  mediaEligible: boolean;
+  encodeSupported: boolean;
+  decodeSupported: boolean;
+  reason: string;
+}
+
+export interface CalibrationComputeDeviceEvidence {
+  deviceId: string;
+  deviceName: string;
+  classification: CalibrationGpuClassification;
+  inferenceBackend: CalibrationGpuInferenceBackend;
+  mediaBackend: CalibrationGpuMediaBackend;
+  inferenceMeasured: boolean;
+  mediaMeasured: boolean;
+  telemetryMeasured: boolean;
+  receivedLoad: boolean;
+  requestCount: number;
+  safeCameraCapacity: number | null;
+  throughput: number | null;
+  p95LatencyMs: number | null;
+  peakVramBytes: number | null;
+  peakTemperatureCelsius: number | null;
+  peakPowerWatts: number | null;
+  throttlingObserved: boolean;
+  schedulerWeight: number;
+  failures: string[];
+}
+
+export interface CalibrationComputeEvidenceV2 {
+  schemaVersion: typeof CALIBRATION_COMPUTE_EVIDENCE_VERSION;
+  requiredModes: ["cpu_only", "gpu_accelerated"];
+  cpu: {
+    mode: "cpu_only";
+    backend: "cpu";
+    device: string;
+    measured: boolean;
+    safeCameraCapacity: number | null;
+    measurementCount: number;
+    failures: string[];
+  };
+  gpu: {
+    mode: "gpu_accelerated";
+    inferenceBackend: CalibrationGpuInferenceBackend;
+    mediaBackend: CalibrationGpuMediaBackend;
+    deviceId: string | null;
+    deviceName: string | null;
+    inferenceMeasured: boolean;
+    mediaMeasured: boolean;
+    utilizationMeasured: boolean;
+    safeCameraCapacity: number | null;
+    measurementCount: number;
+    failures: string[];
+  };
+  devices: CalibrationComputeDeviceEvidence[];
+  allocation: {
+    strategy: "weighted_data_parallel" | "single_device" | "cpu_fallback";
+    allEligibleDevicesReceivedLoad: boolean;
+    allLoadedDevicesHaveTelemetry: boolean;
+    modelSplitUsed: boolean;
+    modelSplitReason: string | null;
+    numaAware: boolean;
+  };
+  scaling: {
+    baselineDeviceCount: number;
+    activeDeviceCount: number;
+    measuredSpeedup: number | null;
+    efficiencyPercent: number | null;
+    linearlyExtrapolated: false;
+  };
+  degraded: {
+    simulatedLostDeviceId: string | null;
+    measured: boolean;
+    safeCameraCapacity: number | null;
+    capacityLossPercent: number | null;
+  };
+  combined: {
+    measured: boolean;
+    safeCameraCapacity: number | null;
+    measurementCount: number;
+    failures: string[];
+  };
+}
+
+export interface CalibrationCapacityBoundary {
+  seedCameraCount: number;
+  highestPassingCameraCount: number | null;
+  firstFailingCameraCount: number | null;
+  operationalSafeCameraCount: number | null;
+  bound: CalibrationCapacityBound;
+  adjacentBoundaryConfirmed: boolean;
+  confirmationRuns: number;
+  generatorLimit: number | null;
+  nonMonotonic: boolean;
+  searchTrace: Array<{
+    cameraCount: number;
+    passed: boolean;
+    attempt: number;
+    phase: "seed" | "expand" | "binary" | "confirm";
+  }>;
 }
 
 export interface LocalCalibrationRun {
@@ -787,8 +981,9 @@ export interface LocalCalibrationRun {
   repetitions?: CalibrationRepetitionResult[];
   maxTestedTier?: number;
   capacityBound?: CalibrationCapacityBound;
+  capacityBoundary?: CalibrationCapacityBoundary;
   repeatVariabilityPercent?: number;
-  computeEvidence?: {
+  computeEvidence?: CalibrationComputeEvidenceV2 | {
     schemaVersion: "qual-hardware-calibration-compute-evidence/1.0.0";
     requiredModes: ["cpu_only", "gpu_accelerated"];
     cpu: {
@@ -1102,7 +1297,14 @@ export interface CalibrationPlan {
   strategy: "adaptive";
   workloadProfile: CalibrationWorkloadProfile;
   cameraTiers: number[];
-  discovery: { stabilizationSeconds: number; sampleSeconds: number };
+  discovery: {
+    stabilizationSeconds: number;
+    sampleSeconds: number;
+    seedCameraCount?: number;
+    generatorCameraLimit?: number;
+    confirmationRuns?: number;
+    operationalHeadroomPercent?: number;
+  };
   qualification: { repetitions: 1 | 3; cooldownSeconds: number; maximumVariabilityPercent: number };
   targetHardwareTemplateId: string | null;
   scenario: CapacityScenario;
@@ -1245,7 +1447,7 @@ export interface CalibrationRuntimeInstallation {
 }
 
 export interface CalibrationHardwarePreflight {
-  schemaVersion: "qual-hardware-calibration-hardware/1.0.0";
+  schemaVersion: typeof CALIBRATION_HARDWARE_VERSION | "qual-hardware-calibration-hardware/1.0.0";
   detectedAt: string;
   cpuModel: string;
   cpuArchitecture: string;
@@ -1260,6 +1462,10 @@ export interface CalibrationHardwarePreflight {
   operatingSystem: OperatingSystemFamily;
   operatingSystemVersion: string;
   formFactor: "laptop" | "mini_pc" | "workstation" | "rack" | null;
+  cpuPackages?: CalibrationCpuPackage[];
+  processorGroups?: CalibrationProcessorGroup[];
+  numaNodes?: CalibrationNumaNode[];
+  gpuDevices?: CalibrationGpuDevice[];
   networkLinks: Array<{
     name: string;
     speedMbps: number | null;
@@ -1681,6 +1887,10 @@ export interface CapacityPrediction {
   confidenceClass: CalibrationConfidenceClass;
   safeCameraMinimum: number | null;
   safeCameraMaximum: number | null;
+  highestPassingCameraCount?: number | null;
+  firstFailingCameraCount?: number | null;
+  capacityBound?: CalibrationCapacityBound | null;
+  degradedSafeCameraMaximum?: number | null;
   bottleneck: CalibrationStage | null;
   reservePercent: number;
   exactCalibrationRunId: string | null;

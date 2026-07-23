@@ -328,9 +328,9 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
       }>;
     }>;
   };
-  assert.equal(runtimeManifest.schemaVersion, "qual-hardware-calibration-runtime-manifest/2.0.0");
+  assert.equal(runtimeManifest.schemaVersion, "qual-hardware-calibration-runtime-manifest/3.0.0");
   assert.equal(runtimeManifest.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
-  assert.equal(runtimeManifest.pipelineImplementation, "perceptrum-equivalent-v1");
+  assert.equal(runtimeManifest.pipelineImplementation, "perceptrum-equivalent-v2-multi-device");
   assert.deepEqual(runtimeManifest.supportedTargets, ["darwin-arm64", "win32-x64", "linux-x64"]);
   assert(runtimeManifest.assets?.some((asset) => asset.id === "telemetry-probe"));
   for (const asset of runtimeManifest.assets ?? []) {
@@ -469,7 +469,9 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
       text.includes("Qualificação física — diagnóstico");
     return text.includes("Diagnóstico — 10 minutos") && text.includes("Validação — 60 minutos") && fullActionVisible ? text : null;
   });
-  assert(calibrationText.includes("Medição avançada de CPU/GPU"));
+  assert(!calibrationText.includes("Medição avançada de CPU/GPU"),
+    "telemetry must be automatic and must not be exposed as a manual option");
+  assert(calibrationText.includes("O hardware é detectado automaticamente"));
   await rendererValue(application.debuggerUrl, "location.assign('data:text/html,blocked'); true");
   await new Promise((resolveWait) => setTimeout(resolveWait, 300));
   assert.equal(await rendererValue<string>(application.debuggerUrl, "location.origin"), application.origin, "non-loopback navigation must be blocked");
@@ -679,7 +681,7 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
     if (format === "json") {
       const report = JSON.parse(new TextDecoder().decode(bytes)) as { schemaVersion: string; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string } }> };
-      assert.equal(report.schemaVersion, "capacity-recommendation-export/6.0.0");
+      assert.equal(report.schemaVersion, "capacity-recommendation-export/7.0.0");
       assert(report.commercialAndNeutralOptions.length >= 6);
       assert(report.commercialAndNeutralOptions.every((item) => item.commercialReference && item.procurementNeutralSpecification.status === "blocked"));
     }
@@ -802,7 +804,7 @@ async function main(): Promise<void> {
     const database = await readFile(databasePath);
     assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
     const sqlite = new DatabaseSync(databasePath, { readOnly: true });
-    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 9);
+    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 10);
     assert((sqlite.prepare("SELECT count(*) AS total FROM component_technical_specification_versions").get() as { total: number }).total > 200);
     sqlite.close();
     console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}`);
