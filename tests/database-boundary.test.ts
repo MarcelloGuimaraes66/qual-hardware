@@ -53,7 +53,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     expect((await reopenedStore.getScenario(created.id))?.scenario.totalCameras).toBe(25);
     expect(await reopenedStore.getCatalog()).toHaveLength(HARDWARE_CATALOG.length);
     await reopenedStore.close();
-  }, 15_000);
+  });
 
   it("keeps schema v9 while storing all autonomous session states as append-only events", async () => {
     const directory = await mkdtemp(join(tmpdir(), "qual-hardware-calibration-extension-"));
@@ -236,7 +236,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     expect(await reopenedStore.getCatalog()).toHaveLength(HARDWARE_CATALOG.length);
     expect(new Set((await reopenedStore.getCatalog()).map((item) => item.id))).toEqual(new Set(HARDWARE_CATALOG.map((item) => item.id)));
     await reopenedStore.close();
-  }, 15_000);
+  });
 
   it("ships as a local desktop application with a loopback-only internal API", async () => {
     const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { main: string; scripts: Record<string, string> };

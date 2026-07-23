@@ -401,5 +401,5 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     expect((await reopened.listHardwareComponents()).map((item) => item.id)).toContain("gpu:official");
     expect((await reopened.listBenchmarkObservations()).map((item) => item.id)).toContain("benchmark:official");
     await reopened.close();
-  }, 15_000);
+  });
 });

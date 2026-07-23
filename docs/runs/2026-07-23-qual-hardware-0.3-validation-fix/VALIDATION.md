@@ -59,5 +59,6 @@ Contratos e builds do probe são validados para Windows x64 e Ubuntu x64. A capa
 - Smoke macOS com o runtime real: aprovado; o fluxo completo acelerado permaneceu funcional.
 - Smoke macOS source-only, com o runtime temporariamente indisponível: aprovado; qualificação recusada com HTTP 503, zero calibrações persistidas e SQLite 9 preservado.
 - O runtime real foi restaurado no pacote macOS após o teste source-only.
-- O primeiro rerun confirmou o smoke source-only em Ubuntu e macOS. No Windows, três testes SQLite terminaram logicamente corretos em 5,178–6,531 segundos, mas ultrapassaram o timeout genérico de 5 segundos; somente esses casos de I/O receberam margem explícita de 15 segundos.
+- O primeiro rerun confirmou o smoke source-only em Ubuntu e macOS. No Windows, três testes SQLite terminaram logicamente corretos em 5,178–6,531 segundos, mas ultrapassaram o timeout genérico de 5 segundos.
 - O segundo rerun aprovou os 208 testes no Windows e revelou uma corrida de cópia do electron-builder: recursos comuns estavam declarados globalmente e novamente em `win`. As declarações duplicadas foram removidas das três plataformas.
+- O terceiro rerun mostrou a variabilidade do runner Windows: outro teste de migração SQLite, diferente dos três anteriores, concluiu em 5,461 segundos. A matriz passou a usar 15 segundos somente no Windows e manteve 5 segundos no macOS/Ubuntu.

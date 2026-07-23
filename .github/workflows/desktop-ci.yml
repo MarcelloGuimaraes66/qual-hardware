@@ -20,12 +20,15 @@ jobs:
           - name: Windows 11 x64
             os: windows-2025
             platform: windows
+            test_timeout_ms: 15000
           - name: macOS 26 arm64
             os: macos-26
             platform: macos
+            test_timeout_ms: 5000
           - name: Ubuntu 24.04 x64
             os: ubuntu-24.04
             platform: linux
+            test_timeout_ms: 5000
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -48,7 +51,7 @@ jobs:
       - run: npm run calibration:telemetry:test
       - run: npm run calibration:telemetry:verify
       - run: npm run typecheck
-      - run: npm test
+      - run: npm test -- --testTimeout=${{ matrix.test_timeout_ms }}
       - run: npm run build
       - run: npx electron-builder --dir --publish never
       - name: Smoke test packaged desktop
