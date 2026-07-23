@@ -32,3 +32,4 @@ A branch-base remota permaneceu em `b124d1b`. As correções úteis da linha div
 - No CI, onde os 4,3 GB de runtimes e modelos não são versionados, o smoke exige comportamento fail-closed: runtime não verificado, qualificação completa recusada com HTTP 503 e nenhuma calibração inventada.
 - Quando o runtime está presente, todas as verificações anteriores de arquitetura, tamanho, SHA-256, telemetria, inferência, exportação, cancelamento e recuperação continuam obrigatórias.
 - O workflow deixou de executar simultaneamente por `push` da branch `codex/*` e por `pull_request`; branches com PR agora geram um único conjunto de checks.
+- Três testes de persistência/reabertura SQLite receberam timeout explícito de 15 segundos; o limite global de 5 segundos permanece intacto para os demais testes.
