@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
   workflow_dispatch:
 
 permissions:
@@ -55,6 +54,8 @@ jobs:
       - name: Smoke test packaged desktop
         if: matrix.platform != 'linux'
         run: npm run desktop:smoke
+        env:
+          QUAL_HARDWARE_SMOKE_ALLOW_MISSING_RUNTIME: "1"
       - name: Configure Chromium sandbox helper for unpacked Linux smoke
         if: matrix.platform == 'linux'
         run: |
@@ -63,6 +64,8 @@ jobs:
       - name: Smoke test packaged desktop under Xvfb
         if: matrix.platform == 'linux'
         run: xvfb-run --auto-servernum npm run desktop:smoke
+        env:
+          QUAL_HARDWARE_SMOKE_ALLOW_MISSING_RUNTIME: "1"
       - name: Generate signed portable calibration fixture
         run: npm run calibration:exchange:ci -- generate --platform ${{ matrix.platform }} --output artifacts/calibration-exchange/${{ matrix.platform }}.qhcal
       - uses: actions/upload-artifact@v7

@@ -6,4 +6,4 @@
 4. Os artefatos ficam em `~/Library/Application Support/@aiquimist/qual-hardware/calibration-evidence`.
 5. O aplicativo deve permanecer honesto sobre runtime candidato e sensores opcionais ausentes.
 6. Windows e Ubuntu exigem suas próprias execuções físicas; testes cruzados não substituem essas medições.
-
+7. O GitHub Actions usa deliberadamente um pacote source-only e deve provar o bloqueio seguro da validação física; somente pacotes locais/distribuíveis com runtime verificado podem executar a qualificação completa.

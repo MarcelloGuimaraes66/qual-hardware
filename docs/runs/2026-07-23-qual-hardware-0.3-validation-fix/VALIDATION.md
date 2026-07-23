@@ -48,3 +48,14 @@ O timeout no patamar superior de 8 câmeras permaneceu como evidência do limite
 ## Outros sistemas
 
 Contratos e builds do probe são validados para Windows x64 e Ubuntu x64. A capacidade física desses computadores só pode ser determinada executando o pacote em cada máquina e reunindo o `.qhcal` independente.
+
+## Correção dos checks do PR
+
+- TypeScript: aprovado.
+- Vitest: 26 arquivos e 208 testes aprovados.
+- Go telemetry probe: aprovado.
+- Auditoria de isolamento da fonte: aprovada, sem acesso externo.
+- Build web/servidor: aprovado.
+- Smoke macOS com o runtime real: aprovado; o fluxo completo acelerado permaneceu funcional.
+- Smoke macOS source-only, com o runtime temporariamente indisponível: aprovado; qualificação recusada com HTTP 503, zero calibrações persistidas e SQLite 9 preservado.
+- O runtime real foi restaurado no pacote macOS após o teste source-only.
