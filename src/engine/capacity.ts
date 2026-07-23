@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { buildCalibrationWorkloadProfile } from "./calibrationProfile.js";
 import { HARDWARE_CATALOG_VERSION } from "./catalog.js";
 import { REFERENCE_FX_FROM_USD, referenceCostProfile } from "./referenceCosts.js";
 import { scenarioMarkets } from "../shared/markets.js";
@@ -587,9 +588,12 @@ function evaluateTemplate(
       ? "eligible"
       : prediction?.status === "extrapolated_medium" ? "planning_only" : "blocked"
   );
-  const procurementEligibility = policy === "minimum" && predictionEligibility === "eligible"
+  const procurementEligibility = predictionEligibility === "eligible" && (policy === "minimum" || totalNodes > 1)
     ? "planning_only"
     : predictionEligibility;
+  if (predictionEligibility === "eligible" && totalNodes > 1) {
+    candidateWarnings.push("multi_node_design_is_planning_only_until_cluster_validation");
+  }
   if (procurementEligibility === "blocked") candidateWarnings.push("not_eligible_for_hardware_acquisition");
   if (procurementEligibility === "planning_only") candidateWarnings.push("planning_only_not_approved_for_hardware_acquisition");
 
@@ -664,7 +668,9 @@ function selectCandidates(
       : consideredCandidates.some((candidate) => candidate.hardware.kind === "rack")
         ? consideredCandidates.filter((candidate) => candidate.hardware.kind === "rack")
         : consideredCandidates;
-  const unusedCandidates = deploymentCandidates.filter((candidate) => !excludedPrimaryHardwareIds.has(candidate.hardware.id));
+  const exactDeploymentCandidates = deploymentCandidates.filter((candidate) => candidate.calibration?.status === "validated_local");
+  const primaryEvidenceCandidates = exactDeploymentCandidates.length > 0 ? exactDeploymentCandidates : deploymentCandidates;
+  const unusedCandidates = primaryEvidenceCandidates.filter((candidate) => !excludedPrimaryHardwareIds.has(candidate.hardware.id));
   const nonDowngradeCandidates = minimumHardware === null ? unusedCandidates : unusedCandidates.filter((candidate) => {
     const hardware = candidate.hardware;
     return hardware.physicalCores >= minimumHardware.physicalCores &&
@@ -677,7 +683,7 @@ function selectCandidates(
   });
   const primaryCandidates = nonDowngradeCandidates.length
     ? nonDowngradeCandidates
-    : unusedCandidates.length ? unusedCandidates : deploymentCandidates;
+    : unusedCandidates.length ? unusedCandidates : primaryEvidenceCandidates;
   const balanced = [...primaryCandidates].sort(compareCapex)[0];
   if (!balanced) throw new CapacityError("No compatible hardware design was found.");
 
@@ -718,6 +724,7 @@ export function buildRecommendations(
   predictions: CapacityPrediction[] = [],
 ): CapacityRecommendation[] {
   const demand = calculateScenarioDemand(scenario);
+  const workloadProfileId = buildCalibrationWorkloadProfile(scenario).id;
   const policies: RecommendationPolicy[] = ["minimum", "recommended", "n_plus_one"];
   const recommendations: CapacityRecommendation[] = [];
   const usedPrimaryHardwareIds = new Set<string>();
@@ -733,7 +740,9 @@ export function buildRecommendations(
         demand.fixed,
         quotes,
         demand.warnings,
-        predictions.find((prediction) => prediction.hardwareTemplateId === template.id),
+        predictions.find((prediction) => prediction.hardwareTemplateId === template.id &&
+          prediction.workloadProfileId === workloadProfileId &&
+          prediction.targetBuildHash === scenario.perceptrumBuildHash),
       ))
       .filter((candidate): candidate is RecommendationAlternative => candidate !== null);
     if (candidates.length === 0) {

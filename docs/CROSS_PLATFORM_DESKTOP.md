@@ -2,7 +2,7 @@
 
 ## Support contract
 
-The repository has one source tree, `package-lock.json` and build command for Windows 11 x64, macOS 26 Apple Silicon and Ubuntu 24.04 x64. Use Node.js 24 LTS and npm from that installation.
+The repository has one source tree, `package-lock.json` and build command for Windows 11 x64, macOS 26 Apple Silicon and Ubuntu 24.04 x64. Development and CI use Node.js `24.18.0`, npm `11.16.0` and Go `1.26.5`.
 
 ```sh
 npm ci
@@ -20,13 +20,13 @@ Build each platform on its native operating system. The project intentionally do
 | Ubuntu 24.04 x64 | AppImage | `release/Qual-Hardware-${version}-linux-x64.AppImage` |
 | Ubuntu 24.04 x64 | Debian package | `release/qual-hardware_${version}_amd64.deb` |
 
-`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens that application with a temporary user directory and proves its runtime, official automatic catalog channel, 39-source registry, 21-item fallback catalog, Windows/Ubuntu/macOS recommendation targets, API, calculations, reports, single-instance protection and persistence.
+`desktop:package:dir` produces an unpacked application for automated validation. `desktop:smoke` opens the native unpacked application and, on Windows, the real portable executable with a temporary user directory. It proves the official automatic catalog channel, 22-item fallback catalog, Windows/Ubuntu/macOS recommendation targets, loopback API, reports, CSP, sandbox, single-instance protection, persistence and terminal cleanup. Its shortened synthetic calibration is explicitly non-importable and is not a physical qualification.
 
 ## Installation and first launch
 
 ### Windows 11
 
-Copy and run the portable `.exe`. Because it is unsigned, Windows SmartScreen may require the internal-user confirmation flow. Do not distribute it as a Perceptrum component.
+Copy and run the portable `.exe`. Because it is unsigned, Windows SmartScreen may require the internal-user confirmation flow. Do not distribute it as a Perceptrum component. The portable uses a private extraction directory per launch; the application lock focuses the first instance without replacing files used by it.
 
 ### macOS 26
 
@@ -38,7 +38,7 @@ Either mark the AppImage executable and launch it, or install the `.deb` with th
 
 ## Runtime and data
 
-The packaged application contains Electron and does not use a separately installed Node.js. It starts Hono on an operating-system-assigned port bound only to `127.0.0.1`. The renderer is sandboxed and can reach only the application origin. A single-instance lock prevents two applications from concurrently owning SQLite.
+The packaged application contains Electron and does not use a separately installed Node.js. It starts Hono on an operating-system-assigned port bound only to `127.0.0.1`. The renderer is sandboxed and can reach only the application origin. A single-instance lock prevents two applications from concurrently owning SQLite. FFmpeg, MediaMTX, Qwen/llama and the telemetry probe are distributed separately in a signed target-specific `.qhruntime`; they are never stored in ASAR.
 
 Qual Hardware is exclusively desktop: it has no standalone server, Docker image or hosted deployment. The operating system chosen in a scenario is the target for the planned Perceptrum machine and is independent from the operating system running the calculator.
 
@@ -46,7 +46,7 @@ All packages use the same public `catalog-*` GitHub Releases. They check automat
 
 The database filename remains `qual-hardware.sqlite` under Electron's native `userData` directory:
 
-- Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite` (expected from the preserved package name; confirm against the current portable before merge).
+- Windows: `%APPDATA%\@aiquimist\qual-hardware\qual-hardware.sqlite` (confirmed with the 0.3 unpacked and portable applications).
 - macOS: `~/Library/Application Support/@aiquimist/qual-hardware/qual-hardware.sqlite` (confirmed by the final packaged app).
 - Ubuntu: `~/.config/@aiquimist/qual-hardware/qual-hardware.sqlite` (expected from the same package name; confirm on the native package).
 
@@ -97,25 +97,12 @@ For all systems, verify that only loopback is listening, the package runs withou
 - **Ubuntu has no display in CI:** run the smoke command under Xvfb; still complete the separate GNOME/Wayland check.
 - **Database path differs on Windows:** stop the release. Do not copy or move the database automatically; restore path compatibility in code/configuration.
 
-## Local calibration
+## Autonomous local calibration
 
-The permanent **Capacity calibration** area uses the same authenticated handoff
-on macOS, Windows and Ubuntu. It opens `perceptrum://calibration/run`, transfers
-one exact plan over loopback, shows live progress and automatically imports the
-result after Perceptrum has saved it append-only under the operating system's
-real Documents folder at `Qual Hardware/Calibracoes`. `.qhplan.json` and manual
-`.qhcal.json` import remain recovery paths.
+The permanent **Calibração de capacidade** area is the only calibration runner. The operator first sizes a project, opens that area, selects the exact physical profile when available and chooses one of three modes: 10-minute diagnostic, 60-minute engineering validation or adaptive 6–7 hour qualification with sequential CPU/GPU phases and three repetitions. The application itself owns the session and never opens or modifies Perceptrum.
 
-The packaged runner uses MediaMTX, FFmpeg, the production Intelligence scheduler
-and local AiQ/Qwen. It exposes missing sensors as `unavailable` with a reason,
-never as zero. A 10-minute run is diagnostic; only the complete 60-minute run
-can become a physical anchor after every gate passes. macOS is homologated in
-this run; Windows and Ubuntu remain subject to their native CI plus future
-physical sensor/performance validation. The old PowerShell benchmark remains a
-legacy laboratory path only.
+Install the target-specific signed package with **Instalar runtime de arquivo**. The file path stays in the Electron main process. Installation streams validation for signature, target, minimum app version, limits, duplicate names, traversal, links, expansion, space, licenses, SBOMs and every SHA-256 before atomic activation. Candidate packages run diagnostics; only production-trusted packages can make a completed v4 result commercially eligible.
 
-While a run is active, **Stop and keep partial data** requests a protected
-loopback cancellation. Perceptrum stops its local workload processes and saves
-an append-only `-interrompido.partial.json` diagnostic before confirming the
-stop. Partial files are never imported as capacity anchors and never justify a
-purchase; only a new completed run can do that.
+The application starts the calibration worker as an isolated utility process. Its MediaMTX, FFmpeg, llama/Qwen and telemetry children are owned by the session and remain offline except for loopback traffic. Missing sensors are reported as `null` plus a reason. Results are saved append-only under the operating system's real Documents folder at `Qual Hardware/Calibracoes`; `.qhcal` and `.qhcalset` remain signed interchange formats.
+
+While a run is active, **Interromper e limpar temporários** sends a private IPC cancellation. The app stops its workload processes, saves an append-only `-interrompido.partial.json` diagnostic, removes session-owned temporary files and only then confirms cancellation. Partial files never become capacity anchors or purchase evidence.

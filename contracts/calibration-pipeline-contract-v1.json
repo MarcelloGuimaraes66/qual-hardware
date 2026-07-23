@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "qual-hardware-calibration-pipeline-contract/1.0.0",
+  "authority": {
+    "repository": "perceptrum_desktop_aspp",
+    "commit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
+    "runtimeUse": "read-only behavioral contract; the authority repository is never imported, written or executed"
+  },
+  "jobRuntime": {
+    "schedulerEntryPoint": "runJobSchedulerTick",
+    "commandTypes": ["job_start", "job_stop"],
+    "commandInitialStatus": "pending",
+    "jobRunStates": ["queued", "running", "completed", "failed", "stopped"],
+    "stepRunStates": ["pending", "running", "completed", "failed", "stopped"],
+    "requiredTables": [
+      "commands",
+      "job_runs",
+      "job_step_runs",
+      "camera_runtime_sessions",
+      "camera_agent_runs",
+      "camera_agent_run_results"
+    ]
+  },
+  "intelligenceRuntime": {
+    "schedulerEntryPoint": "runIntelligenceSchedulerTick",
+    "claimOrder": "created_at ASC, id ASC",
+    "states": ["queued", "running", "completed", "failed", "cancelled", "paused"],
+    "terminalProgress": 100,
+    "requiredTables": [
+      "intelligence_projects",
+      "intelligence_sources",
+      "intelligence_jobs",
+      "intelligence_observations",
+      "intelligence_evidence_items",
+      "intelligence_audit_logs"
+    ]
+  },
+  "dashboardReadModel": {
+    "concurrentWithPipeline": true,
+    "queries": [
+      "visible cameras",
+      "enabled agents per camera",
+      "latest camera runtime event",
+      "capture metrics",
+      "job run and step progress",
+      "intelligence job progress",
+      "agent results",
+      "pending command count"
+    ]
+  },
+  "calibrationRules": {
+    "isolatedDatabaseOnly": true,
+    "externalNetworkAllowed": false,
+    "userMediaAllowed": false,
+    "userCredentialsAllowed": false,
+    "commercialProofRequiresLocalModel": true,
+    "commercialProofRequiresExactConcurrentCameraLoad": true
+  }
+}

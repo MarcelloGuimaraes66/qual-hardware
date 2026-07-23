@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "qual-hardware-calibration-authority/1.0.0",
+  "repository": "perceptrum_desktop_aspp",
+  "commit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
+  "usage": "read-only behavioral authority; never imported or executed at runtime",
+  "files": [
+    {
+      "path": "DrakonSite/src/worker/jobScheduler.ts",
+      "gitBlob": "92254da49940c787e5928647daf2f02a80ad457d",
+      "sha256": "ea9bd395f7415459098d4aa18618f4b2e0a2e0e763bf7409cf92cbef4f529e92"
+    },
+    {
+      "path": "DrakonSite/src/worker/intelligence.ts",
+      "gitBlob": "fe5f1794088a773e821acec47cfbbfb3da8f2a59",
+      "sha256": "367ef20db04610f1107a5c823d9642f6bd8fe813f6c46aa23b19339971deb22d"
+    },
+    {
+      "path": "DrakonSite/src/worker/index.ts",
+      "gitBlob": "8ededb797e8fe08e66bfc4ffc0661f90ad0218eb",
+      "sha256": "5d0339708242c7b34a571acb392f08cf733e8b223af2ca0af83c39e079acd8be"
+    },
+    {
+      "path": "DrakonSite/server/index.ts",
+      "gitBlob": "b7c03dd1facd9389c58033a4b3932ee05e970964",
+      "sha256": "ba9fe72d982cb9280f67f95f6f2f278606e8d71fc2ef6bbe5c6f35f64876da69"
+    }
+  ]
+}

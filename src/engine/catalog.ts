@@ -1,10 +1,52 @@
 import type { HardwareNodeTemplate, PriceQuote } from "../shared/types.js";
 
-const observedAt = "2026-07-18T13:30:00.000Z";
-export const HARDWARE_CATALOG_VERSION = "hardware-reference/2026-07-18.5";
+const observedAt = "2026-07-22T16:20:00.000Z";
+export const HARDWARE_CATALOG_VERSION = "hardware-reference/2026-07-22.1";
 export const HARDWARE_CATALOG_GENERATED_AT = observedAt;
 
 export const HARDWARE_CATALOG: HardwareNodeTemplate[] = [
+  {
+    id: "asus-g835lx-ultra9-275hx-rtx5090l",
+    name: "ASUS ROG Strix SCAR 18 G835LX laboratory anchor",
+    kind: "laptop",
+    generation: "current",
+    cpuVendor: "intel",
+    cpuModel: "Intel Core Ultra 9 275HX",
+    physicalCores: 24,
+    motherboard: "ASUS G835LX mobile platform",
+    ramGb: 32,
+    ecc: false,
+    gpuVendor: "nvidia",
+    gpuModel: "NVIDIA GeForce RTX 5090 Laptop GPU 24 GB",
+    gpuCount: 1,
+    memoryArchitecture: "dedicated",
+    gpuVramGbTotal: 24,
+    localAiqSlots: 4,
+    supportsPerceptrumGpuDecode: true,
+    gpuDecode1080p30Streams: 36,
+    storageModel: "NVMe SSD; physical throughput must be measured by calibration",
+    usableStorageTb: 2,
+    diskWriteMbps: 900,
+    nicGbps: 1,
+    powerSupply: "ASUS mobile power adapter",
+    cooling: "ROG vapor chamber, tri-fan cooling and liquid-metal thermal interface",
+    chassis: "18-inch mobile workstation",
+    operatingSystemFamily: "windows",
+    windowsEdition: "Windows 11 Pro",
+    expansionScore: 18,
+    sources: [
+      {
+        title: "ASUS ROG Strix SCAR 18 (2025) G835 technical specifications",
+        url: "https://rog.asus.com/br/laptops/rog-strix/rog-strix-scar-18-2025/spec/",
+        observedAt,
+      },
+      {
+        title: "Intel Core Ultra 9 275HX specifications",
+        url: "https://www.intel.com/content/www/us/en/products/sku/242293/intel-core-ultra-9-processor-275hx-36m-cache-up-to-5-40-ghz/specifications.html",
+        observedAt,
+      },
+    ],
+  },
   {
     id: "ws-rtx4070tis-7950x",
     name: "Compact CUDA workstation",

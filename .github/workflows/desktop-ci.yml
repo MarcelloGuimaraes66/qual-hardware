@@ -20,12 +20,15 @@ jobs:
           - name: Windows 11 x64
             os: windows-2025
             platform: windows
+            test_timeout_ms: 15000
           - name: macOS 26 arm64
             os: macos-26
             platform: macos
+            test_timeout_ms: 5000
           - name: Ubuntu 24.04 x64
             os: ubuntu-24.04
             platform: linux
+            test_timeout_ms: 5000
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -33,17 +36,29 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
+      - run: npm install --global npm@11.16.0
+      - run: node --version && npm --version
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/telemetry-probe/go.mod
+          cache-dependency-path: tools/telemetry-probe/go.mod
       - run: npm ci
       - run: npm audit --audit-level=high
+      - run: npm run audit:source
+      - run: npm run calibration:assets:audit
+      - run: npm run calibration:telemetry:test
+      - run: npm run calibration:telemetry:verify
       - run: npm run typecheck
-      - run: npm test
+      - run: npm test -- --testTimeout=${{ matrix.test_timeout_ms }}
       - run: npm run build
       - run: npx electron-builder --dir --publish never
       - name: Smoke test packaged desktop
         if: matrix.platform != 'linux'
         run: npm run desktop:smoke
+        env:
+          QUAL_HARDWARE_SMOKE_ALLOW_MISSING_RUNTIME: "1"
       - name: Configure Chromium sandbox helper for unpacked Linux smoke
         if: matrix.platform == 'linux'
         run: |
@@ -52,3 +67,44 @@ jobs:
       - name: Smoke test packaged desktop under Xvfb
         if: matrix.platform == 'linux'
         run: xvfb-run --auto-servernum npm run desktop:smoke
+        env:
+          QUAL_HARDWARE_SMOKE_ALLOW_MISSING_RUNTIME: "1"
+      - name: Generate signed portable calibration fixture
+        run: npm run calibration:exchange:ci -- generate --platform ${{ matrix.platform }} --output artifacts/calibration-exchange/${{ matrix.platform }}.qhcal
+      - uses: actions/upload-artifact@v7
+        with:
+          name: calibration-exchange-${{ matrix.platform }}
+          path: artifacts/calibration-exchange/${{ matrix.platform }}.qhcal
+          if-no-files-found: error
+          retention-days: 7
+
+  portable-exchange:
+    name: Import Windows, Ubuntu and macOS packages on ${{ matrix.name }}
+    needs: native-desktop
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows 11 x64
+            os: windows-2025
+          - name: macOS 26 arm64
+            os: macos-26
+          - name: Ubuntu 24.04 x64
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - run: npm install --global npm@11.16.0
+      - run: node --version && npm --version
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: calibration-exchange-*
+          path: artifacts/calibration-exchange
+          merge-multiple: true
+      - name: Verify and consolidate every native package
+        run: npm run calibration:exchange:ci -- verify --input artifacts/calibration-exchange

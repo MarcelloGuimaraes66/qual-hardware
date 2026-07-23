@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "qual-hardware-calibration-asset-sources/1.0.0",
+  "recordedAt": "2026-07-22T12:15:00.000Z",
+  "policy": {
+    "runtimeNetworkAccess": "forbidden",
+    "acquisitionMode": "operator_supplied_offline_only",
+    "approvalMode": "candidate_inventory_fail_closed",
+    "allowedSourceHosts": ["ffmpeg.org", "github.com", "huggingface.co"]
+  },
+  "assets": [
+    {
+      "id": "ffmpeg",
+      "upstream": "FFmpeg/FFmpeg",
+      "version": "8.1.2",
+      "revision": "autobuild-2026-07-22-13-36",
+      "licenseSpdxCandidate": "GPL-3.0-or-later",
+      "licenseEvidenceUrl": "https://ffmpeg.org/legal.html",
+      "approvalStatus": "blocked",
+      "blockers": [
+        "platform_binary_cpu_codec_and_gpu_backend_build_required",
+        "gpl_codec_and_redistribution_license_review_required",
+        "cyclonedx_sbom_required",
+        "physical_package_validation_required"
+      ],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffmpeg.c" },
+        "win32-x64": { "sourceKind": "release_archive", "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-22-13-36/ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1.zip", "sha256": "f3c4d7c272390d18f57e5ee1e52466d28cbf728b923e188367e934456c061d51", "sizeBytes": 167402338, "archiveMember": "ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1/bin/ffmpeg.exe" },
+        "linux-x64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffmpeg.c" }
+      }
+    },
+    {
+      "id": "ffprobe",
+      "upstream": "FFmpeg/FFmpeg",
+      "version": "8.1.2",
+      "revision": "autobuild-2026-07-22-13-36",
+      "licenseSpdxCandidate": "GPL-3.0-or-later",
+      "licenseEvidenceUrl": "https://ffmpeg.org/legal.html",
+      "approvalStatus": "blocked",
+      "blockers": [
+        "platform_binary_cpu_codec_and_gpu_backend_build_required",
+        "gpl_codec_and_redistribution_license_review_required",
+        "cyclonedx_sbom_required",
+        "physical_package_validation_required"
+      ],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffprobe.c" },
+        "win32-x64": { "sourceKind": "release_archive", "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-22-13-36/ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1.zip", "sha256": "f3c4d7c272390d18f57e5ee1e52466d28cbf728b923e188367e934456c061d51", "sizeBytes": 167402338, "archiveMember": "ffmpeg-n8.1.2-30-g45f1910444-win64-gpl-8.1/bin/ffprobe.exe" },
+        "linux-x64": { "sourceKind": "source_archive", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz", "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c", "sizeBytes": 11710924, "archiveMember": "ffmpeg-8.1.2/fftools/ffprobe.c" }
+      }
+    },
+    {
+      "id": "mediamtx",
+      "upstream": "bluenviron/mediamtx",
+      "version": "1.18.2",
+      "revision": "c05c14d9afcee5f662c81762eae68f85b36b70d7",
+      "licenseSpdxCandidate": "MIT",
+      "licenseEvidenceUrl": "https://raw.githubusercontent.com/bluenviron/mediamtx/c05c14d9afcee5f662c81762eae68f85b36b70d7/LICENSE",
+      "approvalStatus": "blocked",
+      "blockers": ["archive_extraction_required", "license_evidence_review_required", "cyclonedx_sbom_required", "physical_package_validation_required"],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "release_archive", "url": "https://github.com/bluenviron/mediamtx/releases/download/v1.18.2/mediamtx_v1.18.2_darwin_arm64.tar.gz", "sha256": "6a9273ae22a9d0ba85d00d03fdd1b13b9eeaf129ea8b90999ec746367f20449a", "sizeBytes": 25672581, "archiveMember": "mediamtx" },
+        "win32-x64": { "sourceKind": "release_archive", "url": "https://github.com/bluenviron/mediamtx/releases/download/v1.18.2/mediamtx_v1.18.2_windows_amd64.zip", "sha256": "945ab46c5fc6d2802ad18e2f1d7e49245ca5609657d85e310aa6eda4cdd72eec", "sizeBytes": 26482303, "archiveMember": "mediamtx.exe" },
+        "linux-x64": { "sourceKind": "release_archive", "url": "https://github.com/bluenviron/mediamtx/releases/download/v1.18.2/mediamtx_v1.18.2_linux_amd64.tar.gz", "sha256": "73ed27c292e05ceb4990dcb34531f01872dfff5374b7515c45a202e0abf47706", "sizeBytes": 26189931, "archiveMember": "mediamtx" }
+      }
+    },
+    {
+      "id": "llama-server",
+      "upstream": "ggml-org/llama.cpp",
+      "version": "b9637",
+      "revision": "aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3",
+      "licenseSpdxCandidate": "MIT",
+      "licenseEvidenceUrl": "https://raw.githubusercontent.com/ggml-org/llama.cpp/aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3/LICENSE",
+      "approvalStatus": "blocked",
+      "blockers": ["gpu_backend_bundle_extraction_required", "license_evidence_review_required", "cyclonedx_sbom_required", "physical_cpu_and_gpu_validation_required"],
+      "targets": {
+        "darwin-arm64": {
+          "sourceKind": "release_archive",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9637/llama-b9637-bin-macos-arm64.tar.gz",
+          "sha256": "72a93f3e68c31de3e438d462669aad1fcdb423b995e9c41033cc7d27a9a3ac69",
+          "sizeBytes": 10586927,
+          "archiveMember": "llama-server",
+          "companionSources": [{
+            "sourceKind": "release_archive",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9637/llama-b9637-bin-macos-arm64.tar.gz",
+            "sha256": "72a93f3e68c31de3e438d462669aad1fcdb423b995e9c41033cc7d27a9a3ac69",
+            "sizeBytes": 10586927,
+            "archiveMember": "*.dylib"
+          }]
+        },
+        "win32-x64": {
+          "sourceKind": "release_archive",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9637/llama-b9637-bin-win-cuda-13.3-x64.zip",
+          "sha256": "8667e76077b40db57fc680577c6d8b48b8aa3f58e34fc23a70bcc668a69c97e9",
+          "sizeBytes": 159029255,
+          "archiveMember": "llama-server.exe",
+          "companionSources": [
+            {
+              "sourceKind": "release_archive",
+              "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9637/llama-b9637-bin-win-cuda-13.3-x64.zip",
+              "sha256": "8667e76077b40db57fc680577c6d8b48b8aa3f58e34fc23a70bcc668a69c97e9",
+              "sizeBytes": 159029255,
+              "archiveMember": "*.dll"
+            },
+            {
+              "sourceKind": "release_archive",
+              "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9637/cudart-llama-bin-win-cuda-13.3-x64.zip",
+              "sha256": "1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e",
+              "sizeBytes": 390970417,
+              "archiveMember": "*.dll"
+            }
+          ]
+        },
+        "linux-x64": {
+          "sourceKind": "release_archive",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9637/llama-b9637-bin-ubuntu-vulkan-x64.tar.gz",
+          "sha256": "6ca268d758aae9e8518afa43042678e8b60b47f0d34df7d6efff4ca622c74313",
+          "sizeBytes": 38391553,
+          "archiveMember": "llama-server",
+          "companionSources": [{
+            "sourceKind": "release_archive",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b9637/llama-b9637-bin-ubuntu-vulkan-x64.tar.gz",
+            "sha256": "6ca268d758aae9e8518afa43042678e8b60b47f0d34df7d6efff4ca622c74313",
+            "sizeBytes": 38391553,
+            "archiveMember": "*.so*"
+          }]
+        }
+      }
+    },
+    {
+      "id": "telemetry-probe",
+      "upstream": "Aiquimist/qual-hardware",
+      "version": "0.1.0",
+      "revision": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f",
+      "licenseSpdxCandidate": null,
+      "licenseEvidenceUrl": null,
+      "approvalStatus": "blocked",
+      "blockers": ["platform_binary_review_required", "license_decision_required", "cyclonedx_sbom_review_required", "physical_sensor_validation_required"],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "repository_source", "url": null, "sha256": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f", "sizeBytes": 21334, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" },
+        "win32-x64": { "sourceKind": "repository_source", "url": null, "sha256": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f", "sizeBytes": 21334, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" },
+        "linux-x64": { "sourceKind": "repository_source", "url": null, "sha256": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f", "sizeBytes": 21334, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" }
+      }
+    },
+    {
+      "id": "qwen-core-gguf",
+      "upstream": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+      "version": "52d6c8ffea26cc873ac5ad116f8631268d7eb503:Q4_K_M",
+      "revision": "52d6c8ffea26cc873ac5ad116f8631268d7eb503",
+      "licenseSpdxCandidate": "Apache-2.0",
+      "licenseEvidenceUrl": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/blob/52d6c8ffea26cc873ac5ad116f8631268d7eb503/README.md",
+      "approvalStatus": "blocked",
+      "blockers": ["license_evidence_review_required", "cyclonedx_sbom_required", "offline_inference_validation_required", "physical_package_validation_required"],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/Qwen3VL-2B-Instruct-Q4_K_M.gguf", "sha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae", "sizeBytes": 1107409952, "archiveMember": null },
+        "win32-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/Qwen3VL-2B-Instruct-Q4_K_M.gguf", "sha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae", "sizeBytes": 1107409952, "archiveMember": null },
+        "linux-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/Qwen3VL-2B-Instruct-Q4_K_M.gguf", "sha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae", "sizeBytes": 1107409952, "archiveMember": null }
+      }
+    },
+    {
+      "id": "qwen-core-mmproj",
+      "upstream": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+      "version": "52d6c8ffea26cc873ac5ad116f8631268d7eb503:mmproj-Q8_0",
+      "revision": "52d6c8ffea26cc873ac5ad116f8631268d7eb503",
+      "licenseSpdxCandidate": "Apache-2.0",
+      "licenseEvidenceUrl": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/blob/52d6c8ffea26cc873ac5ad116f8631268d7eb503/README.md",
+      "approvalStatus": "blocked",
+      "blockers": ["license_evidence_review_required", "cyclonedx_sbom_required", "offline_inference_validation_required", "physical_package_validation_required"],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf", "sha256": "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82", "sizeBytes": 445053216, "archiveMember": null },
+        "win32-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf", "sha256": "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82", "sizeBytes": 445053216, "archiveMember": null },
+        "linux-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/52d6c8ffea26cc873ac5ad116f8631268d7eb503/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf", "sha256": "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82", "sizeBytes": 445053216, "archiveMember": null }
+      }
+    },
+    {
+      "id": "qwen-core-max-gguf",
+      "upstream": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+      "version": "1cd86afb9a95c410a6038ab3b40d8b578c892266:Q4_K_M",
+      "revision": "1cd86afb9a95c410a6038ab3b40d8b578c892266",
+      "licenseSpdxCandidate": "Apache-2.0",
+      "licenseEvidenceUrl": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/blob/1cd86afb9a95c410a6038ab3b40d8b578c892266/README.md",
+      "approvalStatus": "blocked",
+      "blockers": ["license_evidence_review_required", "cyclonedx_sbom_required", "offline_inference_validation_required", "physical_package_validation_required"],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/1cd86afb9a95c410a6038ab3b40d8b578c892266/Qwen3VL-4B-Instruct-Q4_K_M.gguf", "sha256": "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a", "sizeBytes": 2497281664, "archiveMember": null },
+        "win32-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/1cd86afb9a95c410a6038ab3b40d8b578c892266/Qwen3VL-4B-Instruct-Q4_K_M.gguf", "sha256": "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a", "sizeBytes": 2497281664, "archiveMember": null },
+        "linux-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/1cd86afb9a95c410a6038ab3b40d8b578c892266/Qwen3VL-4B-Instruct-Q4_K_M.gguf", "sha256": "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a", "sizeBytes": 2497281664, "archiveMember": null }
+      }
+    },
+    {
+      "id": "qwen-core-max-mmproj",
+      "upstream": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+      "version": "1cd86afb9a95c410a6038ab3b40d8b578c892266:mmproj-Q8_0",
+      "revision": "1cd86afb9a95c410a6038ab3b40d8b578c892266",
+      "licenseSpdxCandidate": "Apache-2.0",
+      "licenseEvidenceUrl": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/blob/1cd86afb9a95c410a6038ab3b40d8b578c892266/README.md",
+      "approvalStatus": "blocked",
+      "blockers": ["license_evidence_review_required", "cyclonedx_sbom_required", "offline_inference_validation_required", "physical_package_validation_required"],
+      "targets": {
+        "darwin-arm64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/1cd86afb9a95c410a6038ab3b40d8b578c892266/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf", "sha256": "30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d", "sizeBytes": 453974304, "archiveMember": null },
+        "win32-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/1cd86afb9a95c410a6038ab3b40d8b578c892266/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf", "sha256": "30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d", "sizeBytes": 453974304, "archiveMember": null },
+        "linux-x64": { "sourceKind": "direct_file", "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/1cd86afb9a95c410a6038ab3b40d8b578c892266/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf", "sha256": "30ba2c7dd3127a4561b6cba9d13d0f711c91bdb38742e2f56d73c8cb596bd06d", "sizeBytes": 453974304, "archiveMember": null }
+      }
+    }
+  ]
+}

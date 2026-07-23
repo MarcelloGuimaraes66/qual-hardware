@@ -2,7 +2,7 @@
 
 ## Cross-platform desktop gate
 
-Pull requests run the same typecheck, 90+ test suite, build, unpacked package and packaged smoke test on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates the native binary architecture, desktop-only ASAR, loopback origin, health, the historical catalog plus normalized components, the automatic source channel, Windows/Ubuntu/macOS recommendation targets, SQLite v9, differentiated calculations, reconciled component costs, detailed PDF/XLSX/JSON 6.0 exports, neutral DOCX/PDF/JSON annexes, single-instance behavior and persistence after restart.
+Pull requests use Node.js `24.18.0`, npm `11.16.0` and Go `1.26.5` for the same typecheck, complete test suite, build, unpacked package and packaged smoke on `windows-2025`, `macos-26` and `ubuntu-24.04`. Linux executes Electron under Xvfb. The smoke runner validates native architecture, desktop-only ASAR, random loopback origin, health, CSP, sandbox, the automatic catalog channel, 22-profile fallback catalog, Windows/Ubuntu/macOS recommendation targets, SQLite v9, reports, single-instance behavior, persistence and worker cleanup. On Windows it also launches the real portable bootstrap.
 
 ```sh
 npm ci
@@ -24,14 +24,16 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 
 ## Local calibration gate
 
-1. Quick: 2 minutes warm-up, 5 sustained and 3 at 120%; full: 10 minutes warm-up, 20 ramp, 20 sustained and 10 at 120%.
+1. `quick` is a 10-minute non-commercial diagnostic; `validation` is a 60-minute single engineering repetition; `qualification` runs CPU and GPU sequentially through four phases, three repetitions, cooldowns and at most 10% accepted variability, taking approximately 6–7 hours.
 2. MediaMTX, FFmpeg and the real AiQ/Qwen backend remain on `127.0.0.1`; external/OpenAI count is zero.
 3. Delivered frames and completed inferences reach at least 99.5%; no OOM, sustained queue growth or critical throttling occurs, and p99 inference latency stays below 75% of the configured interval.
 4. All fifteen stages, four phase summaries, exact fingerprint/build/model hashes, temperatures and frame counters are present. The stages include frame extraction, Jobs, Intelligence, database persistence and concurrent dashboard queries in addition to media, memory, storage, network and thermal work.
-5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases but never creates importable evidence.
+5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases, is explicitly marked non-importable and never creates physical evidence.
 6. Import rejects a selected catalog profile when CPU, GPU or form factor does not match the measured fingerprint.
-7. Results 1.0 and 1.1 remain readable as historical/diagnostic evidence. Version 2.0 is required for purchase eligibility and additionally requires workload 3.1, production-pipeline proof concurrent with all four phases, fifteen-stage coverage and artifact SHA-256.
-8. Session tests cover token hashing, expiry, replay, callback authentication, protocol allowlisting, native Documents paths, live progress and automatic result persistence/recalculation.
+7. Legacy local results v1–v3 remain readable as historical diagnostic evidence. Only `qual-hardware-local-calibration/4.0.0`, plan `3.0.0`, kernel `2.0.0` and a production-trusted runtime can be purchase-eligible; new `.qhcal` and `.qhcalset` exports use version `2.0.0`.
+8. Session tests cover single active ownership, append-only transitions, IPC progress, cancellation, interruption recovery, resume compatibility, native Documents paths, atomic result persistence, replay rejection and cleanup retry. No external claim/control callback, custom protocol, bearer token or fixed calibration port exists.
+9. Runtime-package tests cover invalid signatures, wrong target, candidate classification, corruption, duplicate paths, traversal, links, expansion limits, low disk, interruption, concurrent installation, atomic activation and rollback.
+10. Physical qualification is initiated only from the application interface. Build/test tooling must not act as an external calibration coordinator.
 
 ## Audited source baseline
 

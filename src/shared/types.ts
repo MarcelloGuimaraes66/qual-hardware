@@ -9,8 +9,18 @@ export type WorkloadContractVersion =
 export const LEGACY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0" as const;
 export const TELEMETRY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.1.0" as const;
 export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0" as const;
-export const CALIBRATION_HANDOFF_VERSION = "qual-hardware-calibration-handoff/1.0.0" as const;
-export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
+export const LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/3.0.0" as const;
+export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/4.0.0" as const;
+export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/2.0.0" as const;
+export const PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT = "d918faa0ecd6a9906b711039e5d89f78e0536c44" as const;
+export const LEGACY_CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
+export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/3.0.0" as const;
+export const CALIBRATION_PROGRESS_VERSION = "qual-hardware-calibration-progress/2.0.0" as const;
+export const CALIBRATION_CHECKPOINT_VERSION = "qual-hardware-calibration-checkpoint/1.0.0" as const;
+export const LEGACY_QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/1.0.0" as const;
+export const LEGACY_QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/1.0.0" as const;
+export const QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/2.0.0" as const;
+export const QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/2.0.0" as const;
 export const BENCHMARK_SUITE_VERSION = "qual-hardware-benchmark-suite/1.0.0" as const;
 export const LEGACY_COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/2.0.0" as const;
 export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/3.0.0" as const;
@@ -83,7 +93,36 @@ export type CalibrationStage =
   | "thermal_sustain";
 export type TelemetryEvidenceStatus = "measured" | "unavailable" | "failed" | "not_applicable";
 export type CalibrationValidationStatus = "diagnostic" | "anchor_approved" | "invalid";
-export type CalibrationSessionState = "pending" | "launching" | "running" | "cancelling" | "cancelled" | "completed" | "failed" | "expired";
+export type CalibrationMode = "quick" | "validation" | "qualification";
+export type CalibrationSessionState =
+  | "pending"
+  | "preflight"
+  | "discovering"
+  | "validating"
+  | "qualifying"
+  | "finalizing"
+  | "cancelled"
+  | "completed"
+  | "failed"
+  | "interrupted"
+  | "expired";
+export type CalibrationCleanupState = "not_started" | "pending" | "cleaning" | "completed" | "failed";
+export type CalibrationTemporaryFileState = "active" | "reclaimable" | "deleted" | "retained";
+export type CalibrationDeviceTrust = "pending" | "trusted" | "revoked";
+export type CalibrationComputeMode = "cpu_only" | "gpu_accelerated";
+export type CalibrationGpuInferenceBackend = "cuda" | "metal" | "vulkan" | "rocm" | "unavailable";
+export type CalibrationGpuMediaBackend =
+  | "cuda_nvenc"
+  | "videotoolbox"
+  | "qsv"
+  | "d3d11va_amf"
+  | "vaapi"
+  | "unavailable";
+export type CalibrationCapacityBound = "exact" | "at_least";
+export type CalibrationNetworkEvidence =
+  | "loopback_measured_physical_link_unverified"
+  | "loopback_measured_physical_link_spec_verified"
+  | "unavailable";
 
 export interface AgentFeatures {
   onlyCaptureOnMotion: boolean;
@@ -518,80 +557,6 @@ export interface CapacityRecommendation {
   evidence: string[];
 }
 
-export interface BenchmarkManifest {
-  schemaVersion: "capacity-benchmark-manifest/1.0.0";
-  id: string;
-  nonce: string;
-  scenarioId: string;
-  scenarioRevision: number;
-  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
-  perceptrumBuildHash: string;
-  createdAt: string;
-  expiresAt: string;
-  uploadUrl: string;
-  targetHardware: {
-    cpuModel: string;
-    gpuModel: string;
-    gpuDriver: string;
-  };
-  slaInferenceLatencyMs: number;
-  privacy: {
-    acceptMedia: false;
-    acceptRtspCredentials: false;
-    aggregateMetricsOnly: true;
-  };
-  phases: Array<{ name: "warmup" | "sustained" | "surge"; durationSeconds: number; loadPercent: number }>;
-  scenario: CapacityScenario;
-}
-
-export interface BenchmarkMetrics {
-  cpuModel: string;
-  gpuModel: string;
-  gpuDriver: string;
-  perceptrumBuildHash: string;
-  workloadContractVersion: string;
-  startedAt: string;
-  completedAt: string;
-  p95InferenceLatencyMs: number;
-  p99InferenceLatencyMs: number;
-  peakCpuPercent: number;
-  peakRamBytes: number;
-  peakGpuPercent: number;
-  peakVramBytes: number;
-  peakDecoderPercent: number;
-  gpuTelemetryAvailable: boolean;
-  peakHandleCount: number;
-  peakThreadCount: number;
-  peakProcessCount: number;
-  peakDiskWriteBytesPerSecond: number;
-  peakNetworkReceiveBytesPerSecond: number;
-  captureReadP95Ms: number;
-  decodeP95Ms: number;
-  maxQueueDepth: number;
-  queueGrowthPerMinute: number;
-  inferenceSuccessRate: number;
-  outOfMemoryCount: number;
-  mediaFieldCount: 0;
-  credentialFieldCount: 0;
-  phases: Array<{
-    name: "warmup" | "sustained" | "surge";
-    durationSeconds: number;
-    loadPercent: number;
-    p95InferenceLatencyMs: number;
-    maxQueueDepth: number;
-    queueGrowthPerMinute: number;
-    outOfMemoryCount: number;
-  }>;
-}
-
-export interface BenchmarkResultRecord {
-  manifestId: string;
-  receivedAt: string;
-  passed: boolean;
-  failures: string[];
-  metrics: BenchmarkMetrics;
-}
-
 export interface HardwareFingerprint {
   hardwareTemplateId: string | null;
   hostnameHash: string;
@@ -615,7 +580,7 @@ export interface HardwareFingerprint {
   operatingSystem: OperatingSystemFamily;
   operatingSystemVersion: string;
   powerProfile: string;
-  formFactor: Exclude<InfrastructureKind, "either">;
+  formFactor: Exclude<InfrastructureKind, "either"> | "unknown";
   coolingProfile: string;
   perceptrumBuildHash: string;
   aiqModel: string;
@@ -674,6 +639,7 @@ export interface TelemetryMetricSummary {
 
 export interface CalibrationResourceSummary {
   phase: string;
+  computeMode?: CalibrationComputeMode;
   cpuUtilizationPercent?: TelemetryMetricSummary | null;
   memoryUsedBytes?: TelemetryMetricSummary | null;
   loadAverage?: TelemetryMetricSummary | null;
@@ -698,6 +664,8 @@ export interface CalibrationProcessGroupSummary {
 
 export interface LocalCalibrationRun {
   schemaVersion:
+    | typeof AUTONOMOUS_LOCAL_CALIBRATION_VERSION
+    | typeof LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof LOCAL_CALIBRATION_VERSION
     | typeof TELEMETRY_LOCAL_CALIBRATION_VERSION
     | typeof LEGACY_LOCAL_CALIBRATION_VERSION;
@@ -707,7 +675,7 @@ export interface LocalCalibrationRun {
   startedAt: string;
   completedAt: string;
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION | "perceptrum-workload/3.0.0" | "perceptrum-workload/2.0.0";
-  mode: "quick" | "full";
+  mode: CalibrationMode | "full";
   executionMode?: "readiness" | "production_pipeline";
   developmentOnly?: true;
   fingerprint: HardwareFingerprint;
@@ -756,6 +724,104 @@ export interface LocalCalibrationRun {
     failures: string[];
     warnings: string[];
   };
+  executionHealth?: {
+    status: "completed" | "completed_with_errors";
+    infrastructureErrors: string[];
+  };
+  capacityRecommendation?: {
+    safeCameraCount: number | null;
+    maximumTestedCameraCount: number;
+    confidence: "high" | "medium" | "insufficient";
+    basis: "physical_measurement";
+  };
+  sensorCoverage?: {
+    measured: string[];
+    unavailable: string[];
+  };
+  runtimeTrust?: {
+    classification: "candidate" | "production";
+    manifestApproved: boolean;
+    technicalCapacityAllowed: true;
+    commercialQualificationAllowed: boolean;
+  };
+  limitingSubsystems?: CalibrationStage[];
+  inferenceEvidence?: {
+    requestsPlanned: number;
+    requestsAttempted: number;
+    requestsSuccessful: number;
+    framesPacked: number;
+    maximumConcurrency: number;
+    p95LatencyMs: number | null;
+    p99LatencyMs: number | null;
+    errors: string[];
+  };
+  kernelVersion?: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/1.0.0";
+  runtimeManifestHash?: string;
+  runtimeProvenance?: {
+    platform: NodeJS.Platform;
+    architecture: string;
+    featureMode: "disabled" | "diagnostic" | "full";
+    manifestApproved?: boolean;
+    contracts: Array<{
+      id: "authority" | "pipeline" | "sources";
+      status: "verified" | "missing" | "mismatch";
+      sha256: string | null;
+      expectedSha256: string;
+    }>;
+    assets: Array<{
+      id: string;
+      status: "verified" | "missing" | "mismatch" | "system_only";
+      sha256: string | null;
+      sizeBytes: number | null;
+      expectedSizeBytes: number | null;
+      version: string | null;
+      licenseSpdx: string | null;
+      sbomRef: string | null;
+    }>;
+  };
+  workloadProfileId?: string;
+  workloadProfileSignature?: string;
+  compatiblePerceptrumCommit?: string;
+  cameraTiers?: number[];
+  tierResults?: CalibrationTierResult[];
+  repetitions?: CalibrationRepetitionResult[];
+  maxTestedTier?: number;
+  capacityBound?: CalibrationCapacityBound;
+  repeatVariabilityPercent?: number;
+  computeEvidence?: {
+    schemaVersion: "qual-hardware-calibration-compute-evidence/1.0.0";
+    requiredModes: ["cpu_only", "gpu_accelerated"];
+    cpu: {
+      mode: "cpu_only";
+      backend: "cpu";
+      device: string;
+      measured: boolean;
+      safeCameraCapacity: number | null;
+      measurementCount: number;
+      failures: string[];
+    };
+    gpu: {
+      mode: "gpu_accelerated";
+      inferenceBackend: CalibrationGpuInferenceBackend;
+      mediaBackend: CalibrationGpuMediaBackend;
+      deviceId: string | null;
+      deviceName: string | null;
+      inferenceMeasured: boolean;
+      mediaMeasured: boolean;
+      utilizationMeasured: boolean;
+      safeCameraCapacity: number | null;
+      measurementCount: number;
+      failures: string[];
+    };
+    combined: {
+      measured: boolean;
+      safeCameraCapacity: number | null;
+      measurementCount: number;
+      failures: string[];
+    };
+  };
+  networkEvidence?: CalibrationNetworkEvidence;
+  physicalNetworkLinks?: CalibrationHardwarePreflight["networkLinks"];
   advancedTelemetryRequested?: boolean;
   telemetrySampleIntervalMs?: number;
   telemetrySampleCount?: number;
@@ -766,26 +832,58 @@ export interface LocalCalibrationRun {
     fileName: string;
     payloadSha256: string;
     persistedAt: string;
-    storage: "documents_append_only";
+    storage: "documents_append_only" | "application_data_append_only";
   };
   notes: string[];
 }
 
-export interface CalibrationHandoff {
-  schemaVersion: typeof CALIBRATION_HANDOFF_VERSION;
-  sessionId: string;
-  callbackOrigin: string;
-  token: string;
-  expiresAt: string;
-  planId: string;
-}
-
 export interface CalibrationSessionProgress {
+  schemaVersion?: typeof CALIBRATION_PROGRESS_VERSION;
   phase?: string;
   stage?: string;
   percent?: number;
+  overallPercent?: number;
+  phasePercent?: number;
   message?: string;
+  tier?: number;
+  repetition?: number;
+  attempt?: number;
+  computeMode?: CalibrationComputeMode;
+  sessionStartedAt?: string;
+  phaseStartedAt?: string;
+  elapsedSeconds?: number;
+  estimatedRemainingSeconds?: number | null;
+  estimatedCompletionAt?: string | null;
+  minimumDurationSeconds?: number;
+  maximumDurationSeconds?: number;
+  estimateConfidence?: "low" | "medium" | "high";
+  estimateAdjusted?: boolean;
+  bytesTemporary?: number;
+  bytesRemoved?: number;
+  bytesProjected?: number;
+  diskFreeBytes?: number;
+  diskReserveBytes?: number;
   updatedAt: string;
+}
+
+export interface CalibrationCleanupStatus {
+  schemaVersion: "qual-hardware-calibration-cleanup/1.0.0";
+  state: CalibrationCleanupState;
+  bytesTemporary: number;
+  bytesRemoved: number;
+  attempts: number;
+  remainingBytes: number;
+  updatedAt: string;
+  error: string | null;
+}
+
+export interface CalibrationDiagnosticArtifact {
+  schemaVersion: "qual-hardware-calibration-diagnostic-artifact/1.0.0";
+  fileName: string;
+  payloadSha256: string;
+  persistedAt: string;
+  status: "cancelled" | "failed" | "interrupted";
+  completedMeasurementCount: number;
 }
 
 export interface CalibrationSession {
@@ -793,7 +891,7 @@ export interface CalibrationSession {
   planId: string;
   recommendationId: string;
   scenarioId: string;
-  mode: "quick" | "full";
+  mode: CalibrationMode;
   advancedTelemetry: boolean;
   state: CalibrationSessionState;
   createdAt: string;
@@ -802,6 +900,8 @@ export interface CalibrationSession {
   completedAt: string | null;
   progress: CalibrationSessionProgress | null;
   result: LocalCalibrationRun | null;
+  diagnostic?: CalibrationDiagnosticArtifact;
+  cleanup?: CalibrationCleanupStatus;
   error: string | null;
 }
 
@@ -810,13 +910,200 @@ export interface CalibrationSessionRecord extends CalibrationSession {
   plan: CalibrationPlan;
 }
 
+export interface CalibrationCheckpointCompatibility {
+  hardwareDigest: string;
+  operatingSystem: OperatingSystemFamily;
+  operatingSystemVersion: string;
+  gpuDriver: string;
+  workloadProfileSignature: string;
+  targetBuildHash: string;
+  kernelVersion: string;
+  runtimeManifestHash: string;
+  modelHash: string;
+  calibrationPolicyHash: string;
+  appVersion: string;
+}
+
+export interface CalibrationCheckpoint {
+  schemaVersion: typeof CALIBRATION_CHECKPOINT_VERSION;
+  id: string;
+  sessionId: string;
+  runId: string;
+  sequence: number;
+  createdAt: string;
+  phase: "preflight" | "discovery" | "qualification" | "terminal";
+  tier: number | null;
+  repetition: number | null;
+  attempt: number;
+  compatibility: CalibrationCheckpointCompatibility;
+  completedDiscoveryTiers: number[];
+  highestPassedDiscoveryTier: number | null;
+  payloadSha256: string;
+}
+
+export interface CalibrationResumeStatus {
+  resumable: boolean;
+  sourceSessionId: string;
+  checkpoint: CalibrationCheckpoint | null;
+  incompatibilities: string[];
+  qualificationWillRestart: true;
+}
+
+export interface CalibrationSessionLineage {
+  id: string;
+  parentSessionId: string;
+  childSessionId: string;
+  checkpointId: string;
+  createdAt: string;
+}
+
+export interface CalibrationDeviceIdentity {
+  id: string;
+  publicKeyPem: string;
+  shortCode: string;
+  trust: CalibrationDeviceTrust;
+  firstSeenAt: string;
+  updatedAt: string;
+  protection: "operating_system" | "filesystem" | "imported_public_key";
+}
+
+export interface CalibrationRunProvenance {
+  runId: string;
+  source: "local" | "qhcal" | "qhcalset";
+  deviceId: string;
+  packageDigest: string;
+  trustedAtImport: boolean;
+  importedAt: string | null;
+}
+
+export interface CalibrationImportItem {
+  id: string;
+  batchId: string;
+  runId: string;
+  packageDigest: string;
+  status: "imported" | "diagnostic" | "duplicate" | "conflict" | "invalid" | "pending_trust";
+  reason: string | null;
+  recordedAt: string;
+}
+
+export interface CalibrationImportBatch {
+  id: string;
+  format: "qhcal" | "qhcalset";
+  createdAt: string;
+  completedAt: string;
+  totalItems: number;
+  importedItems: number;
+  diagnosticItems: number;
+  duplicateItems: number;
+  conflictItems: number;
+  invalidItems: number;
+  pendingTrustItems: number;
+}
+
+export interface CalibrationExportEvent {
+  id: string;
+  format: "qhcal" | "qhcalset";
+  runIds: string[];
+  packageDigest: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface CalibrationCollectionSnapshot {
+  id: string;
+  packageDigest: string;
+  resultCount: number;
+  runIds: string[];
+  createdAt: string;
+}
+
+export interface QhcalDeviceProof {
+  id: string;
+  publicKeyPem: string;
+  shortCode: string;
+}
+
+export interface CalibrationNormalizedSystemIdentity {
+  hardwareDigest: string;
+  hardwareTemplateId: string | null;
+  cpuModel: string;
+  cpuArchitecture: string;
+  physicalCores: number;
+  logicalCores: number;
+  gpuModel: string;
+  gpuArchitecture: string;
+  gpuCount: number;
+  gpuVramBytes: number | null;
+  gpuDriver: string;
+  ramBytes: number;
+  operatingSystem: OperatingSystemFamily;
+  operatingSystemVersion: string;
+  formFactor: HardwareFingerprint["formFactor"];
+}
+
+export interface QhcalPackageProvenance {
+  source: "local";
+  producerDeviceId: string;
+  exporterVersion: string;
+}
+
+export interface QhcalUnsignedPayload {
+  schemaVersion: typeof QHCAL_PACKAGE_VERSION | typeof LEGACY_QHCAL_PACKAGE_VERSION;
+  packageId: string;
+  createdAt: string;
+  device: QhcalDeviceProof;
+  run: LocalCalibrationRun;
+  workloadProfile: CalibrationWorkloadProfile;
+  systemIdentity: CalibrationNormalizedSystemIdentity;
+  provenance: QhcalPackageProvenance;
+  runDigest: string;
+}
+
+export interface QhcalPackage extends QhcalUnsignedPayload {
+  signatureAlgorithm: "Ed25519";
+  signature: string;
+}
+
+export interface QhcalSetUnsignedPayload {
+  schemaVersion: typeof QHCALSET_PACKAGE_VERSION | typeof LEGACY_QHCALSET_PACKAGE_VERSION;
+  collectionId: string;
+  createdAt: string;
+  packages: QhcalPackage[];
+  packageDigests: string[];
+}
+
+export interface QhcalSetPackage extends QhcalSetUnsignedPayload {
+  exporter: QhcalDeviceProof;
+  signatureAlgorithm: "Ed25519";
+  signature: string;
+}
+
+export interface CalibrationCollectionStatus {
+  runs: number;
+  measuredSystems: number;
+  distinctConfigurations: number;
+  trustedDevices: number;
+  pendingDevices: number;
+  revokedDevices: number;
+  platforms: Partial<Record<OperatingSystemFamily, number>>;
+  profiles: number;
+  purchaseEligibleRuns: number;
+  diagnosticRuns: number;
+}
+
 export interface CalibrationPlan {
   schemaVersion: typeof CALIBRATION_PLAN_VERSION;
   id: string;
   createdAt: string;
-  mode: "quick" | "full";
+  mode: CalibrationMode;
   executionMode: "readiness" | "production_pipeline";
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
+  kernelVersion: typeof CALIBRATION_KERNEL_VERSION;
+  strategy: "adaptive";
+  workloadProfile: CalibrationWorkloadProfile;
+  cameraTiers: number[];
+  discovery: { stabilizationSeconds: number; sampleSeconds: number };
+  qualification: { repetitions: 1 | 3; cooldownSeconds: number; maximumVariabilityPercent: number };
   targetHardwareTemplateId: string | null;
   scenario: CapacityScenario;
   localOnly: true;
@@ -827,6 +1114,176 @@ export interface CalibrationPlan {
   sourceProfiles: Array<Pick<CameraSourceProfile, "codec" | "width" | "height" | "sourceFps" | "bitrateMbps">>;
   requestedInferenceFps: number[];
   instructions: string[];
+}
+
+export interface CalibrationWorkloadProfile {
+  schemaVersion: "qual-hardware-calibration-workload-profile/1.0.0";
+  id: string;
+  signature: string;
+  targetBuildHash: string;
+  workloadContractVersion: WorkloadContractVersion;
+  operatingSystem: "auto" | OperatingSystemFamily | undefined;
+  cameraGroups: Array<{
+    sharePpm: number;
+    codec: Codec;
+    width: number;
+    height: number;
+    sourceFps: number;
+    bitrateMbps: number;
+    decodeMode: DecodeMode;
+    motionPercent: number;
+    storage: CameraStoragePolicy;
+    agents: Array<Omit<AgentLoad, "id" | "name">>;
+  }>;
+  concurrentWorkloads: ConcurrentWorkloads;
+}
+
+export interface CalibrationTierResult {
+  tier: number;
+  repetition: number | null;
+  computeMode?: CalibrationComputeMode;
+  phase: "discovery" | "warmup" | "ramp" | "sustained" | "surge";
+  startedAt: string;
+  completedAt: string;
+  passed: boolean;
+  frameDeliveryRate: number;
+  inferenceSuccessRate: number;
+  p99InferenceLatencyMs: number;
+  inferenceIntervalMs: number;
+  p95BottleneckUtilizationPercent: number;
+  queueGrowthPerMinute: number;
+  outOfMemoryCount: number;
+  thermalThrottlePercent: number | null;
+  failures: string[];
+}
+
+export interface CalibrationRepetitionResult {
+  repetition: 1 | 2 | 3;
+  tier: number;
+  startedAt: string;
+  completedAt: string;
+  passed: boolean;
+  safeCameraCapacity: number;
+  failures: string[];
+}
+
+export interface CalibrationRuntimeStatus {
+  schemaVersion: "qual-hardware-calibration-runtime-status/1.0.0";
+  kernelVersion: typeof CALIBRATION_KERNEL_VERSION;
+  authorityCommit: string;
+  platform: NodeJS.Platform;
+  architecture: string;
+  featureMode: "disabled" | "diagnostic" | "full";
+  manifestApproved: boolean;
+  runtimeAssetsVerified: boolean;
+  readyForQuickTest: boolean;
+  readyForFullQualification: boolean;
+  manifestHash: string;
+  contracts: Array<{
+    id: "authority" | "pipeline" | "sources";
+    status: "verified" | "missing" | "mismatch";
+    path: string | null;
+    sha256: string | null;
+    expectedSha256: string;
+  }>;
+  assets: Array<{
+    id: string;
+    status: "verified" | "missing" | "mismatch" | "system_only";
+    path: string | null;
+    sha256: string | null;
+    sizeBytes: number | null;
+    expectedSizeBytes: number | null;
+    version: string | null;
+    licenseSpdx: string | null;
+    sbomRef: string | null;
+  }>;
+  computeCapabilities?: {
+    cpuInferenceAvailable: boolean;
+    gpuInferenceAvailable: boolean;
+    gpuInferenceBackend: CalibrationGpuInferenceBackend;
+    gpuInferenceDeviceId: string | null;
+    gpuInferenceDeviceName: string | null;
+    gpuMediaAvailable: boolean;
+    gpuMediaBackend: CalibrationGpuMediaBackend;
+    failures: string[];
+  };
+  reasons: string[];
+}
+
+export type CalibrationRuntimeClassification = "candidate" | "production";
+export type CalibrationRuntimeInstallationState = "pending" | "selecting" | "validating" | "installing" | "completed" | "cancelled" | "failed";
+
+export interface CalibrationRuntimePackageStatus {
+  schemaVersion: "qual-hardware-calibration-runtime-package-status/1.0.0";
+  target: "win32-x64" | "darwin-arm64" | "linux-x64" | null;
+  active: {
+    manifestHash: string;
+    version: string;
+    classification: CalibrationRuntimeClassification;
+    keyId: string;
+    installedAt: string;
+  } | null;
+  previous: {
+    manifestHash: string;
+    version: string;
+    classification: CalibrationRuntimeClassification;
+    keyId: string;
+    installedAt: string;
+  } | null;
+  installationInProgress: boolean;
+  qualificationAllowed: boolean;
+  reasons: string[];
+}
+
+export interface CalibrationRuntimeInstallation {
+  installationId: string;
+  state: CalibrationRuntimeInstallationState;
+  createdAt: string;
+  updatedAt: string;
+  manifestHash: string | null;
+  error: string | null;
+}
+
+export interface CalibrationHardwarePreflight {
+  schemaVersion: "qual-hardware-calibration-hardware/1.0.0";
+  detectedAt: string;
+  cpuModel: string;
+  cpuArchitecture: string;
+  physicalCores: number;
+  logicalCores: number;
+  gpuModel: string;
+  gpuDriver: string;
+  gpuArchitecture: string;
+  gpuCount: number;
+  gpuVramBytes: number | null;
+  ramBytes: number;
+  operatingSystem: OperatingSystemFamily;
+  operatingSystemVersion: string;
+  formFactor: "laptop" | "mini_pc" | "workstation" | "rack" | null;
+  networkLinks: Array<{
+    name: string;
+    speedMbps: number | null;
+    duplex: "full" | "half" | "unknown";
+    physicalLinkVerified: boolean;
+  }>;
+}
+
+export interface HardwareCapacityAssessment {
+  schemaVersion: "qual-hardware-capacity-assessment/1.0.0";
+  id: string;
+  hardwareTemplateId: string;
+  workloadProfileId: string;
+  targetBuildHash: string;
+  kernelVersion: string;
+  runtimeManifestHash: string;
+  calibrationRunIds: string[];
+  generatedAt: string;
+  status: CalibrationStatus;
+  procurementEligibility: ProcurementEligibility;
+  safeCameraMaximum: number | null;
+  capacityBound: CalibrationCapacityBound | null;
+  bottleneck: CalibrationStage | null;
+  reasons: string[];
 }
 
 export type HardwareComponentKind =
@@ -1107,7 +1564,7 @@ export interface ProcurementGate {
   status: "apt_for_procurement" | "planning" | "blocked";
   reasons: string[];
   comparablePhysicalAnchors: number;
-  requiredPhysicalAnchors: 3;
+  requiredPhysicalAnchors: 1 | 3;
   completeStageCoverage: boolean;
 }
 
@@ -1214,6 +1671,10 @@ export interface CapacityPrediction {
   schemaVersion: typeof CAPACITY_PREDICTION_VERSION;
   id: string;
   hardwareTemplateId: string;
+  workloadProfileId?: string;
+  targetBuildHash?: string | null;
+  kernelVersion?: string | null;
+  runtimeManifestHash?: string | null;
   generatedAt: string;
   status: CalibrationStatus;
   procurementEligibility: ProcurementEligibility;

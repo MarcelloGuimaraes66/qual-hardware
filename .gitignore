@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+release-*/
 .playwright-cli/
 output/
 outputs/
@@ -10,3 +11,14 @@ coverage/
 tmp/
 artifacts/
 *.log
+auto.crt
+auto.key
+.tools/
+.archon/
+runtime-staging/
+*.qhruntime
+/resources/calibration/darwin-arm64/
+/resources/calibration/win32-x64/
+/resources/calibration/linux-x64/
+/resources/calibration/manifest-backups/
+/resources/calibration/runtime-target-backups/

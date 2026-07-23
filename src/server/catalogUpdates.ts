@@ -113,6 +113,7 @@ export class CatalogUpdateService {
   private readonly officialEnabled: boolean;
   private readonly officialChannel: OfficialCatalogChannel;
   private readonly allowLegacyConfiguration: boolean;
+  private refreshPromise: Promise<CatalogStatus> | null = null;
 
   constructor(private readonly store: PlannerStore, options: CatalogUpdateOptions = {}) {
     this.remoteUrl = validatedRemoteUrl(options.remoteUrl ?? process.env.QUAL_HARDWARE_CATALOG_URL);
@@ -155,10 +156,15 @@ export class CatalogUpdateService {
   }
 
   get status(): CatalogStatus { return { ...this.currentStatus }; }
+  get refreshing(): boolean { return this.refreshPromise !== null; }
 
-  async initialize(): Promise<CatalogStatus> {
+  async initialize(options: { refreshRemote?: boolean } = {}): Promise<CatalogStatus> {
     const activePublication = await this.store.getActiveCatalogPublication();
-    if (activePublication) await this.updateFromPublication(activePublication, "cached");
+    if (activePublication && Date.parse(activePublication.publishedAt) >= Date.parse(HARDWARE_CATALOG_GENERATED_AT)) {
+      await this.updateFromPublication(activePublication, "cached");
+    } else if (activePublication) {
+      await this.useBundledCatalog(activePublication);
+    }
     if (this.configFile) {
       try {
         const parsed = JSON.parse(await readFile(this.configFile, "utf8")) as Partial<PersistedCatalogUpdateConfiguration>;
@@ -179,16 +185,25 @@ export class CatalogUpdateService {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.currentStatus.lastError = "cached_catalog_rejected";
       }
     }
-    if (this.officialEnabled) {
-      try { await this.refreshOfficial(); } catch { this.currentStatus.lastError = "official_catalog_refresh_failed"; }
-    } else if (this.currentStatus.remoteUpdateConfigured) {
+    if (options.refreshRemote !== false && this.officialEnabled) {
+      try { await this.refresh(); } catch { this.currentStatus.lastError = "official_catalog_refresh_failed"; }
+    } else if (options.refreshRemote !== false && this.currentStatus.remoteUpdateConfigured) {
       try { await this.refresh(); } catch { this.currentStatus.lastError = "remote_catalog_refresh_failed"; }
     }
     return this.status;
   }
 
   async refresh(): Promise<CatalogStatus> {
-    if (this.officialEnabled) return this.refreshOfficial();
+    if (this.refreshPromise) return this.refreshPromise;
+    const operation = (this.officialEnabled ? this.refreshOfficial() : this.refreshConfigured())
+      .finally(() => {
+        if (this.refreshPromise === operation) this.refreshPromise = null;
+      });
+    this.refreshPromise = operation;
+    return operation;
+  }
+
+  private async refreshConfigured(): Promise<CatalogStatus> {
     if (!this.remoteUrl || !this.publicKeyPem) throw new Error("catalog_update_not_configured");
     const run = await this.beginRun("inventory_prices", "remote", "Verificando atualização assinada de equipamentos e preços.");
     try {
@@ -352,10 +367,17 @@ export class CatalogUpdateService {
         run.updated = result.publication.summary.updated;
         run.unchanged = result.publication.summary.unchanged;
         run.rejected = result.publication.summary.rejected;
-        run.message = result.applied
-          ? `Publicação ${result.publication.publicationId} validada e ativada atomicamente.`
-          : `Canal oficial verificado; ${result.publication.publicationId} continua sendo a publicação mais recente.`;
-        await this.updateFromPublication(result.publication, result.applied ? "remote" : this.currentStatus.source);
+        const publicationIsNewEnough = Date.parse(result.publication.publishedAt) >= Date.parse(HARDWARE_CATALOG_GENERATED_AT);
+        run.message = publicationIsNewEnough
+          ? result.applied
+            ? `Publicação ${result.publication.publicationId} validada e ativada atomicamente.`
+            : `Canal oficial verificado; ${result.publication.publicationId} continua sendo a publicação mais recente.`
+          : `Publicação ${result.publication.publicationId} validada; o catálogo embarcado é mais novo e permanece ativo.`;
+        if (publicationIsNewEnough) {
+          await this.updateFromPublication(result.publication, result.applied ? "remote" : this.currentStatus.source);
+        } else {
+          await this.useBundledCatalog(result.publication);
+        }
       } else {
         run.message = "Canal oficial verificado; ainda não existe publicação assinada. O catálogo embarcado continua ativo.";
       }
@@ -368,6 +390,31 @@ export class CatalogUpdateService {
       await this.failRun(run, error);
       throw error;
     }
+  }
+
+  private async useBundledCatalog(publication: CatalogPublication): Promise<void> {
+    const current = await this.store.getCatalog();
+    const bundledById = new Map(HARDWARE_CATALOG.map((item) => [item.id, JSON.stringify(item)]));
+    const alreadyCurrent = current.length === HARDWARE_CATALOG.length &&
+      current.every((item) => bundledById.get(item.id) === JSON.stringify(item));
+    if (!alreadyCurrent) await this.store.replaceCatalog(HARDWARE_CATALOG, SEED_PRICE_QUOTES);
+    const nextCollection = new Date(Date.parse(publication.publishedAt) + 15 * 24 * 60 * 60 * 1_000);
+    const delayDays = Math.max(0, (Date.now() - nextCollection.getTime()) / (24 * 60 * 60 * 1_000));
+    this.currentStatus = {
+      ...this.currentStatus,
+      catalogVersion: HARDWARE_CATALOG_VERSION,
+      generatedAt: HARDWARE_CATALOG_GENERATED_AT,
+      checkedAt: new Date().toISOString(),
+      source: "bundled",
+      hardwareCount: HARDWARE_CATALOG.length,
+      quoteCount: SEED_PRICE_QUOTES.length,
+      stalePriceCount: SEED_PRICE_QUOTES.filter(quoteIsStale).length,
+      latestSequence: publication.sequence,
+      lastPublicationAt: publication.publishedAt,
+      nextCollectionExpectedAt: nextCollection.toISOString(),
+      publicationDelayDays: Math.round(delayDays * 10) / 10,
+      latestSummary: publication.summary,
+    };
   }
 
   private async updateFromPublication(publication: CatalogPublication, source: CatalogStatus["source"]): Promise<void> {
