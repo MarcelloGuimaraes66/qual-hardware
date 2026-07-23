@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS calibration_extension_metadata (
 ) STRICT;
 INSERT OR IGNORE INTO calibration_extension_metadata(singleton,extension_version,installed_at)
   VALUES(1,2,datetime('now'));
-UPDATE calibration_extension_metadata SET extension_version=2 WHERE singleton=1 AND extension_version<2;
+UPDATE calibration_extension_metadata SET extension_version=3 WHERE singleton=1 AND extension_version<3;
 
 CREATE TABLE IF NOT EXISTS calibration_runtime_manifests (
   manifest_hash TEXT PRIMARY KEY,
@@ -166,7 +166,7 @@ CREATE INDEX IF NOT EXISTS calibration_runs_v2_lookup_idx
 CREATE TABLE IF NOT EXISTS calibration_tier_results (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES calibration_runs_v2(id),
-  tier INTEGER NOT NULL CHECK (tier BETWEEN 1 AND 4096),
+  tier INTEGER NOT NULL CHECK (tier BETWEEN 1 AND 1000000),
   repetition INTEGER CHECK (repetition BETWEEN 1 AND 3),
   phase TEXT NOT NULL,
   result_json TEXT NOT NULL CHECK (json_valid(result_json)),
@@ -174,6 +174,46 @@ CREATE TABLE IF NOT EXISTS calibration_tier_results (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS calibration_tier_results_run_idx
   ON calibration_tier_results(run_id,tier,repetition,phase);
+
+CREATE TABLE IF NOT EXISTS calibration_hardware_topologies (
+  run_id TEXT PRIMARY KEY REFERENCES calibration_runs_v2(id),
+  schema_version TEXT NOT NULL,
+  topology_json TEXT NOT NULL CHECK (json_valid(topology_json)),
+  recorded_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_device_results (
+  run_id TEXT NOT NULL REFERENCES calibration_runs_v2(id),
+  device_id TEXT NOT NULL,
+  classification TEXT NOT NULL CHECK (classification IN ('compute','media_only','display_only','unavailable')),
+  result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+  recorded_at TEXT NOT NULL,
+  PRIMARY KEY(run_id,device_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_capacity_boundaries (
+  run_id TEXT PRIMARY KEY REFERENCES calibration_runs_v2(id),
+  bound_kind TEXT NOT NULL CHECK (bound_kind IN ('exact','at_least','uncertain')),
+  highest_passing_cameras INTEGER,
+  first_failing_cameras INTEGER,
+  safe_cameras INTEGER,
+  boundary_json TEXT NOT NULL CHECK (json_valid(boundary_json)),
+  recorded_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS fleet_plans (
+  id TEXT PRIMARY KEY,
+  recommendation_id TEXT NOT NULL REFERENCES recommendations(id) ON DELETE CASCADE,
+  alternative_id TEXT NOT NULL,
+  workload_signature TEXT NOT NULL,
+  project_cameras INTEGER NOT NULL CHECK (project_cameras BETWEEN 1 AND 1000000),
+  active_servers INTEGER NOT NULL CHECK (active_servers > 0),
+  reserve_servers INTEGER NOT NULL CHECK (reserve_servers >= 0),
+  plan_json TEXT NOT NULL CHECK (json_valid(plan_json)),
+  generated_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS fleet_plans_recommendation_idx
+  ON fleet_plans(recommendation_id,alternative_id);
 
 CREATE TABLE IF NOT EXISTS hardware_capacity_assessments (
   id TEXT PRIMARY KEY,
@@ -810,5 +850,5 @@ CREATE TABLE IF NOT EXISTS component_report_sections (
   PRIMARY KEY(component_kind, section_code)
 ) STRICT;
 
-PRAGMA user_version = 9;
+PRAGMA user_version = 10;
 COMMIT;

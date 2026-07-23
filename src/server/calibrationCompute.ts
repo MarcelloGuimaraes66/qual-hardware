@@ -69,14 +69,22 @@ export function selectLlamaGpuDevice(input: {
   expectedBackend: CalibrationGpuInferenceBackend;
   gpuModel: string;
 }): CalibrationGpuDevice | null {
-  if (input.expectedBackend === "unavailable") return null;
+  return selectLlamaGpuDevices(input)[0] ?? null;
+}
+
+export function selectLlamaGpuDevices(input: {
+  devices: CalibrationGpuDevice[];
+  expectedBackend: CalibrationGpuInferenceBackend;
+  gpuModel: string;
+}): CalibrationGpuDevice[] {
+  if (input.expectedBackend === "unavailable") return [];
   const preferred = input.devices.filter((device) => device.backend === input.expectedBackend);
   const candidates = preferred.length > 0
     ? preferred
     : input.expectedBackend === "cuda" || input.expectedBackend === "rocm"
       ? input.devices.filter((device) => device.backend === "vulkan")
       : [];
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return [];
   const expectedTokens = normalized(input.gpuModel).split(" ").filter((token) => token.length >= 3);
   return [...candidates].sort((left, right) => {
     const score = (device: CalibrationGpuDevice): number => {
@@ -84,7 +92,7 @@ export function selectLlamaGpuDevice(input: {
       return expectedTokens.filter((token) => name.includes(token)).length;
     };
     return score(right) - score(left) || left.id.localeCompare(right.id);
-  })[0] ?? null;
+  });
 }
 
 function capabilityTokens(output: string): Set<string> {
@@ -123,6 +131,19 @@ export function llamaComputeArguments(
   return ["--device", gpuDevice.id, "--n-gpu-layers", "999"];
 }
 
+export function llamaCpuTopologyArguments(
+  hardware: CalibrationHardwarePreflight | undefined,
+  concurrentServers: number,
+): string[] {
+  const logicalCores = Math.max(1, hardware?.logicalCores ?? 1);
+  const threadsPerServer = Math.max(1, Math.floor(logicalCores / Math.max(1, concurrentServers)));
+  return [
+    "--threads", String(threadsPerServer),
+    "--threads-batch", String(threadsPerServer),
+    ...((hardware?.numaNodes?.length ?? 1) > 1 ? ["--numa", "distribute"] : []),
+  ];
+}
+
 export function ffmpegGpuInputArguments(backend: CalibrationGpuMediaBackend): string[] {
   if (backend === "cuda_nvenc") return ["-hwaccel", "cuda"];
   if (backend === "videotoolbox") return ["-hwaccel", "videotoolbox"];
@@ -130,6 +151,65 @@ export function ffmpegGpuInputArguments(backend: CalibrationGpuMediaBackend): st
   if (backend === "d3d11va_amf") return ["-hwaccel", "d3d11va"];
   if (backend === "vaapi") return ["-hwaccel", "vaapi"];
   throw new Error("calibration_gpu_media_backend_unavailable");
+}
+
+export function ffmpegGpuDeviceArguments(
+  backend: CalibrationGpuMediaBackend,
+  deviceIndex: number,
+): { inputArguments: string[]; encoderArguments: string[] } {
+  if (!Number.isInteger(deviceIndex) || deviceIndex < 0) throw new Error("calibration_gpu_device_index_invalid");
+  if (backend === "cuda_nvenc") {
+    return {
+      inputArguments: ["-hwaccel", "cuda", "-hwaccel_device", String(deviceIndex)],
+      encoderArguments: ["-gpu", String(deviceIndex)],
+    };
+  }
+  if (backend === "qsv") {
+    return {
+      inputArguments: ["-init_hw_device", `qsv=qh${deviceIndex}:hw=${deviceIndex}`, "-filter_hw_device", `qh${deviceIndex}`, "-hwaccel", "qsv"],
+      encoderArguments: [],
+    };
+  }
+  if (backend === "vaapi") {
+    return {
+      inputArguments: ["-hwaccel", "vaapi", "-hwaccel_device", `/dev/dri/renderD${128 + deviceIndex}`],
+      encoderArguments: [],
+    };
+  }
+  return { inputArguments: ffmpegGpuInputArguments(backend), encoderArguments: [] };
+}
+
+export interface WeightedComputeCandidate<T> {
+  value: T;
+  weight: number;
+  queueDepth: number;
+}
+
+/** Deterministic smooth weighted round-robin with queue-pressure correction. */
+export function weightedRoundRobin<T>(
+  candidates: Array<WeightedComputeCandidate<T>>,
+  count: number,
+): T[] {
+  if (!Number.isSafeInteger(count) || count < 0) throw new Error("weighted_schedule_count_invalid");
+  const eligible = candidates.filter((candidate) =>
+    Number.isFinite(candidate.weight) && candidate.weight > 0 &&
+    Number.isFinite(candidate.queueDepth) && candidate.queueDepth >= 0);
+  if (eligible.length === 0 && count > 0) throw new Error("weighted_schedule_has_no_eligible_device");
+  const state = eligible.map((candidate) => ({
+    candidate,
+    effectiveWeight: candidate.weight / (1 + candidate.queueDepth),
+    current: 0,
+  }));
+  const total = state.reduce((sum, item) => sum + item.effectiveWeight, 0);
+  const result: T[] = [];
+  for (let index = 0; index < count; index += 1) {
+    for (const item of state) item.current += item.effectiveWeight;
+    state.sort((left, right) => right.current - left.current);
+    const selected = state[0]!;
+    selected.current -= total;
+    result.push(selected.candidate.value);
+  }
+  return result;
 }
 
 export function ffmpegEncoder(

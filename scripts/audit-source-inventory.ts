@@ -41,7 +41,7 @@ async function verifyContract(contract: { relativePath: string; sha256: string }
   return { relativePath: contract.relativePath, bytes: bytes.byteLength, sha256: digest };
 }
 
-if (manifest.authorityCommit !== authorityCommit || manifest.pipelineImplementation !== "perceptrum-equivalent-v1") {
+if (manifest.authorityCommit !== authorityCommit || manifest.pipelineImplementation !== "perceptrum-equivalent-v2-multi-device") {
   throw new Error("Calibration runtime manifest does not match the immutable local authority contract.");
 }
 

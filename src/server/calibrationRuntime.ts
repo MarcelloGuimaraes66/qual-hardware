@@ -7,12 +7,14 @@ import { z } from "zod";
 import { currentHostPlatform, trySelectHostPlatform } from "../platform/index.js";
 import {
   CALIBRATION_KERNEL_VERSION,
+  CALIBRATION_RUNTIME_MANIFEST_VERSION as SHARED_CALIBRATION_RUNTIME_MANIFEST_VERSION,
   PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
   type CalibrationRuntimeStatus,
 } from "../shared/types.js";
 
 export const CALIBRATION_AUTHORITY_COMMIT = PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT;
-export const CALIBRATION_RUNTIME_MANIFEST_VERSION = "qual-hardware-calibration-runtime-manifest/2.0.0" as const;
+export const CALIBRATION_RUNTIME_MANIFEST_VERSION = SHARED_CALIBRATION_RUNTIME_MANIFEST_VERSION;
+const CALIBRATION_PIPELINE_IMPLEMENTATION = "perceptrum-equivalent-v2-multi-device";
 
 export const SUPPORTED_RUNTIME_TARGETS = ["darwin-arm64", "win32-x64", "linux-x64"] as const;
 export type SupportedRuntimeTarget = typeof SUPPORTED_RUNTIME_TARGETS[number];
@@ -287,7 +289,7 @@ export async function inspectCalibrationRuntime(options: {
   const runtimeAssetsVerified = selectedTarget !== null &&
     manifest.kernelVersion === CALIBRATION_KERNEL_VERSION &&
     manifest.authorityCommit === CALIBRATION_AUTHORITY_COMMIT &&
-    manifest.pipelineImplementation === "perceptrum-equivalent-v1" &&
+    manifest.pipelineImplementation === CALIBRATION_PIPELINE_IMPLEMENTATION &&
     contracts.every((contract) => contract.status === "verified") &&
     assets.length === REQUIRED_RUNTIME_ASSET_IDS.length &&
     assets.every((asset) => asset.status === "verified");
@@ -298,7 +300,7 @@ export async function inspectCalibrationRuntime(options: {
     ...(selectedTarget ? [] : [`runtime-target:${platform}-${architecture}:unsupported`]),
     "A calibração rápida está disponível em plataformas compatíveis, mas a qualificação comercial exige todos os binários e modelos empacotados com hashes aprovados.",
     ...(manifestApproved ? [] : [`runtime-manifest:${manifestApprovalKey}:not-approved`]),
-    ...(manifest.pipelineImplementation === "perceptrum-equivalent-v1" ? [] : [`pipeline:${manifest.pipelineImplementation}`]),
+    ...(manifest.pipelineImplementation === CALIBRATION_PIPELINE_IMPLEMENTATION ? [] : [`pipeline:${manifest.pipelineImplementation}`]),
     ...contracts.filter((contract) => contract.status !== "verified").map((contract) => `contract:${contract.id}:${contract.status}`),
     ...assets.filter((asset) => asset.status !== "verified").map((asset) => `${asset.id}:${asset.status}`),
   ];

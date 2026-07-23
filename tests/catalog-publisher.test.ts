@@ -319,7 +319,7 @@ describe("signed bundle, chain and additive SQLite migration", () => {
     await expect(channel.refresh(new MemoryPlannerStore())).rejects.toThrow("official_catalog_url_rejected");
   });
 
-  it("migrates a v7 database additively to v9, creates a consistent backup and preserves existing rows", async () => {
+  it("migrates a v7 database additively to v10, creates a consistent backup and preserves existing rows", async () => {
     const directory = await testDirectory("qual-hardware-v7-current-");
     const path = join(directory, "qual-hardware.sqlite");
     const legacy = new DatabaseSync(path);

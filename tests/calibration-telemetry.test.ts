@@ -56,6 +56,31 @@ describe("calibration hardware telemetry", () => {
     );
   });
 
+  it("preserves individual GPU identity and measurements from the approved helper", () => {
+    expect(parseApprovedTelemetryProbe(JSON.stringify(probePayload({
+      gpuDevices: [{
+        index: 0,
+        uuid: "GPU-abc",
+        pciBusId: "00000000:01:00.0",
+        name: "NVIDIA RTX",
+        utilizationPercent: 75,
+        memoryUsedBytes: 1024,
+        temperatureCelsius: 62,
+        powerWatts: 150,
+        thermalThrottlePercent: 0,
+      }],
+    })))?.gpuDevices).toEqual([{
+      deviceId: "GPU-abc",
+      index: 0,
+      name: "NVIDIA RTX",
+      utilizationPercent: 75,
+      memoryUsedBytes: 1024,
+      temperatureCelsius: 62,
+      powerWatts: 150,
+      thermalThrottlePercent: 0,
+    }]);
+  });
+
   it("keeps partial sensor coverage diagnostic and never upgrades it to approved evidence", () => {
     const partial = parseApprovedTelemetryProbe(JSON.stringify(probePayload({
       quality: {

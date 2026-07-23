@@ -156,7 +156,7 @@ export function normalizeCalibrationProgress(input: unknown): CalibrationSession
     overallPercent: Math.min(100, Math.max(normalizedPercent, number("overallPercent", normalizedPercent))),
     phasePercent: Math.min(100, number("phasePercent", 0)),
     ...(typeof value.message === "string" ? { message: value.message.slice(0, 1_000) } : {}),
-    ...(Number.isInteger(Number(value.tier)) ? { tier: Math.max(1, Math.min(4_096, Number(value.tier))) } : {}),
+    ...(Number.isInteger(Number(value.tier)) ? { tier: Math.max(1, Math.min(1_000_000, Number(value.tier))) } : {}),
     ...(Number.isInteger(Number(value.repetition)) ? { repetition: Math.max(1, Math.min(3, Number(value.repetition))) } : {}),
     ...(Number.isInteger(Number(value.attempt)) ? { attempt: Math.max(1, Math.min(10_000, Number(value.attempt))) } : {}),
     ...(value.computeMode === "cpu_only" || value.computeMode === "gpu_accelerated"

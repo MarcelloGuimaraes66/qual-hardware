@@ -11,7 +11,7 @@ import (
 
 const (
 	probeSchemaVersion = "qual-hardware-telemetry-probe/1.0.0"
-	probeVersion       = "0.1.0"
+	probeVersion       = "0.2.0"
 )
 
 type evidenceStatus string
@@ -30,20 +30,33 @@ type probeQuality struct {
 }
 
 type probePayload struct {
-	SchemaVersion          string       `json:"schemaVersion"`
-	ProbeVersion           string       `json:"probeVersion"`
-	Platform               string       `json:"platform"`
-	Architecture           string       `json:"architecture"`
-	CapturedAt             string       `json:"capturedAt"`
-	Quality                probeQuality `json:"quality"`
-	GPUUtilizationPercent  *float64     `json:"gpuUtilizationPercent,omitempty"`
-	GPUMemoryUsedBytes     *float64     `json:"gpuMemoryUsedBytes,omitempty"`
-	GPUTemperatureCelsius  *float64     `json:"gpuTemperatureCelsius,omitempty"`
-	GPUPowerWatts          *float64     `json:"gpuPowerWatts,omitempty"`
-	CPUTemperatureCelsius  *float64     `json:"cpuTemperatureCelsius,omitempty"`
-	ThermalThrottlePercent *float64     `json:"thermalThrottlePercent,omitempty"`
-	ThermalThrottleCounter *uint64      `json:"thermalThrottleCounter,omitempty"`
-	Warnings               []string     `json:"warnings"`
+	SchemaVersion          string               `json:"schemaVersion"`
+	ProbeVersion           string               `json:"probeVersion"`
+	Platform               string               `json:"platform"`
+	Architecture           string               `json:"architecture"`
+	CapturedAt             string               `json:"capturedAt"`
+	Quality                probeQuality         `json:"quality"`
+	GPUUtilizationPercent  *float64             `json:"gpuUtilizationPercent,omitempty"`
+	GPUMemoryUsedBytes     *float64             `json:"gpuMemoryUsedBytes,omitempty"`
+	GPUTemperatureCelsius  *float64             `json:"gpuTemperatureCelsius,omitempty"`
+	GPUPowerWatts          *float64             `json:"gpuPowerWatts,omitempty"`
+	CPUTemperatureCelsius  *float64             `json:"cpuTemperatureCelsius,omitempty"`
+	ThermalThrottlePercent *float64             `json:"thermalThrottlePercent,omitempty"`
+	ThermalThrottleCounter *uint64              `json:"thermalThrottleCounter,omitempty"`
+	GPUDevices             []gpuDeviceTelemetry `json:"gpuDevices,omitempty"`
+	Warnings               []string             `json:"warnings"`
+}
+
+type gpuDeviceTelemetry struct {
+	Index                  int      `json:"index"`
+	UUID                   string   `json:"uuid"`
+	PCIBusID               string   `json:"pciBusId"`
+	Name                   string   `json:"name"`
+	UtilizationPercent     *float64 `json:"utilizationPercent,omitempty"`
+	MemoryUsedBytes        *float64 `json:"memoryUsedBytes,omitempty"`
+	TemperatureCelsius     *float64 `json:"temperatureCelsius,omitempty"`
+	PowerWatts             *float64 `json:"powerWatts,omitempty"`
+	ThermalThrottlePercent *float64 `json:"thermalThrottlePercent,omitempty"`
 }
 
 func main() {

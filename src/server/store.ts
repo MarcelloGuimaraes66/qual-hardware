@@ -9,6 +9,7 @@ import { assertDedicatedSqlitePath, QUAL_HARDWARE_SQLITE_SCHEMA_VERSION } from "
 import { isPublicObservationEligible } from "../engine/evidence.js";
 import { fieldDefinitionsForKind, withTechnicalSpecification } from "../engine/technicalSpecifications.js";
 import { calibrationHardwareDigest } from "./calibrationHardware.js";
+import { CALIBRATION_COMPUTE_EVIDENCE_VERSION } from "../shared/types.js";
 import type {
   ComponentBuild,
   CapacityPrediction,
@@ -493,6 +494,32 @@ function migrateCalibrationSessionEventStates(database: DatabaseSync): void {
   `);
 }
 
+function migrateCalibrationTierCapacity(database: DatabaseSync): void {
+  const table = database.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='calibration_tier_results'",
+  ).get() as { sql?: string } | undefined;
+  if (!table?.sql || table.sql.includes("1000000")) return;
+  database.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE calibration_tier_results RENAME TO calibration_tier_results_v9;
+    CREATE TABLE calibration_tier_results (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES calibration_runs_v2(id),
+      tier INTEGER NOT NULL CHECK (tier BETWEEN 1 AND 1000000),
+      repetition INTEGER CHECK (repetition BETWEEN 1 AND 3),
+      phase TEXT NOT NULL,
+      result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+      completed_at TEXT NOT NULL
+    ) STRICT;
+    INSERT INTO calibration_tier_results(id,run_id,tier,repetition,phase,result_json,completed_at)
+      SELECT id,run_id,tier,repetition,phase,result_json,completed_at FROM calibration_tier_results_v9;
+    DROP TABLE calibration_tier_results_v9;
+    CREATE INDEX calibration_tier_results_run_idx
+      ON calibration_tier_results(run_id,tier,repetition,phase);
+    COMMIT;
+  `);
+}
+
 function catalogPublication(bundle: CatalogBundle, keyId: string, bundleSha256: string, etag: string | null): CatalogPublication {
   return {
     sequence: bundle.sequence, publicationId: bundle.publicationId, catalogVersion: bundle.catalogVersion,
@@ -531,7 +558,7 @@ export class SqlitePlannerStore implements PlannerStore {
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='calibration_session_events'",
     ).get() as { sql?: string } | undefined)?.sql;
     const calibrationStateMigrationRequired = Boolean(eventTableSql && !eventTableSql.includes("'validating'"));
-    if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && (calibrationExtensionVersion < 2 || calibrationStateMigrationRequired)) {
+    if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && (calibrationExtensionVersion < 3 || calibrationStateMigrationRequired)) {
       verifiedSqliteBackup(this.database, dedicatedPath,
         calibrationExtensionVersion === 0
           ? "qual-hardware-pre-calibration-extension"
@@ -544,12 +571,13 @@ export class SqlitePlannerStore implements PlannerStore {
     let calibrationExtensionReady = true;
     try {
       migrateCalibrationSessionEventStates(this.database);
+      migrateCalibrationTierCapacity(this.database);
       this.database.exec(schemaSql);
       const integrity = this.database.prepare("PRAGMA integrity_check").get() as Record<string, unknown> | undefined;
       if (!integrity || Object.values(integrity)[0] !== "ok") throw new Error("calibration_extension_post_migration_integrity_check_failed");
     } catch (error) {
       if (this.database.isTransaction) this.database.exec("ROLLBACK");
-      if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && (calibrationExtensionVersion < 2 || calibrationStateMigrationRequired)) {
+      if (currentVersion === QUAL_HARDWARE_SQLITE_SCHEMA_VERSION && (calibrationExtensionVersion < 3 || calibrationStateMigrationRequired)) {
         calibrationExtensionReady = false;
       } else {
         this.database.close();
@@ -575,14 +603,41 @@ export class SqlitePlannerStore implements PlannerStore {
   private insertCalibrationRunV2(run: LocalCalibrationRun): void {
     const runJson = JSON.stringify(run);
     const digest = createHash("sha256").update(runJson).digest("hex");
+    const recordedAt = now();
     this.database.prepare(
       "INSERT INTO calibration_runs_v2(id,hardware_template_id,workload_profile_id,run_digest,run_json,completed_at,recorded_at) VALUES(?,?,?,?,?,?,?)",
-    ).run(run.id, run.fingerprint.hardwareTemplateId, run.workloadProfileId ?? null, digest, runJson, run.completedAt, now());
+    ).run(run.id, run.fingerprint.hardwareTemplateId, run.workloadProfileId ?? null, digest, runJson, run.completedAt, recordedAt);
     const statement = this.database.prepare(
       "INSERT INTO calibration_tier_results(id,run_id,tier,repetition,phase,result_json,completed_at) VALUES(?,?,?,?,?,?,?)",
     );
     for (const [index, result] of (run.tierResults ?? []).entries()) {
       statement.run(`${run.id}:${index}`, run.id, result.tier, result.repetition, result.phase, JSON.stringify(result), result.completedAt);
+    }
+    if (run.fingerprint.cpuPackages || run.fingerprint.processorGroups ||
+        run.fingerprint.numaNodes || run.fingerprint.gpuDevices) {
+      this.database.prepare(
+        "INSERT INTO calibration_hardware_topologies(run_id,schema_version,topology_json,recorded_at) VALUES(?,?,?,?)",
+      ).run(run.id, "qual-hardware-calibration-hardware/2.0.0", JSON.stringify({
+        cpuPackages: run.fingerprint.cpuPackages ?? [],
+        processorGroups: run.fingerprint.processorGroups ?? [],
+        numaNodes: run.fingerprint.numaNodes ?? [],
+        gpuDevices: run.fingerprint.gpuDevices ?? [],
+      }), recordedAt);
+    }
+    if (run.computeEvidence?.schemaVersion === CALIBRATION_COMPUTE_EVIDENCE_VERSION) {
+      const insertDevice = this.database.prepare(
+        "INSERT INTO calibration_device_results(run_id,device_id,classification,result_json,recorded_at) VALUES(?,?,?,?,?)",
+      );
+      for (const device of run.computeEvidence.devices) {
+        insertDevice.run(run.id, device.deviceId, device.classification, JSON.stringify(device), recordedAt);
+      }
+    }
+    if (run.capacityBoundary) {
+      this.database.prepare(
+        "INSERT INTO calibration_capacity_boundaries(run_id,bound_kind,highest_passing_cameras,first_failing_cameras,safe_cameras,boundary_json,recorded_at) VALUES(?,?,?,?,?,?,?)",
+      ).run(run.id, run.capacityBoundary.bound, run.capacityBoundary.highestPassingCameraCount,
+        run.capacityBoundary.firstFailingCameraCount, run.capacityBoundary.operationalSafeCameraCount,
+        JSON.stringify(run.capacityBoundary), recordedAt);
     }
     if (run.runtimeManifestHash) {
       this.database.prepare(
@@ -935,10 +990,19 @@ export class SqlitePlannerStore implements PlannerStore {
     const insertMatch = this.database.prepare(
       "INSERT INTO procurement_market_matches(specification_id,component_id,manufacturer,assessment_status) VALUES(?,?,?,?) ON CONFLICT(specification_id,component_id) DO UPDATE SET manufacturer=excluded.manufacturer,assessment_status=excluded.assessment_status",
     );
+    const insertFleetPlan = this.database.prepare(
+      "INSERT INTO fleet_plans(id,recommendation_id,alternative_id,workload_signature,project_cameras,active_servers,reserve_servers,plan_json,generated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET plan_json=excluded.plan_json,generated_at=excluded.generated_at",
+    );
     this.inTransaction(() => {
       for (const item of items) {
         statement.run(item.id, item.scenarioId, item.scenarioRevision, JSON.stringify(item), item.generatedAt);
         for (const alternative of [item.primary, ...item.alternatives]) {
+          if (alternative.fleetPlan) {
+            insertFleetPlan.run(`fleet:${item.id}:${alternative.id}`, item.id, alternative.id,
+              alternative.fleetPlan.workloadSignature, alternative.fleetPlan.projectCameraCount,
+              alternative.fleetPlan.activeServers, alternative.fleetPlan.reserveServers,
+              JSON.stringify(alternative.fleetPlan), item.generatedAt);
+          }
           const specification = alternative.procurementNeutralSpecification;
           if (!specification) continue;
           insertSpecification.run(specification.id, alternative.id, specification.schemaVersion, specification.status,

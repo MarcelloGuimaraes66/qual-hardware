@@ -12,6 +12,7 @@ import {
   CALIBRATION_NETWORK_RESERVE_PERCENT,
   allocateCalibrationCameraGroups,
   calibrationLlamaContextSize,
+  exactCameraGeneratorLimit,
   estimateCalibrationMediaRingBytes,
   evaluateCalibrationNetworkCapacity,
   OfflineCalibrationPipeline,
@@ -89,6 +90,12 @@ async function fixture(
 }
 
 describe("offline Perceptrum-equivalent calibration pipeline", () => {
+  it("bounds the exact load generator by CPU, memory, and a hard safety ceiling", () => {
+    expect(exactCameraGeneratorLimit({ logicalProcessors: 24, totalMemoryBytes: 32 * 1024 ** 3 })).toBe(192);
+    expect(exactCameraGeneratorLimit({ logicalProcessors: 2, totalMemoryBytes: 4 * 1024 ** 3 })).toBe(16);
+    expect(exactCameraGeneratorLimit({ logicalProcessors: 512, totalMemoryBytes: 1024 * 1024 ** 3 })).toBe(2_048);
+  });
+
   it("uses the agent interval instead of treating model FPS as request FPS", () => {
     const plan = createCalibrationPlan(createDefaultScenario(8), "validation");
     expect(planCalibrationInferenceLoad(plan.workloadProfile, 8, 120)).toEqual({

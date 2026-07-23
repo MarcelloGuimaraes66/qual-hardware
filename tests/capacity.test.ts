@@ -30,10 +30,56 @@ describe("capacity engine", () => {
       expect(recommendation.confidence).toBe("reference_only");
     }
     const resilient = recommendations.find((item) => item.policy === "n_plus_one")!;
-    expect(resilient.primary.nodeCount).toBe(resilient.primary.activeNodeCount + 1);
-    expect(resilient.primary.allocations.filter((node) => node.role === "reserve")).toHaveLength(1);
+    const expectedReserves = resilient.primary.activeNodeCount <= 9
+      ? 1 : Math.max(2, Math.ceil(resilient.primary.activeNodeCount * 0.1));
+    expect(resilient.primary.nodeCount).toBe(resilient.primary.activeNodeCount + expectedReserves);
+    expect(resilient.primary.allocations.filter((node) => node.role === "reserve")).toHaveLength(expectedReserves);
     const recommended = recommendations.find((item) => item.policy === "recommended")!;
-    expect(recommended.primary.allocations.filter((node) => node.role === "reserve")).toHaveLength(cameras >= 64 ? 1 : 0);
+    const expectedRecommendedReserves = recommended.primary.activeNodeCount <= 9
+      ? 1 : Math.max(2, Math.ceil(recommended.primary.activeNodeCount * 0.1));
+    expect(recommended.primary.allocations.filter((node) => node.role === "reserve"))
+      .toHaveLength(expectedRecommendedReserves);
+    expect(recommended.primary.fleetPlan).toMatchObject({
+      schemaVersion: "qual-hardware-fleet-plan/1.0.0",
+      activeServers: recommended.primary.activeNodeCount,
+      reserveServers: expectedRecommendedReserves,
+      totalServers: recommended.primary.nodeCount,
+    });
+  });
+
+  it("plans one million cameras without expanding one object per camera", () => {
+    const scenario = createDefaultScenario(1_000_000);
+    const [recommendation] = buildRecommendations(
+      "00000000-0000-4000-8000-000000100000",
+      1,
+      scenario,
+      HARDWARE_CATALOG,
+      [],
+    );
+    const fleet = recommendation!.primary.fleetPlan!;
+    expect(fleet.projectCameraCount).toBe(1_000_000);
+    expect(fleet.activeServers).toBeGreaterThan(9);
+    expect(fleet.reserveServers).toBe(Math.max(2, Math.ceil(fleet.activeServers * 0.1)));
+    expect(fleet.totalServers).toBe(fleet.activeServers + fleet.reserveServers);
+    expect(fleet.totals.gpuCount).toBe(fleet.perServer.gpuCount * fleet.totalServers);
+    expect(recommendation!.primary.allocations.reduce((sum, node) =>
+      sum + (node.representedNodeCount ?? 1) *
+        node.cameraGroups.reduce((cameraSum, group) => cameraSum + group.cameras, 0), 0)).toBe(1_000_000);
+    expect(recommendation!.primary.allocations.length).toBeLessThan(256);
+  });
+
+  it("reports sockets and GPUs per server and across a dual-socket fleet", () => {
+    const scenario = createDefaultScenario(512);
+    scenario.constraints.requiredHardwareTemplateId = "rack-4x-pro6000-dualxeon";
+    scenario.constraints.operatingSystem = "ubuntu";
+    const recommendation = buildRecommendations(
+      "00000000-0000-4000-8000-000000100001", 1, scenario, HARDWARE_CATALOG, [],
+    )[0]!;
+    const fleet = recommendation.primary.fleetPlan!;
+    expect(fleet.perServer.cpuSockets).toBe(2);
+    expect(fleet.perServer.gpuCount).toBe(4);
+    expect(fleet.totals.cpuSockets).toBe(fleet.totalServers * 2);
+    expect(fleet.totals.gpuCount).toBe(fleet.totalServers * 4);
   });
 
   it("charges source decode and multiple agents independently", () => {

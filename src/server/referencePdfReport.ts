@@ -289,6 +289,13 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   writer.heading(REFERENCE_PDF_STRUCTURE.proposalSections[0]);
   writer.line(`Nos: ${design.nodeCount}; ativos: ${design.activeNodeCount}; reserva: ${design.nodeCount - design.activeNodeCount}.`);
   writer.line(`Folga-alvo: ${design.headroomPercent}%; gargalo dominante: ${design.bottleneck}; capacidade estimada neste perfil: ${design.maximumAdditionalCameras + design.allocations.filter((node) => node.role === "active").reduce((sum, node) => sum + node.cameraGroups.reduce((cameraSum, group) => cameraSum + group.cameras, 0), 0)} cameras (${design.maximumAdditionalCameras} adicionais).`);
+  if (design.fleetPlan) {
+    const fleet = design.fleetPlan;
+    writer.line(`CAPACIDADE OPERACIONAL SEGURA: ${fleet.safeCamerasPerServer} cameras por servidor. Frota: ${fleet.activeServers} ativos + ${fleet.reserveServers} reserva = ${fleet.totalServers} servidores; politica ${fleet.redundancyPolicy}.`, 10, true);
+    writer.line(`Por servidor: ${fleet.perServer.cpuSockets} CPU(s), ${fleet.perServer.physicalCores} nucleos fisicos, ${fleet.perServer.logicalCores} threads, ${fleet.perServer.gpuCount} GPU(s), ${Math.ceil(fleet.perServer.ramBytes / 1024 ** 3)} GB RAM e ${fleet.perServer.networkGbps} Gbps.`);
+    writer.line(`Totais da frota: ${fleet.totals.cpuSockets} CPU(s), ${fleet.totals.physicalCores} nucleos fisicos, ${fleet.totals.gpuCount} GPU(s), ${Math.ceil(fleet.totals.ramBytes / 1024 ** 3)} GB RAM e ${fleet.totals.networkGbps.toFixed(1)} Gbps. Estado: ${fleet.status}.`);
+    if (fleet.status === "planning_only") writer.line("BLOQUEIO DE COMPRA: o plano multi-servidor exige piloto de cluster com balanceamento, falha de no, rede, armazenamento e recuperacao.", 9.5, true);
+  }
   writer.line(`Preco do projeto: ${formatPrice(design)}`);
 
   writer.heading(REFERENCE_PDF_STRUCTURE.proposalSections[1]);
@@ -324,7 +331,7 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   writer.heading(REFERENCE_PDF_STRUCTURE.proposalSections[3]);
   for (const node of design.allocations) {
     const cameraCount = node.cameraGroups.reduce((sum, group) => sum + group.cameras, 0);
-    writer.line(`No ${node.nodeIndex} - ${node.role} - ${cameraCount} camera(s) - ${node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(", ") || "reserva sem cameras"}.`, 9.5, true);
+    writer.line(`No ${node.nodeIndex}${(node.representedNodeCount ?? 1) > 1 ? ` (representa ${node.representedNodeCount} nos identicos)` : ""} - ${node.role} - ${cameraCount} camera(s) - ${node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(", ") || "reserva sem cameras"}.`, 9.5, true);
     writer.line(`CPU ${Math.round(node.utilization.cpuCores * 100)}%; RAM ${Math.round(node.utilization.ramGb * 100)}%; VRAM ${Math.round(node.utilization.gpuVramGb * 100)}%; NVDEC ${Math.round(node.utilization.gpuDecode1080p30Streams * 100)}%; LAN ${Math.round(node.utilization.lanGbps * 100)}%; Internet ${Math.round(node.utilization.internetUploadMbps * 100)}%.`, 9, false, 10);
   }
 

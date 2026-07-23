@@ -135,12 +135,14 @@ describe("local calibration and conservative extrapolation", () => {
     expect(quick.inferenceProvider).toBe("aiq_local");
     expect(quick.targetHardwareTemplateId).toBe("target-c");
     expect(quick.phases.map((phase) => phase.durationSeconds)).toEqual([45, 75, 90, 60]);
-    expect(full.phases.map((phase) => phase.durationSeconds)).toEqual([600, 1200, 1200, 600]);
+    expect(full.phases.map((phase) => phase.durationSeconds)).toEqual([1_800, 1_800, 23_400, 1_800]);
     expect(quick.requestedInferenceFps).toEqual([1]);
     expect(quick.executionMode).toBe("readiness");
     expect(full.executionMode).toBe("production_pipeline");
-    expect(full.cameraTiers).toEqual([1, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]);
-    expect(full.qualification).toEqual({ repetitions: 3, cooldownSeconds: 600, maximumVariabilityPercent: 10 });
+    expect(full.cameraTiers).toEqual([8]);
+    expect(full.discovery.seedCameraCount).toBe(8);
+    expect(full.discovery.generatorCameraLimit).toBe(1_000_000);
+    expect(full.qualification).toEqual({ repetitions: 3, cooldownSeconds: 1_800, maximumVariabilityPercent: 10 });
     expect(full.workloadProfile.id).toMatch(/^workload:[0-9a-f]{64}$/);
     expect(full.instructions.join(" ")).toContain("Qual Hardware Calibration Kernel");
   });

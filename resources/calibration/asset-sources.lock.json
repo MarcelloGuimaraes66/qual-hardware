@@ -129,16 +129,16 @@
     {
       "id": "telemetry-probe",
       "upstream": "Aiquimist/qual-hardware",
-      "version": "0.1.0",
-      "revision": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f",
+      "version": "0.2.0",
+      "revision": "1f3d00c26232dab4de72f947c81d9bcc60a270013760fb1851653e0673258aa2",
       "licenseSpdxCandidate": null,
       "licenseEvidenceUrl": null,
       "approvalStatus": "blocked",
       "blockers": ["platform_binary_review_required", "license_decision_required", "cyclonedx_sbom_review_required", "physical_sensor_validation_required"],
       "targets": {
-        "darwin-arm64": { "sourceKind": "repository_source", "url": null, "sha256": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f", "sizeBytes": 21334, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" },
-        "win32-x64": { "sourceKind": "repository_source", "url": null, "sha256": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f", "sizeBytes": 21334, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" },
-        "linux-x64": { "sourceKind": "repository_source", "url": null, "sha256": "81bdf9a4cbcd967996ab9985e0d4fab6bcafcb1fe4459a80bb36aaa941d1351f", "sizeBytes": 21334, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" }
+        "darwin-arm64": { "sourceKind": "repository_source", "url": null, "sha256": "1f3d00c26232dab4de72f947c81d9bcc60a270013760fb1851653e0673258aa2", "sizeBytes": 24018, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" },
+        "win32-x64": { "sourceKind": "repository_source", "url": null, "sha256": "1f3d00c26232dab4de72f947c81d9bcc60a270013760fb1851653e0673258aa2", "sizeBytes": 24018, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" },
+        "linux-x64": { "sourceKind": "repository_source", "url": null, "sha256": "1f3d00c26232dab4de72f947c81d9bcc60a270013760fb1851653e0673258aa2", "sizeBytes": 24018, "archiveMember": null, "repositoryPath": "tools/telemetry-probe" }
       }
     },
     {

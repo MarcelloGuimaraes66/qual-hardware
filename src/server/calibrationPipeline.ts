@@ -31,11 +31,13 @@ import {
 import {
   expectedGpuInferenceBackend,
   ffmpegEncoder,
-  ffmpegGpuInputArguments,
+  ffmpegGpuDeviceArguments,
   llamaComputeArguments,
+  llamaCpuTopologyArguments,
   parseLlamaGpuDevices,
   selectFfmpegGpuMediaBackend,
-  selectLlamaGpuDevice,
+  selectLlamaGpuDevices,
+  weightedRoundRobin,
   type CalibrationGpuDevice,
 } from "./calibrationCompute.js";
 
@@ -76,6 +78,14 @@ export interface PipelinePhaseMeasurement {
   computeMode: CalibrationComputeMode;
   inferenceBackend: "cpu" | CalibrationGpuInferenceBackend;
   inferenceDeviceId: string;
+  inferenceDeviceIds?: string[];
+  deviceInference?: Array<{
+    deviceId: string;
+    requestsAttempted: number;
+    requestsSuccessful: number;
+    p95LatencyMs: number | null;
+  }>;
+  mediaDeviceIds?: string[];
   gpuMediaBackend: CalibrationGpuMediaBackend;
   cpuWorkloadMeasured: boolean;
   gpuInferenceMeasured: boolean;
@@ -135,6 +145,8 @@ export interface CalibrationPipelineSummary {
   gpuInferenceAvailable: boolean;
   gpuInferenceBackend: CalibrationGpuInferenceBackend;
   gpuInferenceDevice: CalibrationGpuDevice | null;
+  gpuInferenceDevices: CalibrationGpuDevice[];
+  gpuMediaDevices: Array<{ id: string; index: number; name: string }>;
   gpuMediaAvailable: boolean;
   gpuMediaBackend: CalibrationGpuMediaBackend;
   ffmpegPath: string | null;
@@ -142,10 +154,31 @@ export interface CalibrationPipelineSummary {
   mediamtxPath: string | null;
   rtspOrigin: string;
   aiqOrigin: string;
+  /**
+   * Highest concurrency this load generator can materialize without
+   * confusing generator exhaustion with the machine's capacity boundary.
+   */
+  exactCameraGeneratorLimit: number;
   unavailableReasons: string[];
 }
 
 export const CALIBRATION_NETWORK_RESERVE_PERCENT = 20;
+const CALIBRATION_GENERATOR_BYTES_PER_PIPELINE = 128 * 1024 * 1024;
+const CALIBRATION_GENERATOR_MEMORY_RESERVE_BYTES = 8 * 1024 * 1024 * 1024;
+
+export function exactCameraGeneratorLimit(input: {
+  logicalProcessors?: number;
+  totalMemoryBytes?: number;
+} = {}): number {
+  const logicalProcessors = Math.max(1, Math.floor(input.logicalProcessors ?? cpus().length));
+  const totalMemoryBytes = Math.max(0, input.totalMemoryBytes ?? totalmem());
+  const memoryBudget = Math.max(
+    16,
+    Math.floor(Math.max(0, totalMemoryBytes - CALIBRATION_GENERATOR_MEMORY_RESERVE_BYTES) /
+      CALIBRATION_GENERATOR_BYTES_PER_PIPELINE),
+  );
+  return Math.max(16, Math.min(2_048, logicalProcessors * 8, memoryBudget));
+}
 
 export interface CalibrationNetworkCapacity {
   requiredIngressMbps: number;
@@ -400,6 +433,9 @@ export class OfflineCalibrationPipeline {
     origin: string;
     child: ChildProcess;
     parallel: number;
+    device: CalibrationGpuDevice | null;
+    weight: number;
+    queueDepth: number;
   }> = [];
   private llamaExecutable: string | null = null;
   private requiredLlamaModels: Array<"core" | "core-max"> = [];
@@ -530,12 +566,22 @@ export class OfflineCalibrationPipeline {
       }
     }
     const gpuMediaAvailable = gpuMediaBackend !== "unavailable";
+    const gpuMediaDevices = gpuMediaAvailable
+      ? (this.input.hardware?.gpuDevices ?? [])
+          .filter((device) => device.mediaEligible && device.mediaBackend === gpuMediaBackend)
+          .map((device) => ({ id: device.id, index: device.index, name: device.name }))
+      : [];
+    if (gpuMediaAvailable && gpuMediaDevices.length === 0 && this.input.hardware?.gpuCount) {
+      for (let index = 0; index < this.input.hardware.gpuCount; index += 1) {
+        gpuMediaDevices.push({ id: `gpu:${index}`, index, name: this.input.hardware.gpuModel });
+      }
+    }
     if (!gpuMediaAvailable) reasons.push("approved_gpu_media_backend_unavailable");
 
     let cpuInferenceAvailable = false;
     let gpuInferenceAvailable = false;
     let gpuInferenceBackend = expectedGpuInferenceBackend(this.input.hardware ?? null, this.input.runtimeStatus.platform);
-    let gpuInferenceDevice: CalibrationGpuDevice | null = null;
+    let gpuInferenceDevices: CalibrationGpuDevice[] = [];
     if (mediaAvailable) {
       const requiredModels = new Set(this.input.workloadProfile.cameraGroups.flatMap((group) => group.agents)
         .flatMap((agent) => agent.model === "aiq-3.7-max" ? ["core-max" as const]
@@ -548,13 +594,13 @@ export class OfflineCalibrationPipeline {
       } else {
         try {
           const listed = await this.run(executable, ["--list-devices"], 30_000);
-          gpuInferenceDevice = selectLlamaGpuDevice({
+          gpuInferenceDevices = selectLlamaGpuDevices({
             devices: parseLlamaGpuDevices(`${listed.stdout}\n${listed.stderr}`),
             expectedBackend: gpuInferenceBackend,
             gpuModel: this.input.hardware?.gpuModel ?? "",
           });
-          if (gpuInferenceDevice) gpuInferenceBackend = gpuInferenceDevice.backend;
-          if (!gpuInferenceDevice) reasons.push(`gpu_inference_device_unavailable:${gpuInferenceBackend}`);
+          if (gpuInferenceDevices[0]) gpuInferenceBackend = gpuInferenceDevices[0].backend;
+          if (gpuInferenceDevices.length === 0) reasons.push(`gpu_inference_device_unavailable:${gpuInferenceBackend}`);
         } catch (error) {
           reasons.push(`gpu_inference_device_probe:${error instanceof Error ? error.message : String(error)}`);
         }
@@ -563,7 +609,7 @@ export class OfflineCalibrationPipeline {
           verifiedAssetPath(this.input.runtimeStatus, model === "core" ? "qwen-core-mmproj" : "qwen-core-max-mmproj") !== null);
         if (!modelAssetsAvailable) reasons.push("approved_local_inference_model_bundle_incomplete");
         cpuInferenceAvailable = modelAssetsAvailable;
-        gpuInferenceAvailable = modelAssetsAvailable && gpuInferenceDevice !== null;
+        gpuInferenceAvailable = modelAssetsAvailable && gpuInferenceDevices.length > 0;
       }
     }
     const localInferenceAvailable = cpuInferenceAvailable && gpuInferenceAvailable;
@@ -575,7 +621,9 @@ export class OfflineCalibrationPipeline {
       cpuInferenceAvailable,
       gpuInferenceAvailable,
       gpuInferenceBackend,
-      gpuInferenceDevice,
+      gpuInferenceDevice: gpuInferenceDevices[0] ?? null,
+      gpuInferenceDevices,
+      gpuMediaDevices,
       gpuMediaAvailable,
       gpuMediaBackend,
       ffmpegPath: ffmpeg,
@@ -583,6 +631,7 @@ export class OfflineCalibrationPipeline {
       mediamtxPath: mediamtx,
       rtspOrigin: this.rtspPort ? `rtsp://127.0.0.1:${this.rtspPort}/calibration-0` : "rtsp://127.0.0.1:8554/calibration-0",
       aiqOrigin: "http://127.0.0.1:8899",
+      exactCameraGeneratorLimit: exactCameraGeneratorLimit(),
       unavailableReasons: reasons,
     };
     return this.summary;
@@ -593,10 +642,15 @@ export class OfflineCalibrationPipeline {
     tier: number;
     durationSeconds: number;
     computeMode?: CalibrationComputeMode;
+    gpuDeviceIndexes?: number[];
   }): Promise<PipelinePhaseMeasurement> {
     if (!this.files || !this.summary) throw new Error("calibration_pipeline_not_initialized");
     const computeMode = input.computeMode ?? "cpu_only";
-    const inferenceAvailable = await this.activateInferenceMode(computeMode, input.tier);
+    const selectedGpuDeviceIndexes = computeMode === "gpu_accelerated"
+      ? [...new Set(input.gpuDeviceIndexes ?? this.summary.gpuInferenceDevices.map((_, index) => index))]
+          .filter((index) => Number.isInteger(index) && index >= 0)
+      : [];
+    const inferenceAvailable = await this.activateInferenceMode(computeMode, input.tier, selectedGpuDeviceIndexes);
     const mediaAvailable = this.summary.mediaAvailable &&
       (computeMode === "cpu_only" || this.summary.gpuMediaAvailable);
     const scaledSeconds = Math.max(0.2, input.durationSeconds * this.input.timeScale);
@@ -633,10 +687,11 @@ export class OfflineCalibrationPipeline {
     }, this.input.diskCheckIntervalMs ?? 2_000);
     diskMonitor.unref?.();
     const mediaPromise = mediaAvailable
-      ? this.runMediaPipeline(scaledSeconds, input.tier, computeMode)
+      ? this.runMediaPipeline(scaledSeconds, input.tier, computeMode, selectedGpuDeviceIndexes)
       : Promise.resolve({
       framesDecoded: 0, framesEncoded: 0, framesExtracted: 0, durationMs: null as number | null,
       actualConcurrentPipelines: 0,
+      mediaDeviceIds: [] as string[],
       errors: [] as string[],
     });
     const databasePromise = this.runEquivalentRuntimeLoad(input.tier, scaledSeconds, groupAllocations);
@@ -644,7 +699,8 @@ export class OfflineCalibrationPipeline {
     const inferencePromise = inferenceAvailable
       ? this.runLocalInference(inferencePlan, scaledSeconds, input.tier, computeMode)
       : Promise.resolve({ successful: 0, attempted: 0, framesPacked: 0, maxConcurrentRequests: 0,
-        latencies: [] as number[], errors: [] as string[] });
+        latencies: [] as number[], errors: [] as string[],
+        deviceInference: [] as NonNullable<PipelinePhaseMeasurement["deviceInference"]> });
     const resources = new SystemResourceSampler();
     const hardwareTelemetry = new CalibrationHardwareTelemetrySampler({
       enabled: this.input.advancedTelemetry === true,
@@ -686,10 +742,20 @@ export class OfflineCalibrationPipeline {
     const exactInferenceConcurrency = !inferenceAvailable || inference.maxConcurrentRequests >= input.tier;
     const exactCameraConcurrency = exactMediaConcurrency && exactInferenceConcurrency;
     const cpuWorkloadMeasured = sampledResources.cpu !== null && database.databaseOperations > 0 && media.actualConcurrentPipelines > 0;
+    const expectedInferenceDevices = selectedGpuDeviceIndexes
+      .map((index) => this.summary!.gpuInferenceDevices[index])
+      .filter((device): device is CalibrationGpuDevice => device !== undefined);
+    const expectedMediaDevices = selectedGpuDeviceIndexes
+      .map((index) => this.summary!.gpuMediaDevices.find((device) => device.index === index) ??
+        this.summary!.gpuMediaDevices[index])
+      .filter((device): device is { id: string; index: number; name: string } => device !== undefined);
     const gpuInferenceMeasured = computeMode === "gpu_accelerated" && inference.successful > 0 &&
-      this.summary.gpuInferenceDevice !== null;
+      expectedInferenceDevices.length > 0 &&
+      expectedInferenceDevices.every((device) =>
+        inference.deviceInference.some((result) => result.deviceId === device.id && result.requestsSuccessful > 0));
     const gpuMediaMeasured = computeMode === "gpu_accelerated" && media.framesDecoded > 0 &&
-      media.framesEncoded > 0 && this.summary.gpuMediaBackend !== "unavailable";
+      media.framesEncoded > 0 && this.summary.gpuMediaBackend !== "unavailable" &&
+      expectedMediaDevices.length > 0 && expectedMediaDevices.every((device) => media.mediaDeviceIds.includes(device.id));
     const combinedCpuGpuMeasured = computeMode === "gpu_accelerated" && cpuWorkloadMeasured &&
       gpuInferenceMeasured && gpuMediaMeasured;
     const failures = [
@@ -720,6 +786,9 @@ export class OfflineCalibrationPipeline {
       computeMode,
       inferenceBackend: computeMode === "cpu_only" ? "cpu" : this.summary.gpuInferenceBackend,
       inferenceDeviceId: computeMode === "cpu_only" ? "none" : this.summary.gpuInferenceDevice?.id ?? "unavailable",
+      inferenceDeviceIds: computeMode === "cpu_only" ? [] : inference.deviceInference.map((device) => device.deviceId),
+      deviceInference: inference.deviceInference,
+      mediaDeviceIds: media.mediaDeviceIds,
       gpuMediaBackend: computeMode === "cpu_only" ? "unavailable" : this.summary.gpuMediaBackend,
       cpuWorkloadMeasured,
       gpuInferenceMeasured,
@@ -789,13 +858,26 @@ export class OfflineCalibrationPipeline {
     throw new Error("calibration_llama_server_start_timeout");
   }
 
-  private async activateInferenceMode(computeMode: CalibrationComputeMode, desiredConcurrency: number): Promise<boolean> {
+  private async activateInferenceMode(
+    computeMode: CalibrationComputeMode,
+    desiredConcurrency: number,
+    selectedGpuDeviceIndexes: number[] = [],
+  ): Promise<boolean> {
     if (!this.summary) throw new Error("calibration_pipeline_not_initialized");
-    const expectedCount = this.requiredLlamaModels.length;
-    const parallel = Math.max(1, Math.min(64, desiredConcurrency));
+    const devices: Array<CalibrationGpuDevice | null> = computeMode === "gpu_accelerated"
+      ? selectedGpuDeviceIndexes.map((index) => this.summary!.gpuInferenceDevices[index])
+          .filter((device): device is CalibrationGpuDevice => device !== undefined)
+      : [null];
+    const expectedCount = this.requiredLlamaModels.length * devices.length;
+    const parallel = Math.max(1, Math.min(64, Math.ceil(desiredConcurrency / Math.max(1, expectedCount))));
     const active = this.llamaServers.filter((runtime) => runtime.computeMode === computeMode && runtime.child.exitCode === null);
+    const expectedDeviceIds = devices.map((device) => device?.id ?? "cpu").sort();
+    const activeDeviceIds = active.map((runtime) => runtime.device?.id ?? "cpu").sort();
     if (expectedCount > 0 && active.length === expectedCount && this.llamaServers.length === expectedCount &&
-        active.every((runtime) => runtime.parallel >= parallel)) return true;
+        active.every((runtime) => runtime.parallel >= parallel) &&
+        JSON.stringify(activeDeviceIds) === JSON.stringify(
+          this.requiredLlamaModels.flatMap(() => expectedDeviceIds).sort(),
+        )) return true;
 
     await this.stopLlamaServers();
     const candidateAvailable = computeMode === "cpu_only"
@@ -803,8 +885,9 @@ export class OfflineCalibrationPipeline {
     if (!candidateAvailable || !this.llamaExecutable || expectedCount === 0) return false;
 
     try {
-      const computeArguments = llamaComputeArguments(computeMode, this.summary.gpuInferenceDevice);
-      for (const model of this.requiredLlamaModels) {
+      for (const device of devices) for (const model of this.requiredLlamaModels) {
+         const computeArguments = llamaComputeArguments(computeMode, device);
+        const topologyArguments = llamaCpuTopologyArguments(this.input.hardware, expectedCount);
         const modelPath = verifiedAssetPath(this.input.runtimeStatus, model === "core" ? "qwen-core-gguf" : "qwen-core-max-gguf");
         const mmprojPath = verifiedAssetPath(this.input.runtimeStatus, model === "core" ? "qwen-core-mmproj" : "qwen-core-max-mmproj");
         if (!modelPath || !mmprojPath) throw new Error(`approved_${model}_assets_unavailable`);
@@ -812,10 +895,18 @@ export class OfflineCalibrationPipeline {
         const child = this.startBackground(this.llamaExecutable, [
           "-m", modelPath, "--mmproj", mmprojPath, "--host", "127.0.0.1", "--port", String(port),
           "--ctx-size", String(calibrationLlamaContextSize(parallel)),
-          "--parallel", String(parallel), "--jinja", "--log-disable", ...computeArguments,
+          "--parallel", String(parallel), "--jinja", "--log-disable", ...computeArguments, ...topologyArguments,
         ]);
         const origin = `http://127.0.0.1:${port}`;
-        const runtime = { model, computeMode, origin, child, parallel };
+        const hardwareDevice = device ? (this.input.hardware?.gpuDevices ?? []).find((candidate) =>
+          candidate.id === device.id ||
+          candidate.name.toLowerCase().includes(device.name.split("(")[0]!.trim().toLowerCase()) ||
+          device.name.toLowerCase().includes(candidate.name.toLowerCase())) : null;
+        const runtime = {
+          model, computeMode, origin, child, parallel, device,
+          weight: Math.max(1, (hardwareDevice?.vramBytes ?? 1024 ** 3) / 1024 ** 3),
+          queueDepth: 0,
+        };
         this.llamaServers.push(runtime);
         await this.waitForLlamaHealth(origin, child);
         if (!this.files) throw new Error("calibration_inference_frame_unavailable");
@@ -848,10 +939,14 @@ export class OfflineCalibrationPipeline {
     maxConcurrentRequests: number;
     latencies: number[];
     errors: string[];
+    deviceInference: NonNullable<PipelinePhaseMeasurement["deviceInference"]>;
   }> {
     const runtimes = this.llamaServers.filter((runtime) => runtime.computeMode === computeMode);
     if (!this.files || runtimes.length === 0 || plan.requestsPlanned === 0) {
-      return { successful: 0, attempted: 0, framesPacked: 0, maxConcurrentRequests: 0, latencies: [], errors: [] };
+      return {
+        successful: 0, attempted: 0, framesPacked: 0, maxConcurrentRequests: 0, latencies: [], errors: [],
+        deviceInference: [],
+      };
     }
     const image = `data:image/jpeg;base64,${(await readFile(this.files.frame)).toString("base64")}`;
     const startedAt = performance.now();
@@ -860,6 +955,7 @@ export class OfflineCalibrationPipeline {
     let successful = 0;
     let attempted = 0;
     let maxConcurrentRequests = 0;
+    const deviceResults = new Map<string, { attempted: number; successful: number; latencies: number[] }>();
     const timeoutMs = Math.max(30_000, Math.min(120_000, Math.floor(plan.intervalMs * 0.9)));
     for (let window = 0; window < plan.windowCount && attempted < plan.requestsPlanned; window += 1) {
       if (this.input.cancelled() || this.diskPressureError) throw new Error(this.diskPressureError ?? "calibration_cancelled");
@@ -869,13 +965,29 @@ export class OfflineCalibrationPipeline {
       let remainingInWindow = Math.min(plan.requestsPerWindow, plan.requestsPlanned - attempted);
       while (remainingInWindow > 0) {
         const batchSize = Math.min(remainingInWindow, desiredConcurrency);
-        const batch = Array.from({ length: batchSize }, (_, index) => runtimes[(attempted + index) % runtimes.length]!);
+        const batch = weightedRoundRobin(runtimes.map((runtime) => ({
+          value: runtime,
+          weight: runtime.weight,
+          queueDepth: runtime.queueDepth,
+        })), batchSize);
         maxConcurrentRequests = Math.max(maxConcurrentRequests, batch.length);
         const outcomes = await Promise.all(batch.map(async (runtime) => {
           const requestStarted = performance.now();
-          const outcome = await this.requestInference(runtime, image, timeoutMs);
-          latencies.push(performance.now() - requestStarted);
-          return outcome;
+          runtime.queueDepth += 1;
+          try {
+            const outcome = await this.requestInference(runtime, image, timeoutMs);
+            const latency = performance.now() - requestStarted;
+            latencies.push(latency);
+            const deviceId = runtime.device?.id ?? "cpu";
+            const deviceResult = deviceResults.get(deviceId) ?? { attempted: 0, successful: 0, latencies: [] };
+            deviceResult.attempted += 1;
+            deviceResult.successful += outcome.success ? 1 : 0;
+            deviceResult.latencies.push(latency);
+            deviceResults.set(deviceId, deviceResult);
+            return outcome;
+          } finally {
+            runtime.queueDepth = Math.max(0, runtime.queueDepth - 1);
+          }
         }));
         attempted += outcomes.length;
         remainingInWindow -= outcomes.length;
@@ -884,7 +996,15 @@ export class OfflineCalibrationPipeline {
       }
     }
     const framesPacked = Math.round(plan.framesPlanned * attempted / Math.max(1, plan.requestsPlanned));
-    return { successful, attempted, framesPacked, maxConcurrentRequests, latencies, errors: [...errors].slice(0, 20) };
+    return {
+      successful, attempted, framesPacked, maxConcurrentRequests, latencies, errors: [...errors].slice(0, 20),
+      deviceInference: [...deviceResults.entries()].map(([deviceId, result]) => ({
+        deviceId,
+        requestsAttempted: result.attempted,
+        requestsSuccessful: result.successful,
+        p95LatencyMs: percentile95(result.latencies),
+      })),
+    };
   }
 
   private async requestInference(
@@ -925,30 +1045,40 @@ export class OfflineCalibrationPipeline {
     seconds: number,
     tier: number,
     computeMode: CalibrationComputeMode,
+    selectedGpuDeviceIndexes: number[] = [],
   ): Promise<{
     framesDecoded: number;
     framesEncoded: number;
     framesExtracted: number;
     durationMs: number;
     actualConcurrentPipelines: number;
+    mediaDeviceIds: string[];
     errors: string[];
   }> {
-    const ffmpeg = this.summary?.ffmpegPath;
-    if (!ffmpeg || !this.files) throw new Error("calibration_ffmpeg_unavailable");
+    const summary = this.summary;
+    const ffmpeg = summary?.ffmpegPath;
+    if (!summary || !ffmpeg || !this.files) throw new Error("calibration_ffmpeg_unavailable");
     const files = this.files;
     const sequence = this.mediaSequence++;
     const cameras = allocateCalibrationCameraGroups(this.input.workloadProfile, tier).flatMap((cameraCount, group) =>
       Array.from({ length: cameraCount }, (_, camera) => ({ group, camera })));
+    const mediaDevices = computeMode === "gpu_accelerated"
+      ? selectedGpuDeviceIndexes.map((index) =>
+          summary.gpuMediaDevices.find((device) => device.index === index) ?? summary.gpuMediaDevices[index])
+          .filter((device): device is { id: string; index: number; name: string } => device !== undefined)
+      : [];
     const started = performance.now();
     const outcomes = await Promise.all(cameras.map(async ({ group, camera }) => {
       const profile = this.input.workloadProfile.cameraGroups[group]!;
+      const mediaDevice = mediaDevices.length > 0 ? mediaDevices[(group + camera) % mediaDevices.length]! : null;
       const outputs = await Promise.all(Array.from({ length: CALIBRATION_MEDIA_RING_SEGMENTS }, (_, segment) =>
         prepareCalibrationTemporaryFile(this.input.workspace, `media-${sequence}-${group}-${camera}-${segment}.mkv`)));
       const outputPattern = outputs[0]!.replace(/-0\.mkv$/, "-%d.mkv");
-      const gpuInputArguments = computeMode === "gpu_accelerated"
-        ? ffmpegGpuInputArguments(this.summary?.gpuMediaBackend ?? "unavailable") : [];
+      const gpuDeviceArguments = computeMode === "gpu_accelerated" && mediaDevice
+        ? ffmpegGpuDeviceArguments(this.summary?.gpuMediaBackend ?? "unavailable", mediaDevice.index)
+        : { inputArguments: [] as string[], encoderArguments: [] as string[] };
       const sourceArguments = [
-        ...gpuInputArguments,
+        ...gpuDeviceArguments.inputArguments,
         ...(this.summary?.rtspAvailable && this.rtspPort
           ? ["-rtsp_transport", "tcp", "-i", `rtsp://127.0.0.1:${this.rtspPort}/calibration-${group}`]
           : ["-stream_loop", "-1", "-i", files.sources[group]!]),
@@ -958,14 +1088,20 @@ export class OfflineCalibrationPipeline {
         const result = await this.run(ffmpeg, [
           "-hide_banner", "-loglevel", "error", "-nostdin", ...sourceArguments,
           "-t", seconds.toFixed(3), "-an", "-vf", "format=bgr24,format=yuv420p",
-          "-c:v", encoder.encoder, ...encoder.extraArguments,
+          "-c:v", encoder.encoder, "-threads", "1", ...encoder.extraArguments, ...gpuDeviceArguments.encoderArguments,
           "-b:v", `${profile.bitrateMbps}M`, "-f", "segment", "-segment_time", "1",
           "-segment_wrap", String(CALIBRATION_MEDIA_RING_SEGMENTS), "-reset_timestamps", "1",
           "-progress", "pipe:1", "-nostats", "-y", outputPattern,
         ], Math.max(30_000, seconds * 1_000 + 30_000));
-        return { cameraCount: 1, frames: processFrames(result.stdout), outputs, error: null as string | null };
+        return {
+          cameraCount: 1, frames: processFrames(result.stdout), outputs,
+          mediaDeviceId: mediaDevice?.id ?? null, error: null as string | null,
+        };
       } catch (error) {
-        return { cameraCount: 0, frames: 0, outputs, error: error instanceof Error ? error.message : String(error) };
+        return {
+          cameraCount: 0, frames: 0, outputs, mediaDeviceId: mediaDevice?.id ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     }));
     const firstOutput = outcomes.find((outcome) => outcome.cameraCount > 0)?.outputs[0];
@@ -989,6 +1125,8 @@ export class OfflineCalibrationPipeline {
       framesExtracted: frameExtracted ? 1 : 0,
       durationMs: performance.now() - started,
       actualConcurrentPipelines: outcomes.reduce((sum, outcome) => sum + outcome.cameraCount, 0),
+      mediaDeviceIds: [...new Set(outcomes.flatMap((outcome) =>
+        outcome.cameraCount > 0 && outcome.mediaDeviceId ? [outcome.mediaDeviceId] : []))],
       errors: [...outcomes.flatMap((outcome) => outcome.error ? [outcome.error.slice(0, 180)] : []), ...extractionErrors],
     };
   }

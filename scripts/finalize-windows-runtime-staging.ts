@@ -44,7 +44,7 @@ async function main(): Promise<void> {
     { id: "ffprobe", kind: "executable", version: "8.1.2-30-g45f1910444", licenseSpdx: "GPL-3.0-or-later", relativePath: "bin/ffprobe.exe", licensePath: "licenses/ffmpeg.txt", sbomPath: "sbom/ffprobe.cdx.json", sourceUrl: "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-07-22-13-36" },
     { id: "mediamtx", kind: "executable", version: "1.18.2", licenseSpdx: "MIT", relativePath: "bin/mediamtx.exe", licensePath: "licenses/mediamtx.txt", sbomPath: "sbom/mediamtx.cdx.json", sourceUrl: "https://github.com/bluenviron/mediamtx/releases/tag/v1.18.2" },
     { id: "llama-server", kind: "executable", version: "b9637", licenseSpdx: "MIT AND LicenseRef-NVIDIA-CUDA-EULA", relativePath: "bin/llama/llama-server.exe", licensePath: "licenses/llama-cuda.txt", sbomPath: "sbom/llama-server.cdx.json", sourceUrl: "https://github.com/ggml-org/llama.cpp/releases/tag/b9637" },
-    { id: "telemetry-probe", kind: "executable", version: "0.1.0-go1.26.5", licenseSpdx: "LicenseRef-AIQuimist-Internal", relativePath: "bin/telemetry-probe.exe", licensePath: "licenses/telemetry-probe.txt", sbomPath: "sbom/telemetry-probe.cdx.json", sourceUrl: "repository:tools/telemetry-probe" },
+    { id: "telemetry-probe", kind: "executable", version: "0.2.0-go1.26.5", licenseSpdx: "LicenseRef-AIQuimist-Internal", relativePath: "bin/telemetry-probe.exe", licensePath: "licenses/telemetry-probe.txt", sbomPath: "sbom/telemetry-probe.cdx.json", sourceUrl: "repository:tools/telemetry-probe" },
     { id: "qwen-core-gguf", kind: "model", version: "Qwen3-VL-2B-Instruct-Q4_K_M@52d6c8ff", licenseSpdx: "Apache-2.0", relativePath: "models/Qwen3VL-2B-Instruct-Q4_K_M.gguf", licensePath: "licenses/qwen-2b.txt", sbomPath: "sbom/qwen-core-gguf.cdx.json", sourceUrl: "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/tree/52d6c8ffea26cc873ac5ad116f8631268d7eb503" },
     { id: "qwen-core-mmproj", kind: "model", version: "Qwen3-VL-2B-Instruct-mmproj-Q8_0@52d6c8ff", licenseSpdx: "Apache-2.0", relativePath: "models/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf", licensePath: "licenses/qwen-2b.txt", sbomPath: "sbom/qwen-core-mmproj.cdx.json", sourceUrl: "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/tree/52d6c8ffea26cc873ac5ad116f8631268d7eb503" },
     { id: "qwen-core-max-gguf", kind: "model", version: "Qwen3-VL-4B-Instruct-Q4_K_M@1cd86afb", licenseSpdx: "Apache-2.0", relativePath: "models/Qwen3VL-4B-Instruct-Q4_K_M.gguf", licensePath: "licenses/qwen-4b.txt", sbomPath: "sbom/qwen-core-max-gguf.cdx.json", sourceUrl: "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/tree/1cd86afb9a95c410a6038ab3b40d8b578c892266" },
@@ -116,10 +116,10 @@ async function main(): Promise<void> {
     });
   }
   const runtimeManifest = {
-    schemaVersion: "qual-hardware-calibration-runtime-manifest/2.0.0",
+    schemaVersion: "qual-hardware-calibration-runtime-manifest/3.0.0",
     kernelVersion: CALIBRATION_KERNEL_VERSION,
     authorityCommit: PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
-    pipelineImplementation: "perceptrum-equivalent-v1",
+    pipelineImplementation: "perceptrum-equivalent-v2-multi-device",
     supportedTargets: ["darwin-arm64", "win32-x64", "linux-x64"],
     authorityContract: { relativePath: "contracts/calibration-kernel-authority-v1.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-kernel-authority-v1.json")) },
     pipelineContract: { relativePath: "contracts/calibration-pipeline-contract-v1.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-pipeline-contract-v1.json")) },
@@ -138,8 +138,8 @@ async function main(): Promise<void> {
     { prefix: "resources/calibration/", licenseSpdx: "LicenseRef-AIQuimist-Internal", licenseRef: genericLicense, sbomRef: genericSbom },
   ];
   await writeFile(join(stage, "runtime-package-definition.json"), `${JSON.stringify({
-    version: "1.0.0", target: TARGET, minimumAppVersion: "0.3.0", classification: "production",
-    keyId: "qual-hardware-production-internal-2026", createdAt: "2026-07-22T12:00:00.000Z", rules,
+    version: "1.0.0-candidate.1", target: TARGET, minimumAppVersion: "0.3.0", classification: "candidate",
+    keyId: "qual-hardware-candidate-2026", createdAt: "2026-07-23T14:00:00.000Z", rules,
   }, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify({ stage, assets: assets.length, companions: assets[3]!.companions?.length ?? 0 })}\n`);
 }

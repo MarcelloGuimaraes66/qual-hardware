@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { CapacityScenario } from "./types.js";
 import {
   AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
+  CALIBRATION_COMPUTE_EVIDENCE_VERSION,
   CALIBRATION_CHECKPOINT_VERSION,
   CALIBRATION_PLAN_VERSION,
   CALIBRATION_PROGRESS_VERSION,
@@ -11,6 +12,7 @@ import {
   LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
   LEGACY_LOCAL_CALIBRATION_VERSION,
   LOCAL_CALIBRATION_VERSION,
+  MAX_PROJECT_CAMERAS,
   LEGACY_QHCAL_PACKAGE_VERSION,
   LEGACY_QHCALSET_PACKAGE_VERSION,
   MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION,
@@ -53,7 +55,7 @@ export const agentLoadSchema = z.object({
 export const cameraGroupSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(120),
-  count: z.number().int().min(1).max(4096),
+  count: z.number().int().min(1).max(MAX_PROJECT_CAMERAS),
   source: z.object({
     codec: z.enum(["h264", "h265"]),
     width: z.number().int().min(160).max(8192),
@@ -80,14 +82,14 @@ export const capacityScenarioSchema = z.object({
   markets: z.array(z.enum(["BR", "US", "DE"])).min(1).max(3).optional(),
   currency: z.enum(["BRL", "USD", "EUR"]),
   perceptrumBuildHash: z.string().min(1).max(128),
-  totalCameras: z.number().int().min(1).max(4096),
+  totalCameras: z.number().int().min(1).max(MAX_PROJECT_CAMERAS),
   cameraGroups: z.array(cameraGroupSchema).min(1).max(128),
   concurrentWorkloads: z.object({
     activeJobs: z.number().int().min(0).max(1024),
-    groupedJobCameras: z.number().int().min(0).max(4096),
+    groupedJobCameras: z.number().int().min(0).max(MAX_PROJECT_CAMERAS),
     concurrentChatSessions: z.number().int().min(0).max(1024),
     activeSearches: z.number().int().min(0).max(1024),
-    intelligenceStreams: z.number().int().min(0).max(4096),
+    intelligenceStreams: z.number().int().min(0).max(MAX_PROJECT_CAMERAS),
   }),
   constraints: z.object({
     infrastructureKind: z.enum(["laptop", "mini_pc", "workstation", "rack", "either"]),
@@ -95,7 +97,7 @@ export const capacityScenarioSchema = z.object({
     preferredGpuVendors: z.array(z.enum(["nvidia", "amd", "intel", "apple"])).max(4),
     operatingSystem: z.enum(["auto", "windows", "ubuntu", "macos"]).default("auto"),
     requiredHardwareTemplateId: z.string().min(1).max(160).nullable().default(null),
-    maxNodes: z.number().int().min(1).max(256).nullable(),
+    maxNodes: z.number().int().min(1).max(100_000).nullable(),
     budget: z.number().positive().nullable(),
     requireEcc: z.boolean(),
   }),
@@ -139,12 +141,122 @@ const telemetryEvidenceStatusSchema = z.enum(["measured", "unavailable", "failed
 const calibrationComputeModeSchema = z.enum(["cpu_only", "gpu_accelerated"]);
 const calibrationGpuInferenceBackendSchema = z.enum(["cuda", "metal", "vulkan", "rocm", "unavailable"]);
 const calibrationGpuMediaBackendSchema = z.enum(["cuda_nvenc", "videotoolbox", "qsv", "d3d11va_amf", "vaapi", "unavailable"]);
+const calibrationGpuClassificationSchema = z.enum(["compute", "media_only", "display_only", "unavailable"]);
+const calibrationCpuPackageSchema = z.object({
+  id: z.string().min(1).max(160),
+  model: z.string().min(1).max(240),
+  physicalCores: z.number().int().positive().max(4096),
+  logicalCores: z.number().int().positive().max(8192),
+  processorGroupIds: z.array(z.number().int().nonnegative().max(1024)).max(1024),
+  numaNodeIds: z.array(z.number().int().nonnegative().max(1024)).max(1024),
+});
+const calibrationProcessorGroupSchema = z.object({
+  id: z.number().int().nonnegative().max(1024),
+  logicalProcessorCount: z.number().int().positive().max(64),
+  activeProcessorMask: z.string().min(1).max(64).nullable(),
+});
+const calibrationNumaNodeSchema = z.object({
+  id: z.number().int().nonnegative().max(1024),
+  processorGroupIds: z.array(z.number().int().nonnegative().max(1024)).max(1024),
+  logicalProcessorCount: z.number().int().positive().max(8192),
+  memoryBytes: z.number().int().nonnegative().nullable(),
+  cpuPackageIds: z.array(z.string().min(1).max(160)).max(1024),
+});
+const calibrationGpuDeviceSchema = z.object({
+  id: z.string().min(1).max(240),
+  uuid: z.string().min(1).max(240).nullable(),
+  pciBusId: z.string().min(1).max(160).nullable(),
+  index: z.number().int().nonnegative().max(1024),
+  name: z.string().min(1).max(500),
+  vendor: z.enum(["nvidia", "amd", "intel", "apple"]),
+  driver: z.string().min(1).max(240),
+  architecture: z.string().min(1).max(160),
+  inferenceBackend: calibrationGpuInferenceBackendSchema,
+  mediaBackend: calibrationGpuMediaBackendSchema,
+  classification: calibrationGpuClassificationSchema,
+  vramBytes: z.number().int().nonnegative().nullable(),
+  numaNodeId: z.number().int().nonnegative().max(1024).nullable(),
+  computeEligible: z.boolean(),
+  mediaEligible: z.boolean(),
+  encodeSupported: z.boolean(),
+  decodeSupported: z.boolean(),
+  reason: z.string().min(1).max(1_000),
+});
 const telemetryMetricSummarySchema = z.object({
   samples: z.number().int().nonnegative(),
   average: z.number().finite(),
   p95: z.number().finite(),
   p99: z.number().finite(),
   peak: z.number().finite(),
+});
+
+const calibrationComputeEvidenceV1Schema = z.object({
+  schemaVersion: z.literal("qual-hardware-calibration-compute-evidence/1.0.0"),
+  requiredModes: z.tuple([z.literal("cpu_only"), z.literal("gpu_accelerated")]),
+  cpu: z.object({
+    mode: z.literal("cpu_only"), backend: z.literal("cpu"), device: z.string().min(1).max(240),
+    measured: z.boolean(), safeCameraCapacity: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    measurementCount: z.number().int().nonnegative(), failures: z.array(z.string().min(1).max(240)).max(100),
+  }),
+  gpu: z.object({
+    mode: z.literal("gpu_accelerated"), inferenceBackend: calibrationGpuInferenceBackendSchema,
+    mediaBackend: calibrationGpuMediaBackendSchema, deviceId: z.string().min(1).max(240).nullable(),
+    deviceName: z.string().min(1).max(500).nullable(), inferenceMeasured: z.boolean(), mediaMeasured: z.boolean(),
+    utilizationMeasured: z.boolean(), safeCameraCapacity: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    measurementCount: z.number().int().nonnegative(), failures: z.array(z.string().min(1).max(240)).max(100),
+  }),
+  combined: z.object({
+    measured: z.boolean(), safeCameraCapacity: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    measurementCount: z.number().int().nonnegative(), failures: z.array(z.string().min(1).max(240)).max(100),
+  }),
+});
+
+const calibrationComputeDeviceEvidenceSchema = z.object({
+  deviceId: z.string().min(1).max(240),
+  deviceName: z.string().min(1).max(500),
+  classification: calibrationGpuClassificationSchema,
+  inferenceBackend: calibrationGpuInferenceBackendSchema,
+  mediaBackend: calibrationGpuMediaBackendSchema,
+  inferenceMeasured: z.boolean(),
+  mediaMeasured: z.boolean(),
+  telemetryMeasured: z.boolean(),
+  receivedLoad: z.boolean(),
+  requestCount: z.number().int().nonnegative(),
+  safeCameraCapacity: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+  throughput: z.number().nonnegative().nullable(),
+  p95LatencyMs: z.number().nonnegative().nullable(),
+  peakVramBytes: z.number().int().nonnegative().nullable(),
+  peakTemperatureCelsius: z.number().nonnegative().max(200).nullable(),
+  peakPowerWatts: z.number().nonnegative().max(100_000).nullable(),
+  throttlingObserved: z.boolean(),
+  schedulerWeight: z.number().positive().max(1_000_000),
+  failures: z.array(z.string().min(1).max(500)).max(100),
+});
+
+const calibrationComputeEvidenceV2Schema = calibrationComputeEvidenceV1Schema.omit({ schemaVersion: true }).extend({
+  schemaVersion: z.literal(CALIBRATION_COMPUTE_EVIDENCE_VERSION),
+  devices: z.array(calibrationComputeDeviceEvidenceSchema).max(1024),
+  allocation: z.object({
+    strategy: z.enum(["weighted_data_parallel", "single_device", "cpu_fallback"]),
+    allEligibleDevicesReceivedLoad: z.boolean(),
+    allLoadedDevicesHaveTelemetry: z.boolean(),
+    modelSplitUsed: z.boolean(),
+    modelSplitReason: z.string().min(1).max(1_000).nullable(),
+    numaAware: z.boolean(),
+  }),
+  scaling: z.object({
+    baselineDeviceCount: z.number().int().nonnegative().max(1024),
+    activeDeviceCount: z.number().int().nonnegative().max(1024),
+    measuredSpeedup: z.number().nonnegative().nullable(),
+    efficiencyPercent: z.number().nonnegative().max(10_000).nullable(),
+    linearlyExtrapolated: z.literal(false),
+  }),
+  degraded: z.object({
+    simulatedLostDeviceId: z.string().min(1).max(240).nullable(),
+    measured: z.boolean(),
+    safeCameraCapacity: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    capacityLossPercent: z.number().min(0).max(100).nullable(),
+  }),
 });
 
 export const localCalibrationRunSchema = z.object({
@@ -193,6 +305,10 @@ export const localCalibrationRunSchema = z.object({
     aiqModel: z.string().min(1).max(240),
     aiqModelHash: z.string().min(1).max(256),
     inferenceBackend: z.string().min(1).max(160),
+    cpuPackages: z.array(calibrationCpuPackageSchema).max(1024).optional(),
+    processorGroups: z.array(calibrationProcessorGroupSchema).max(1024).optional(),
+    numaNodes: z.array(calibrationNumaNodeSchema).max(1024).optional(),
+    gpuDevices: z.array(calibrationGpuDeviceSchema).max(1024).optional(),
   }),
   requestedSourceFps: z.number().positive().max(120),
   measuredSourceFps: z.number().nonnegative().max(240),
@@ -271,8 +387,8 @@ export const localCalibrationRunSchema = z.object({
     infrastructureErrors: z.array(z.string().min(1).max(500)).max(100),
   }).optional(),
   capacityRecommendation: z.object({
-    safeCameraCount: z.number().int().min(1).max(4_096).nullable(),
-    maximumTestedCameraCount: z.number().int().min(1).max(4_096),
+    safeCameraCount: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    maximumTestedCameraCount: z.number().int().min(1).max(MAX_PROJECT_CAMERAS),
     confidence: z.enum(["high", "medium", "insufficient"]),
     basis: z.literal("physical_measurement"),
   }).optional(),
@@ -324,9 +440,9 @@ export const localCalibrationRunSchema = z.object({
   workloadProfileId: z.string().min(1).max(160).optional(),
   workloadProfileSignature: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
   compatiblePerceptrumCommit: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
-  cameraTiers: z.array(z.number().int().min(1).max(4096)).max(32).optional(),
+  cameraTiers: z.array(z.number().int().min(1).max(MAX_PROJECT_CAMERAS)).max(256).optional(),
   tierResults: z.array(z.object({
-    tier: z.number().int().min(1).max(4096),
+    tier: z.number().int().min(1).max(MAX_PROJECT_CAMERAS),
     repetition: z.number().int().min(1).max(3).nullable(),
     computeMode: calibrationComputeModeSchema.optional(),
     phase: z.enum(["discovery", "warmup", "ramp", "sustained", "surge"]),
@@ -345,36 +461,34 @@ export const localCalibrationRunSchema = z.object({
   })).max(1_000).optional(),
   repetitions: z.array(z.object({
     repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-    tier: z.number().int().min(1).max(4096),
+    tier: z.number().int().min(1).max(MAX_PROJECT_CAMERAS),
     startedAt: z.iso.datetime(),
     completedAt: z.iso.datetime(),
     passed: z.boolean(),
-    safeCameraCapacity: z.number().int().min(0).max(4096),
+    safeCameraCapacity: z.number().int().min(0).max(MAX_PROJECT_CAMERAS),
     failures: z.array(z.string().min(1).max(240)).max(100),
   })).max(3).optional(),
-  maxTestedTier: z.number().int().min(1).max(4096).optional(),
-  capacityBound: z.enum(["exact", "at_least"]).optional(),
-  repeatVariabilityPercent: z.number().nonnegative().max(10_000).optional(),
-  computeEvidence: z.object({
-    schemaVersion: z.literal("qual-hardware-calibration-compute-evidence/1.0.0"),
-    requiredModes: z.tuple([z.literal("cpu_only"), z.literal("gpu_accelerated")]),
-    cpu: z.object({
-      mode: z.literal("cpu_only"), backend: z.literal("cpu"), device: z.string().min(1).max(240),
-      measured: z.boolean(), safeCameraCapacity: z.number().int().min(1).max(4_096).nullable(),
-      measurementCount: z.number().int().nonnegative(), failures: z.array(z.string().min(1).max(240)).max(100),
-    }),
-    gpu: z.object({
-      mode: z.literal("gpu_accelerated"), inferenceBackend: calibrationGpuInferenceBackendSchema,
-      mediaBackend: calibrationGpuMediaBackendSchema, deviceId: z.string().min(1).max(240).nullable(),
-      deviceName: z.string().min(1).max(500).nullable(), inferenceMeasured: z.boolean(), mediaMeasured: z.boolean(),
-      utilizationMeasured: z.boolean(), safeCameraCapacity: z.number().int().min(1).max(4_096).nullable(),
-      measurementCount: z.number().int().nonnegative(), failures: z.array(z.string().min(1).max(240)).max(100),
-    }),
-    combined: z.object({
-      measured: z.boolean(), safeCameraCapacity: z.number().int().min(1).max(4_096).nullable(),
-      measurementCount: z.number().int().nonnegative(), failures: z.array(z.string().min(1).max(240)).max(100),
-    }),
+  maxTestedTier: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).optional(),
+  capacityBound: z.enum(["exact", "at_least", "uncertain"]).optional(),
+  capacityBoundary: z.object({
+    seedCameraCount: z.number().int().min(1).max(MAX_PROJECT_CAMERAS),
+    highestPassingCameraCount: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    firstFailingCameraCount: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    operationalSafeCameraCount: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    bound: z.enum(["exact", "at_least", "uncertain"]),
+    adjacentBoundaryConfirmed: z.boolean(),
+    confirmationRuns: z.number().int().min(1).max(10),
+    generatorLimit: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
+    nonMonotonic: z.boolean(),
+    searchTrace: z.array(z.object({
+      cameraCount: z.number().int().min(1).max(MAX_PROJECT_CAMERAS),
+      passed: z.boolean(),
+      attempt: z.number().int().positive(),
+      phase: z.enum(["seed", "expand", "binary", "confirm"]),
+    })).max(10_000),
   }).optional(),
+  repeatVariabilityPercent: z.number().nonnegative().max(10_000).optional(),
+  computeEvidence: z.union([calibrationComputeEvidenceV1Schema, calibrationComputeEvidenceV2Schema]).optional(),
   networkEvidence: z.enum(["loopback_measured_physical_link_unverified", "loopback_measured_physical_link_spec_verified", "unavailable"]).optional(),
   physicalNetworkLinks: z.array(z.object({
     name: z.string().min(1).max(240),
@@ -509,6 +623,16 @@ export const localCalibrationRunSchema = z.object({
           message: "Purchase eligibility requires measured CPU-only, GPU-accelerated and concurrent CPU+GPU evidence.",
         });
       }
+      if (compute?.schemaVersion === CALIBRATION_COMPUTE_EVIDENCE_VERSION &&
+          (!compute.allocation.allEligibleDevicesReceivedLoad || !compute.allocation.allLoadedDevicesHaveTelemetry ||
+            compute.devices.some((device) => device.classification === "compute" &&
+              (!device.receivedLoad || !device.telemetryMeasured)))) {
+        context.addIssue({
+          code: "custom",
+          path: ["computeEvidence", "allocation"],
+          message: "Multi-device purchase eligibility requires load and individual telemetry for every eligible device.",
+        });
+      }
       if (value.repetitions?.length !== 3 || !value.repetitions.every((item) => item.passed && item.safeCameraCapacity > 0)) {
         context.addIssue({ code: "custom", path: ["repetitions"], message: "Purchase eligibility requires three successful full repetitions." });
       }
@@ -526,6 +650,16 @@ export const localCalibrationRunSchema = z.object({
         context.addIssue({ code: "custom", path: ["runtimeProvenance"], message: "Purchase eligibility requires the complete verified offline runtime provenance." });
       }
     }
+    if (value.capacityBound === "exact" && value.capacityBoundary &&
+        (!value.capacityBoundary.adjacentBoundaryConfirmed ||
+          value.capacityBoundary.highestPassingCameraCount === null ||
+          value.capacityBoundary.firstFailingCameraCount !== value.capacityBoundary.highestPassingCameraCount + 1)) {
+      context.addIssue({
+        code: "custom",
+        path: ["capacityBoundary"],
+        message: "An exact capacity requires repeated adjacent passing and failing camera counts.",
+      });
+    }
   }
 });
 
@@ -537,7 +671,7 @@ export const calibrationSessionProgressSchema = z.object({
   overallPercent: z.number().min(0).max(100),
   phasePercent: z.number().min(0).max(100),
   message: z.string().max(1_000).optional(),
-  tier: z.number().int().min(1).max(4_096).optional(),
+  tier: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).optional(),
   repetition: z.number().int().min(1).max(3).optional(),
   attempt: z.number().int().min(1).max(10_000).optional(),
   computeMode: calibrationComputeModeSchema.optional(),
@@ -566,7 +700,7 @@ export const calibrationCheckpointSchema = z.object({
   sequence: z.number().int().positive(),
   createdAt: z.iso.datetime(),
   phase: z.enum(["preflight", "discovery", "qualification", "terminal"]),
-  tier: z.number().int().min(1).max(4_096).nullable(),
+  tier: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
   repetition: z.number().int().min(1).max(3).nullable(),
   attempt: z.number().int().positive(),
   compatibility: z.object({
@@ -582,8 +716,8 @@ export const calibrationCheckpointSchema = z.object({
     calibrationPolicyHash: z.string().regex(/^[a-f0-9]{64}$/),
     appVersion: z.string().min(1).max(120),
   }),
-  completedDiscoveryTiers: z.array(z.number().int().min(1).max(4_096)).max(12),
-  highestPassedDiscoveryTier: z.number().int().min(1).max(4_096).nullable(),
+  completedDiscoveryTiers: z.array(z.number().int().min(1).max(MAX_PROJECT_CAMERAS)).max(256),
+  highestPassedDiscoveryTier: z.number().int().min(1).max(MAX_PROJECT_CAMERAS).nullable(),
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
 

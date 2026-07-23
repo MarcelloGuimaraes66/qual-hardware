@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "qual-hardware-calibration-runtime-manifest/2.0.0",
+  "schemaVersion": "qual-hardware-calibration-runtime-manifest/3.0.0",
   "kernelVersion": "qual-hardware-calibration-kernel/2.0.0",
   "authorityCommit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
-  "pipelineImplementation": "perceptrum-equivalent-v1",
+  "pipelineImplementation": "perceptrum-equivalent-v2-multi-device",
   "supportedTargets": [
     "darwin-arm64",
     "win32-x64",
@@ -18,7 +18,7 @@
   },
   "sourceLock": {
     "relativePath": "resources/calibration/asset-sources.lock.json",
-    "sha256": "fdf71b584d51b61edbe0ad37cc027f9d11a8f81d3de9a8eb0a4bab5365933b9a"
+    "sha256": "9e2edaabbb694c81ed2cd8d2762a8aae8ea712395556db76b269ac525c469d06"
   },
   "assets": [
     {

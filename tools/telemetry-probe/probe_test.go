@@ -25,6 +25,20 @@ func TestNvidiaAggregationAndThermalEvidence(t *testing.T) {
 	}
 }
 
+func TestNvidiaKeepsPerDeviceIdentityAndTelemetry(t *testing.T) {
+	result := parseNvidiaCSV("0, GPU-a, 00000000:01:00.0, NVIDIA RTX A, 25, 1024, 61, 75.5, Not Active, Not Active\n1, GPU-b, 00000000:02:00.0, NVIDIA RTX B, 70, 2048, 73, 125.0, Active, Not Active\n")
+	payload := result.payload()
+	if len(payload.GPUDevices) != 2 {
+		t.Fatalf("expected two individual GPU records: %#v", payload.GPUDevices)
+	}
+	if payload.GPUDevices[0].UUID != "GPU-a" || payload.GPUDevices[1].UUID != "GPU-b" {
+		t.Fatalf("GPU identities were not preserved: %#v", payload.GPUDevices)
+	}
+	if payload.GPUDevices[1].ThermalThrottlePercent == nil || *payload.GPUDevices[1].ThermalThrottlePercent != 100 {
+		t.Fatalf("per-device throttling was not preserved: %#v", payload.GPUDevices[1])
+	}
+}
+
 func TestCompleteEvidenceRequiresCPUAndDetectedGPU(t *testing.T) {
 	zero := 0.0
 	result := telemetryResult{cpuThermalMeasured: true, gpuDetected: true, thermalThrottlePercent: &zero}

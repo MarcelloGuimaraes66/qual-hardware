@@ -3,7 +3,7 @@
   "keys": [
     {
       "keyId": "qual-hardware-candidate-2026",
-      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAQ4VWMqlX1nQFoj5E8q4iItoEXh9bRst3ATdUMrUU/II=\n-----END PUBLIC KEY-----\n",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAHIFZPosmb7mmhMAhYDVrBl+XJFVuvRJ93R0gfyRW+Fs=\n-----END PUBLIC KEY-----\n",
       "classification": "candidate"
     }
   ]
