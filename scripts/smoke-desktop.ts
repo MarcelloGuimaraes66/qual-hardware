@@ -441,23 +441,31 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   const runtime = await api<{
     readyForQuickTest: boolean;
     readyForFullQualification: boolean;
+    runtimeAssetsVerified: boolean;
+    featureMode: string;
     authorityCommit: string;
     assets: Array<{ id: string; status: string }>;
     reasons: string[];
   }>(application.origin, "/api/calibrations/runtime-status");
   assert.equal(runtime.readyForQuickTest, true);
-  assert.equal(runtime.readyForFullQualification, false, "diagnostic runtime must fail closed for commercial qualification");
+  assert.equal(runtime.readyForFullQualification, runtime.featureMode === "full" && runtime.runtimeAssetsVerified,
+    "full calibration availability must reflect the feature mode and verified packaged runtime");
   assert.equal(runtime.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
   assert.equal(runtime.assets.find((asset) => asset.id === "telemetry-probe")?.status, "verified");
   assert(runtime.reasons.length > 0);
 
-  const fullAttempt = await fetch(`${application.origin}/api/calibration-sessions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ recommendationId: recommendation.id, mode: "full", targetHardwareTemplateId: null, advancedTelemetry: true }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  assert.equal(fullAttempt.status, 503, "full qualification must remain blocked without verified packaged assets");
+  if (runtime.readyForFullQualification) {
+    assert(runtime.assets.every((asset) => asset.status === "verified"),
+      "an enabled full-calibration button requires every packaged runtime asset to be verified");
+  } else {
+    const fullAttempt = await fetch(`${application.origin}/api/calibration-sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recommendationId: recommendation.id, mode: "full", targetHardwareTemplateId: null, advancedTelemetry: true }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    assert.equal(fullAttempt.status, 503, "full qualification must remain blocked without verified packaged assets");
+  }
 
   const startedCalibration = await api<{
     delivery: string;
@@ -491,13 +499,19 @@ async function exerciseApplication(application: RunningDesktop): Promise<{ scena
   assert.equal(completedCalibration.result?.externalRequestCount, 0);
   assert.equal(completedCalibration.result?.openAiRequestCount, 0);
   assert.equal(completedCalibration.result?.overallSafeCameraCapacity, null);
-  assert.equal(completedCalibration.result?.pipelineEvidence?.complete, false);
+  if (runtime.runtimeAssetsVerified) {
+    assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "measured");
+    assert.equal(completedCalibration.result?.pipelineEvidence?.sourceRegistered, true);
+    assert.equal(typeof completedCalibration.result?.pipelineEvidence?.aiqLocalCompleted, "boolean");
+  } else {
+    assert.equal(completedCalibration.result?.pipelineEvidence?.complete, false);
+    assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "unavailable");
+  }
   assert.equal(completedCalibration.result?.qualityGate?.eligibleForCapacityExtrapolation, false);
   assert(completedCalibration.result?.artifact?.fileName);
   const completedEvidencePath = join(application.userData, "calibration-evidence", completedCalibration.result.artifact.fileName);
   assert.equal(await fileExists(completedEvidencePath), true, "the compact successful evidence must survive temporary cleanup");
   assert((await stat(completedEvidencePath)).size <= 10 * 1024 * 1024, "successful evidence must respect the 10 MB limit");
-  assert.equal(completedCalibration.result?.stages.find((stage) => stage.stage === "local_inference")?.evidenceStatus, "unavailable");
   const thermalEvidence = completedCalibration.result?.stages.find((item) => item.stage === "thermal_sustain")?.evidenceStatus;
   assert(["measured", "unavailable"].includes(thermalEvidence ?? ""),
     "thermal evidence must be measured on physical hardware or explicitly unavailable on a virtual runner");

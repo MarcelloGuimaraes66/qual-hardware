@@ -70,6 +70,7 @@ async function makeRuntimeFixture(
     const sbomBytes = Buffer.from(JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.6", component: asset.id }), "utf8");
     artifact.licenseEvidence = { relativePath: `licenses/${asset.id}.txt`, sha256: sha256(licenseBytes) };
     artifact.sbomEvidence = { relativePath: `sbom/${asset.id}.cdx.json`, sha256: sha256(sbomBytes) };
+    artifact.companionFiles = [];
     const licensePath = join(root, "resources/calibration", selectedTarget, artifact.licenseEvidence.relativePath);
     const sbomPath = join(root, "resources/calibration", selectedTarget, artifact.sbomEvidence.relativePath);
     await mkdir(dirname(licensePath), { recursive: true });

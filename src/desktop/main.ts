@@ -46,6 +46,7 @@ async function startLocalApplication(): Promise<string> {
     evidenceDirectory: paths.calibrationEvidenceDirectory,
     resourceRoot: app.isPackaged ? process.resourcesPath : app.getAppPath(),
     appVersion: app.getVersion(),
+    featureMode: "full",
   });
   const updates = new CatalogUpdateService(store, {
     remoteUrl: process.env.QUAL_HARDWARE_CATALOG_URL,

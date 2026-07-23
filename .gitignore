@@ -13,3 +13,8 @@ artifacts/
 *.log
 auto.crt
 auto.key
+/resources/calibration/darwin-arm64/
+/resources/calibration/win32-x64/
+/resources/calibration/linux-x64/
+/resources/calibration/manifest-backups/
+/resources/calibration/runtime-target-backups/

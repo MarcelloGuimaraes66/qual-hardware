@@ -54,11 +54,10 @@ async function attachFixtureSourceProvenance(
     const lockedSource = lockedAsset.targets[target]!;
     const runtimeArtifact = manifest.assets.find((candidate) => candidate.id === asset.id)!.artifacts[target]!;
     const assetIntegrity = await integrity(asset.sourcePath);
+    runtimeArtifact.sha256 = assetIntegrity.sha256;
+    runtimeArtifact.sizeBytes = assetIntegrity.sizeBytes;
     const packagesByUrl = new Map<string, { sourcePath: string; sha256: string; sizeBytes: number }>();
-    if (lockedSource.sourceKind === "repository_source") {
-      runtimeArtifact.sha256 = assetIntegrity.sha256;
-      runtimeArtifact.sizeBytes = assetIntegrity.sizeBytes;
-    } else {
+    if (lockedSource.sourceKind !== "repository_source") {
       const primaryPath = lockedSource.sourceKind === "direct_file"
         ? asset.sourcePath : join(dirname(asset.sourcePath), `${asset.id}.source-package`);
       if (primaryPath !== asset.sourcePath) await writeFile(primaryPath, `locked-package:${target}:${asset.id}`, "utf8");
@@ -134,8 +133,12 @@ describe("calibration runtime asset provisioning", () => {
     }
     const sourceRoot = join(root, "external-approved-input");
     await mkdir(sourceRoot, { recursive: true });
+    const manifest = JSON.parse(await readFile(join(root, "resources/calibration/runtime-manifest.json"), "utf8")) as {
+      assets: Array<{ id: string; version: string | null; licenseSpdx: string | null }>;
+    };
     const assets: FixtureAsset[] = [];
     for (const id of REQUIRED_RUNTIME_ASSET_IDS) {
+      const definition = manifest.assets.find((asset) => asset.id === id)!;
       const sourcePath = join(sourceRoot, `${id}.bin`);
       const licenseEvidencePath = join(sourceRoot, `${id}.license.txt`);
       const sbomEvidencePath = join(sourceRoot, `${id}.cdx.json`);
@@ -151,8 +154,8 @@ describe("calibration runtime asset provisioning", () => {
       assets.push({
         id,
         sourcePath,
-        version: id === "telemetry-probe" ? "0.1.0" : "fixture-1.0.0",
-        licenseSpdx: id === "telemetry-probe" ? "NOASSERTION" : "MIT",
+        version: definition.version ?? "fixture-1.0.0",
+        licenseSpdx: definition.licenseSpdx ?? "MIT",
         licenseEvidencePath,
         sbomEvidencePath,
         companionFiles,
@@ -247,8 +250,12 @@ describe("calibration runtime asset provisioning", () => {
     }
     const sourceRoot = join(root, "approved-input");
     await mkdir(sourceRoot, { recursive: true });
+    const manifest = JSON.parse(await readFile(join(root, "resources/calibration/runtime-manifest.json"), "utf8")) as {
+      assets: Array<{ id: string; version: string | null; licenseSpdx: string | null }>;
+    };
     const assets: FixtureAsset[] = [];
     for (const id of REQUIRED_RUNTIME_ASSET_IDS) {
+      const definition = manifest.assets.find((asset) => asset.id === id)!;
       const sourcePath = join(sourceRoot, `${id}.bin`);
       const licenseEvidencePath = join(sourceRoot, `${id}.license.txt`);
       const sbomEvidencePath = join(sourceRoot, `${id}.cdx.json`);
@@ -264,8 +271,8 @@ describe("calibration runtime asset provisioning", () => {
       assets.push({
         id,
         sourcePath,
-        version: id === "telemetry-probe" ? "0.1.0" : "fixture-1",
-        licenseSpdx: id === "telemetry-probe" ? "NOASSERTION" : "MIT",
+        version: definition.version ?? "fixture-1",
+        licenseSpdx: definition.licenseSpdx ?? "MIT",
         licenseEvidencePath,
         sbomEvidencePath,
         companionFiles,
