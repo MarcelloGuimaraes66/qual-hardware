@@ -20,7 +20,7 @@ import {
   scenarioCreateSchema,
   scenarioUpdateSchema,
 } from "../shared/schemas.js";
-import type { CapacityRecommendation, CalibrationCheckpoint, CalibrationDeviceIdentity, CalibrationImportBatch, CalibrationImportItem, CalibrationResumeStatus, CalibrationSessionRecord, ComponentBuild, LocalCalibrationRun, QhcalPackage, RecommendationAlternative } from "../shared/types.js";
+import type { CapacityRecommendation, CalibrationCheckpoint, CalibrationDeviceIdentity, CalibrationHardwarePreflight, CalibrationImportBatch, CalibrationImportItem, CalibrationResumeStatus, CalibrationSessionRecord, ComponentBuild, LocalCalibrationRun, QhcalPackage, RecommendationAlternative } from "../shared/types.js";
 import type { HardwareNodeTemplate } from "../shared/types.js";
 import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT } from "../shared/types.js";
 import { CatalogUpdateService } from "./catalogUpdates.js";
@@ -162,6 +162,7 @@ export interface ApplicationOptions {
   documentsDirectory?: string;
   fetchImpl?: typeof fetch;
   calibrationKernel?: CalibrationKernelPort;
+  calibrationHardwareDetector?: () => Promise<CalibrationHardwarePreflight>;
   calibrationRuntimePackages?: CalibrationRuntimePackageManager;
   calibrationTemporaryRoot?: string;
   calibrationEvidenceDirectory?: string;
@@ -185,6 +186,7 @@ export function createApp(
   const app = new Hono();
   const resourceRoot = options.resourceRoot ?? process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
   const applicationVersion = options.appVersion ?? "0.1.0";
+  const calibrationHardwareDetector = options.calibrationHardwareDetector ?? detectCalibrationHardware;
   const calibrationFeatures = {
     resume: options.calibrationFeatures?.resume ?? process.env.QUAL_HARDWARE_CALIBRATION_RESUME !== "0",
     exchange: options.calibrationFeatures?.exchange ?? process.env.QUAL_HARDWARE_CALIBRATION_EXCHANGE !== "0",
@@ -549,7 +551,7 @@ export function createApp(
     if (calibrationKernel.hasActiveSession()) incompatibilities.push("another_calibration_is_running");
     if (catalogUpdates.refreshing) incompatibilities.push("catalog_refresh_is_running");
     if (checkpoint) {
-      const [detected, runtime] = await Promise.all([detectCalibrationHardware(), effectiveCalibrationRuntimeStatus()]);
+      const [detected, runtime] = await Promise.all([calibrationHardwareDetector(), effectiveCalibrationRuntimeStatus()]);
       const localModel = session.plan.scenario.cameraGroups.flatMap((group) => group.agents)
         .find((agent) => agent.model.startsWith("aiq-"))?.model ?? "local-stub";
       const modelAssetId = localModel.endsWith("-max") ? "qwen-core-max-gguf" : "qwen-core-gguf";
@@ -979,7 +981,7 @@ export function createApp(
       return context.json({ error: safeError(error) }, 409);
     }
   });
-  app.get("/api/calibrations/hardware-status", async (context) => context.json(await detectCalibrationHardware()));
+  app.get("/api/calibrations/hardware-status", async (context) => context.json(await calibrationHardwareDetector()));
   app.get("/api/capacity-assessments", async (context) => {
     const hardwareTemplateId = context.req.query("hardwareTemplateId");
     const workloadProfileId = context.req.query("workloadProfileId");
