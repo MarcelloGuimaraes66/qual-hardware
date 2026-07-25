@@ -26,7 +26,7 @@ export interface ReportContext {
 
 const POLICY_ORDER: RecommendationPolicy[] = ["minimum", "recommended", "n_plus_one"];
 const POLICY_LABELS: Record<RecommendationPolicy, string> = {
-  minimum: "1. Mínimo técnico",
+  minimum: "1. Opção econômica",
   recommended: "2. Recomendado",
   n_plus_one: "3. N+1 resiliente",
 };
@@ -71,7 +71,7 @@ export function buildExecutiveNarrative(context: ReportContext): ExecutiveNarrat
   const selected = recommended!.primary;
   const evidence = selected.calibration;
   const evidenceText = evidence?.status === "validated_local"
-    ? "esta configuração foi medida fisicamente com o pipeline local do Perceptrum"
+    ? "esta configuração foi medida fisicamente com a carga e o pipeline local registrados"
     : evidence?.status === "extrapolated_high"
       ? `a capacidade foi extrapolada com confiança alta, margem de ${evidence.reservePercent}% e gargalo ${evidence.bottleneck ?? "não identificado"}`
       : "a capacidade ainda depende de estimativas conservadoras e deve ser confirmada por calibração local antes da compra";
@@ -80,22 +80,22 @@ export function buildExecutiveNarrative(context: ReportContext): ExecutiveNarrat
     : `O valor central é ${selected.price.currency} ${formatMoney(selected.price.median)} para o projeto; ${selected.price.quotationRequired ? "ele é uma referência e exige cotação antes da compra" : "ele usa cotações válidas do snapshot ativo"}.`;
   const commerciallyEligible = selected.procurementEligibility === "eligible";
   const recommendation = commerciallyEligible
-    ? `Para equilibrar segurança operacional, custo e possibilidade de crescimento, a escolha principal apta para aquisição é ${selected.nodeCount} unidade(s) de ${selected.hardware.name}, com ${selected.hardware.cpuModel}, ${selected.hardware.gpuCount} × ${selected.hardware.gpuModel}, ${selected.hardware.ramGb} GB de memória por nó e ${selected.headroomPercent}% de folga planejada.`
-    : `Ainda não há evidência suficiente para aprovar uma compra. A configuração ${selected.hardware.name}, com ${selected.nodeCount} unidade(s), aparece somente como referência de planejamento para orientar as calibrações que faltam; ela não deve ser adquirida com base neste relatório.`;
+    ? `Para equilibrar segurança operacional, custo e possibilidade de crescimento, a escolha principal apta para aquisição utiliza ${selected.nodeCount} ${selected.nodeCount === 1 ? "servidor" : "servidores"} do modelo ${selected.hardware.name}, com ${selected.hardware.cpuModel}, ${selected.hardware.gpuCount} ${selected.hardware.gpuCount === 1 ? "GPU" : "GPUs"} ${selected.hardware.gpuModel}, ${selected.hardware.ramGb} GB de memória por servidor e ${selected.headroomPercent}% de folga planejada.`
+    : `Ainda não há evidência suficiente para aprovar uma compra. A configuração ${selected.hardware.name}, com ${selected.nodeCount} ${selected.nodeCount === 1 ? "servidor" : "servidores"}, aparece somente como referência de planejamento para orientar as calibrações que faltam; ela não deve ser adquirida com base neste relatório.`;
   return {
     title: "Nossa leitura e recomendação em linguagem direta",
     paragraphs: [
-      `Analisamos o trabalho completo de ${scenario.totalCameras} câmera(s): recebimento RTSP, decodificação, processamento de imagem, criação e leitura de clipes, gravação em disco, tráfego de rede e inferência no AiQ/Qwen local. O FPS de leitura RTSP (${sourceFps.join("/ ")} por câmera) foi tratado separadamente do FPS efetivamente enviado ao modelo (${inferenceFps.join("/ ")}), porque esses dois momentos consomem recursos diferentes.`,
+      `Analisamos o trabalho completo de ${scenario.totalCameras} ${scenario.totalCameras === 1 ? "câmera" : "câmeras"}: recebimento RTSP, decodificação, processamento de imagem, criação e leitura de clipes, gravação em disco, tráfego de rede e inferência local. O FPS de leitura RTSP (${sourceFps.join(" / ")} por câmera) foi tratado separadamente do FPS efetivamente enviado ao modelo (${inferenceFps.join(" / ")}), porque esses dois momentos consomem recursos diferentes.`,
       `${recommendation} O limitante calculado desta proposta é ${reportLabel(selected.bottleneck)}; por isso a recomendação considera o conjunto CPU, GPU, VRAM, RAM, SSD, rede e sustentação térmica, e não apenas a marca ou um índice genérico.`,
       `Sobre a força da evidência: ${evidenceText}. ${priceText}`,
-      `A opção mínima, ${minimum!.primary.hardware.name}, é sempre informativa e trabalha com menos reserva para picos. A opção recomendada busca o melhor equilíbrio para operação contínua e, a partir de 64 câmeras, já inclui N+1. A opção N+1, ${resilient!.primary.hardware.name}, mantém redundância para a indisponibilidade de um nó. ${commerciallyEligible ? "As opções aptas passaram pelo gate de evidências de todos os estágios." : "Neste momento todas continuam bloqueadas para aquisição até a cobertura ficar completa."}`,
+      `A opção econômica, ${minimum!.primary.hardware.name}, prioriza componentes de menor custo por servidor e pode exigir mais servidores. A opção recomendada busca o melhor equilíbrio para operação contínua e, a partir de 64 câmeras, já inclui N+1. A opção N+1, ${resilient!.primary.hardware.name}, mantém redundância para a indisponibilidade de um servidor. ${commerciallyEligible ? "As opções aptas passaram pela verificação de evidências de todos os estágios." : "Neste momento todas continuam bloqueadas para aquisição até a cobertura ficar completa."}`,
     ],
     recommendation,
     cautions: [
-      ...(selected.price.staleQuoteCount > 0 ? [`${selected.price.staleQuoteCount} cotação(ões) vencida(s) foram excluídas do cálculo.`] : []),
-      ...(evidence?.status === "validated_local" || evidence?.status === "extrapolated_high" ? [] : ["Não trate esta estimativa como validação física; execute a calibração completa do Perceptrum antes de fechar a compra."]),
+      ...(selected.price.staleQuoteCount > 0 ? [`${selected.price.staleQuoteCount} ${selected.price.staleQuoteCount === 1 ? "cotação vencida foi excluída" : "cotações vencidas foram excluídas"} do cálculo.`] : []),
+      ...(evidence?.status === "validated_local" || evidence?.status === "extrapolated_high" ? [] : ["Não trate esta estimativa como validação física; execute a calibração completa da carga antes de fechar a compra."]),
       ...(!commerciallyEligible ? ["VEREDITO COMERCIAL: relatório não apto para compra; capacidade segura não comprovada para todos os estágios."] : []),
-      "Driver, perfil de energia, refrigeração, versão do Perceptrum, modelo AiQ e workload devem permanecer iguais aos registrados na evidência.",
+      "Driver, perfil de energia, refrigeração, versão do aplicativo, modelo de análise e carga devem permanecer iguais aos registrados na evidência.",
     ],
   };
 }
@@ -168,6 +168,102 @@ export function jsonReport(context: ReportContext): Buffer {
   }, null, 2));
 }
 
+function textEvidenceLabel(value: RecommendationAlternative["calibration"]): string {
+  if (value?.status === "validated_local") return "medição física local compatível";
+  if (value?.status === "extrapolated_high") return "extrapolação com confiança alta";
+  if (value?.status === "extrapolated_medium") return "extrapolação com confiança média";
+  return "estimativa de referência ainda não validada fisicamente";
+}
+
+function textProcurementLabel(value: RecommendationAlternative["procurementEligibility"]): string {
+  return value === "eligible" ? "apta para avaliação de compra" : "somente planejamento; compra bloqueada";
+}
+
+function textHardwareName(value: string): string {
+  const exact: Record<string, string> = {
+    "Compact CUDA workstation": "Estação de trabalho CUDA compacta",
+    "Balanced Blackwell workstation": "Estação de trabalho Blackwell equilibrada",
+    "Expandable RTX PRO workstation": "Estação de trabalho RTX PRO expansível",
+    "Ampere ECC legacy-generation workstation": "Estação de trabalho Ampere ECC de geração anterior",
+  };
+  return exact[value] ?? value
+    .replace(/\bworkstation\b/gi, "estação de trabalho")
+    .replace(/\blegacy-generation\b/gi, "de geração anterior");
+}
+
+function textForOperator(value: string): string {
+  return value
+    .replaceAll("Compact CUDA workstation", "Estação de trabalho CUDA compacta")
+    .replaceAll("Balanced Blackwell workstation", "Estação de trabalho Blackwell equilibrada")
+    .replaceAll("Expandable RTX PRO workstation", "Estação de trabalho RTX PRO expansível")
+    .replaceAll("Ampere ECC legacy-generation workstation", "Estação de trabalho Ampere ECC de geração anterior")
+    .replace(/\bworkstation\b/gi, "estação de trabalho");
+}
+
+export function textReport(context: ReportContext): Buffer {
+  const recommendations = orderedRecommendations(context.recommendations);
+  const narrative = buildExecutiveNarrative({ ...context, recommendations });
+  const scenario = context.scenario.scenario;
+  const cameraGroups = scenario.cameraGroups.map((group) => {
+    const video = group.storage.storeVideo || group.agents.some((agent) => agent.inputType === "video");
+    const models = [...new Set(group.agents.map((agent) => agent.model))].join(", ") || "sem modelo registrado";
+    return `- ${group.name}: ${group.count.toLocaleString("pt-BR")} câmeras; ${video ? "VÍDEO FULL" : "FRAME"}; ` +
+      `${group.source.width}×${group.source.height}; ${group.source.sourceFps} FPS; ${group.source.codec.toUpperCase()}; modelos ${models}.`;
+  });
+  const lines = [
+    "\uFEFFRELATÓRIO DE DIMENSIONAMENTO DE INFRAESTRUTURA",
+    "=".repeat(76),
+    `Projeto: ${scenario.projectName.replace(/\bcameras\b/gi, "câmeras")}`,
+    `Câmeras: ${scenario.totalCameras.toLocaleString("pt-BR")}`,
+    `Gerado em: ${new Date().toLocaleString("pt-BR")}`,
+    "",
+    "RESPOSTA PRINCIPAL",
+    ...narrative.paragraphs.map(textForOperator),
+    "",
+    "CARGA INFORMADA",
+    ...cameraGroups,
+    "",
+    "CONFIGURAÇÕES PROPOSTAS",
+  ];
+  for (const recommendation of recommendations) {
+    const design = recommendation.primary;
+    const fleet = design.fleetPlan;
+    const active = fleet?.activeServers ?? design.activeNodeCount;
+    const reserve = fleet?.reserveServers ?? design.nodeCount - design.activeNodeCount;
+    const cpuSockets = design.hardware.cpuSocketCount ?? 1;
+    lines.push(
+      "",
+      POLICY_LABELS[recommendation.policy].toUpperCase(),
+      `Situação para compra: ${textProcurementLabel(design.procurementEligibility)}.`,
+      `Evidência: ${textEvidenceLabel(design.calibration)}.`,
+      `Máquina: ${textHardwareName(design.hardware.name)}.`,
+      `Servidores: ${active.toLocaleString("pt-BR")} ${active === 1 ? "servidor ativo" : "servidores ativos"} + ` +
+        `${reserve.toLocaleString("pt-BR")} ${reserve === 1 ? "servidor de reserva" : "servidores de reserva"} = ` +
+        `${design.nodeCount.toLocaleString("pt-BR")} ${design.nodeCount === 1 ? "servidor no total" : "servidores no total"}.`,
+      `Por servidor: ${cpuSockets} ${cpuSockets === 1 ? "CPU física" : "CPUs físicas"}; ` +
+        `${design.hardware.physicalCores} núcleos; ${design.hardware.gpuCount} ${design.hardware.gpuCount === 1 ? "GPU" : "GPUs"} ` +
+        `${design.hardware.gpuModel}; ${design.hardware.ramGb} GB de RAM; rede de ${design.hardware.nicGbps} Gbps.`,
+      `Capacidade segura por servidor: ${fleet?.safeCamerasPerServer?.toLocaleString("pt-BR") ?? "não comprovada"} câmeras.`,
+      `Capacidade adicional planejada: ${design.maximumAdditionalCameras.toLocaleString("pt-BR")} câmeras.`,
+      `Gargalo calculado: ${reportLabel(fleet?.bottleneck ?? design.bottleneck)}.`,
+      `Custo de referência: ${design.price.median === null ? "cotação comercial necessária" :
+        `${design.price.currency} ${formatMoney(design.price.median)} para o projeto`}.`,
+    );
+  }
+  lines.push(
+    "",
+    "ORIENTAÇÕES E LIMITAÇÕES",
+    ...narrative.cautions.map((item) => `- ${textForOperator(item)}`),
+    "",
+    "Como interpretar: use a capacidade segura por servidor e a quantidade de servidores ativos. " +
+      "Os servidores de reserva aumentam a disponibilidade, mas não devem ser contados como capacidade operacional normal.",
+    "Configurações marcadas como “somente planejamento” servem para comparação e orçamento preliminar. " +
+      "Elas exigem calibração física compatível antes de uma decisão de compra.",
+    "",
+  );
+  return Buffer.from(lines.join("\r\n"), "utf8");
+}
+
 type ReportRow = Record<string, string | number | boolean | null>;
 
 const POLICY_ROW_COLORS: Record<string, string> = {
@@ -176,8 +272,15 @@ const POLICY_ROW_COLORS: Record<string, string> = {
   n_plus_one: "FFFFF1D6",
 };
 
+function spreadsheetCellForOperator(value: string): string {
+  return textForOperator(value)
+    .replace(/perceptrum/gi, "qual-hardware");
+}
+
 function appendSheet(workbook: ExcelJS.Workbook, name: string, inputRows: ReportRow[]): void {
-  const rows = inputRows.length ? inputRows : [{ status: "No data" }];
+  const rows = (inputRows.length ? inputRows : [{ status: "No data" }]).map((row) =>
+    Object.fromEntries(Object.entries(row).map(([key, value]) =>
+      [key, typeof value === "string" ? spreadsheetCellForOperator(value) : value])) as ReportRow);
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const sheet = workbook.addWorksheet(name, {
     views: [{ state: "frozen", ySplit: 1, showGridLines: false }],
@@ -210,8 +313,16 @@ function appendSheet(workbook: ExcelJS.Workbook, name: string, inputRows: Report
       row.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: POLICY_ROW_COLORS[policy] } };
       row.getCell(1).font = { bold: true, color: { argb: "FF071014" } };
     }
-    const longestValue = Math.max(...headers.map((_header, columnIndex) => String(row.getCell(columnIndex + 1).value ?? "").length));
-    row.height = Math.min(105, Math.max(20, Math.ceil(longestValue / 72) * 15));
+    const wrappedLineCount = Math.max(...headers.map((_header, columnIndex) => {
+      const value = String(row.getCell(columnIndex + 1).value ?? "");
+      const configuredWidth = Number(sheet.getColumn(columnIndex + 1).width ?? 14);
+      const usableCharacters = Math.max(8, Math.floor(configuredWidth - 2));
+      return value.split(/\r?\n/).reduce(
+        (total, line) => total + Math.max(1, Math.ceil(line.length / usableCharacters)),
+        0,
+      );
+    }));
+    row.height = Math.min(240, Math.max(20, wrappedLineCount * 17));
   }
   sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
 }
@@ -256,10 +367,53 @@ export async function xlsxReport({ scenario, recommendations: input, components 
   workbook.created = new Date();
   const first = recommendations[0]!;
 
+  const operatorRows: ReportRow[] = [
+    ...narrative.paragraphs.map((paragraph, index) => ({
+      "Seção": "Resposta principal",
+      "Item": index === 0 ? narrative.title : `Explicação ${index + 1}`,
+      "Resultado e orientação": textForOperator(paragraph),
+    })),
+    ...scenario.scenario.cameraGroups.map((group) => ({
+      "Seção": "Carga informada",
+      "Item": group.name,
+      "Resultado e orientação": `${group.count.toLocaleString("pt-BR")} câmeras; ${
+        group.storage.storeVideo || group.agents.some((agent) => agent.inputType === "video") ? "VÍDEO FULL" : "FRAME"
+      }; ${group.source.width}×${group.source.height}; ${group.source.sourceFps} FPS; ${group.source.codec.toUpperCase()}.`,
+    })),
+    ...recommendations.map((recommendation) => {
+      const design = recommendation.primary;
+      const fleet = design.fleetPlan;
+      const active = fleet?.activeServers ?? design.activeNodeCount;
+      const reserve = fleet?.reserveServers ?? design.nodeCount - design.activeNodeCount;
+      const cpuSockets = design.hardware.cpuSocketCount ?? 1;
+      return {
+        "Seção": "Configuração proposta",
+        "Item": POLICY_LABELS[recommendation.policy],
+        "Resultado e orientação": `${textHardwareName(design.hardware.name)}; ${active} ${
+          active === 1 ? "servidor ativo" : "servidores ativos"
+        } + ${reserve} ${reserve === 1 ? "servidor de reserva" : "servidores de reserva"}; por servidor: ${
+          cpuSockets
+        } ${cpuSockets === 1 ? "CPU física" : "CPUs físicas"}, ${design.hardware.physicalCores} núcleos, ${
+          design.hardware.gpuCount
+        } ${design.hardware.gpuCount === 1 ? "GPU" : "GPUs"} ${design.hardware.gpuModel}, ${
+          design.hardware.ramGb
+        } GB de RAM e rede de ${design.hardware.nicGbps} Gbps; capacidade segura por servidor: ${
+          fleet?.safeCamerasPerServer?.toLocaleString("pt-BR") ?? "não comprovada"
+        } câmeras; ${textProcurementLabel(design.procurementEligibility)}.`,
+      };
+    }),
+    ...narrative.cautions.map((caution) => ({
+      "Seção": "Atenção",
+      "Item": "Limitação",
+      "Resultado e orientação": textForOperator(caution),
+    })),
+  ];
+  appendSheet(workbook, "Resumo em português", operatorRows);
+
   appendSheet(workbook, "Executive Summary", narrative.paragraphs.map((paragraph, index) => ({
     section: index === 0 ? narrative.title : `Explicação ${index + 1}`,
-    text: paragraph,
-  })).concat(narrative.cautions.map((text) => ({ section: "Atenção", text }))));
+    text: textForOperator(paragraph),
+  })).concat(narrative.cautions.map((text) => ({ section: "Atenção", text: textForOperator(text) }))));
 
   appendSheet(workbook, "Scenario", [{
     project: scenario.scenario.projectName,
@@ -486,11 +640,11 @@ export async function xlsxReport({ scenario, recommendations: input, components 
       { ...base, component: "Motherboard / platform", specification: hardware.motherboard, details: "Platform compatibility per hardware template", ...priced("motherboard") },
       { ...base, component: "RAM", specification: `${hardware.ramGb} GB per node`, details: `ECC: ${hardware.ecc ? "yes" : "no"}; architecture: ${hardware.memoryArchitecture ?? "dedicated"}`, ...priced("ram") },
       { ...base, component: "GPU", specification: `${hardware.gpuCount} x ${hardware.gpuModel}`, details: `${hardware.gpuVendor}; ${gpuMemoryDescription(hardware)}`, ...priced("gpu") },
-      { ...base, component: "AiQ / video decode", specification: `${hardware.localAiqSlots} local AiQ slots; ${hardware.gpuDecode1080p30Streams} reference 1080p30 streams`, details: `Perceptrum GPU decode: ${hardware.supportsPerceptrumGpuDecode ? "supported" : "not supported"}`, quantityPerNode: null, unitCost: null, perNodeCost: null, projectCost: null },
+      { ...base, component: "Análise local e decodificação de vídeo", specification: `${hardware.localAiqSlots} instâncias locais simultâneas; ${hardware.gpuDecode1080p30Streams} fluxos 1080p30 de referência`, details: `Decodificação por GPU: ${hardware.supportsPerceptrumGpuDecode ? "compatível" : "não comprovada"}`, quantityPerNode: null, unitCost: null, perNodeCost: null, projectCost: null },
       { ...base, component: "Operational NVMe", specification: hardware.storageModel, details: `${hardware.usableStorageTb} TB usable; rolling clips, configured retention, write throughput and RAID participate in sizing`, ...priced("storage") },
       { ...base, component: "Network", specification: `${hardware.nicGbps} GbE per node`, details: "LAN and RTSP stream capacity", ...priced("network") },
       { ...base, component: "Power / cooling / chassis", specification: `${hardware.powerSupply}; ${hardware.cooling}; ${hardware.chassis}`, details: `Expansion score: ${hardware.expansionScore}`, ...priced("power_cooling_chassis") },
-      { ...base, component: "Operating system", specification: hardware.windowsEdition, details: `${operatingSystemFor(hardware)} target; matching Perceptrum build and benchmark required`, quantityPerNode: null, unitCost: null, perNodeCost: null, projectCost: null },
+      { ...base, component: "Sistema operacional", specification: hardware.windowsEdition, details: `${operatingSystemFor(hardware)}; compilação compatível e benchmark sustentado obrigatórios`, quantityPerNode: null, unitCost: null, perNodeCost: null, projectCost: null },
       { ...base, component: "Assembly / integration", specification: "Hardware assembly, firmware baseline and burn-in allowance", details: "Planning allowance; excludes licenses and support", ...priced("integration") },
     ];
   }));
@@ -814,6 +968,10 @@ const STATUS_LABELS: Record<string, string> = {
   extrapolated_high: "extrapolada com confiança alta",
   extrapolated_medium: "extrapolada com confiança moderada",
   reference_only: "somente referência",
+  planning_only: "planejamento pendente de validação física",
+  single_node_validated: "validado em servidor único",
+  historical_template: "modelo histórico",
+  no_coverage: "sem cobertura",
   incompatible: "incompatível",
   eligible: "apta para aquisição",
   blocked: "bloqueada",
@@ -853,7 +1011,8 @@ function reportComponentCostName(value: string): string {
 }
 
 function reportCameraGroupName(value: string): string {
-  return value === "Main camera group" ? "Grupo principal de câmeras" : value;
+  if (value === "Main camera group") return "Grupo principal de câmeras";
+  return value.replace(/^Camera profile (\d+)$/i, "Perfil de câmeras $1");
 }
 
 function reportAgentName(value: string): string {
@@ -913,7 +1072,7 @@ function coreWarnings(warnings: string[]): string[] {
 function reportEvidence(value: string): string {
   const prefixes: Array<[string, string]> = [
     ["workload-contract:", "Contrato da carga: "],
-    ["perceptrum-build:", "Build do Perceptrum: "],
+    ["perceptrum-build:", "Perfil de software: "],
     ["catalog-version:", "Versão do catálogo: "],
     ["operating-system:", "Sistema operacional: "],
     ["procurement-eligibility:", "Elegibilidade para aquisição: "],
@@ -945,7 +1104,7 @@ function addConfiguration(writer: PdfWriter, recommendation: CapacityRecommendat
   writer.paragraph(`Placa-mãe ou plataforma: ${hardware.motherboard}.`);
   writer.paragraph(`Memória RAM: ${hardware.ramGb} GB por nó; ECC: ${hardware.ecc ? "sim" : "não"}; arquitetura: ${reportLabel(hardware.memoryArchitecture)}.`);
   writer.paragraph(`GPU: ${hardware.gpuCount} × ${hardware.gpuModel} (${displayManufacturer(hardware.gpuVendor)}); ${gpuMemoryDescription(hardware)}.`);
-  writer.paragraph(`AiQ local: ${hardware.localAiqSlots} instância(s) por nó; decodificação do Perceptrum por GPU: ${hardware.supportsPerceptrumGpuDecode ? "compatível" : "não compatível"}; capacidade nominal de referência: ${hardware.gpuDecode1080p30Streams} fluxos 1080p30.`);
+  writer.paragraph(`Análise local: ${hardware.localAiqSlots} ${hardware.localAiqSlots === 1 ? "instância simultânea" : "instâncias simultâneas"} por servidor; decodificação por GPU: ${hardware.supportsPerceptrumGpuDecode ? "compatível" : "não comprovada"}; capacidade nominal de referência: ${hardware.gpuDecode1080p30Streams} fluxos 1080p30.`);
   writer.paragraph(`NVMe operacional: ${hardware.storageModel}; ${hardware.usableStorageTb} TB úteis. A escrita, os clipes temporários, a retenção e o fator RAID participam do dimensionamento.`);
   if (design.calibration) {
     const calibration = design.calibration;
@@ -1073,7 +1232,7 @@ function addDetailedMachineSpecification(writer: PdfWriter, design: Recommendati
   }
   writer.heading(`${index}.${(commercial?.components.length ?? 0) + 1}. Situação das evidências`);
   writer.paragraph(evidenceCoverageSummary(design), 9.2);
-  writer.paragraph("As especificações oficiais acima descrevem características e compatibilidade, mas não substituem benchmarks comparáveis nem a calibração física completa do Perceptrum. Enquanto a cobertura permanecer incompleta, esta máquina continua como referência de planejamento e não está liberada para aquisição.", 9.2);
+  writer.paragraph("As especificações oficiais acima descrevem características e compatibilidade, mas não substituem benchmarks comparáveis nem a calibração física completa da carga. Enquanto a cobertura permanecer incompleta, esta máquina continua como referência de planejamento e não está liberada para aquisição.", 9.2);
 }
 
 export async function pdfReport({ scenario, recommendations: input, components = [] }: ReportContext): Promise<Buffer> {

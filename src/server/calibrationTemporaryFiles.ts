@@ -1,14 +1,35 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile, readdir, realpath, rmdir, stat, statfs, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rename, rmdir, stat, statfs, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { CalibrationTemporaryFileState } from "../shared/types.js";
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MARKER = "qual-hardware-calibration-temporary-workspace/2.0.0";
 const MANIFEST_NAME = "session-manifest.json";
+const MANIFEST_TEMP_NAME = ".session-manifest.write.tmp";
 const GIB = 1024 ** 3;
 const MINIMUM_RESERVE_BYTES = 10 * GIB;
 const MAXIMUM_RESERVE_BYTES = 50 * GIB;
+const WINDOWS_FILE_RELEASE_RETRIES = 20;
+const ABANDONED_WORKSPACE_FILE = /^(?:session-manifest\.json|\.session-manifest\.write\.tmp|telemetry\.jsonl|pipeline-probe\.sqlite(?:-(?:wal|shm))?|synthetic-frame\.jpg|synthetic-source-\d+\.mkv|gpu-media-preflight-\d+-\d+-\d+\.(?:mkv|jpg)|media-\d+-\d+-\d+-\d+\.mkv|snapshot-\d+-\d+-\d+\.jpg)$/;
+
+function isTransientFileLock(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EBUSY" || code === "EPERM";
+}
+
+async function unlinkRegisteredFile(path: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await unlink(path);
+      return;
+    } catch (error) {
+      if (!isTransientFileLock(error) || attempt >= WINDOWS_FILE_RELEASE_RETRIES) throw error;
+      await new Promise((resolveWait) => setTimeout(resolveWait, Math.min(250, 25 * (attempt + 1))));
+    }
+  }
+}
 
 export interface TemporaryFileEntry {
   relativePath: string;
@@ -70,9 +91,21 @@ function safeRelativePath(value: string): string {
 }
 
 async function persistCalibrationWorkspaceManifest(workspace: CalibrationWorkspace): Promise<void> {
+  const temporaryPath = join(workspace.directory, MANIFEST_TEMP_NAME);
   const write = workspace.manifestWriteQueue
     .catch(() => undefined)
-    .then(() => writeFile(workspace.manifestPath, JSON.stringify(workspace.manifest, null, 2), "utf8"));
+    .then(async () => {
+      const interruptedWrite = await lstat(temporaryPath).catch((error: unknown) =>
+        isNotFound(error) ? null : Promise.reject(error));
+      if (interruptedWrite) {
+        if (!interruptedWrite.isFile() || interruptedWrite.isSymbolicLink()) {
+          throw new Error("calibration_workspace_manifest_temporary_invalid");
+        }
+        await unlinkRegisteredFile(temporaryPath);
+      }
+      await writeFile(temporaryPath, JSON.stringify(workspace.manifest, null, 2), { encoding: "utf8", flag: "wx" });
+      await rename(temporaryPath, workspace.manifestPath);
+    });
   workspace.manifestWriteQueue = write;
   await write;
 }
@@ -243,7 +276,17 @@ export async function reclaimCalibrationPhaseFiles(
     if (!info.isFile() || info.isSymbolicLink()) throw new Error("calibration_workspace_file_changed");
     const currentHash = await fileSha256(path);
     if (currentHash !== entry.sha256) throw new Error(`calibration_workspace_hash_changed:${entry.relativePath}`);
-    await unlink(path);
+    try {
+      await unlinkRegisteredFile(path);
+    } catch (error) {
+      if (!isTransientFileLock(error)) throw error;
+      // Windows can retain a codec handle briefly after the child process has
+      // exited. Reclaiming between tiers is an optimization, so defer this
+      // registered file to the mandatory terminal cleanup instead of aborting
+      // an otherwise valid capacity run.
+      entry.lifecycleReason = "phase_reclaim_deferred_file_lock";
+      continue;
+    }
     bytesRemoved += info.size;
     filesRemoved += 1;
     entry.state = "deleted";
@@ -280,7 +323,7 @@ export async function refreshRegisteredCalibrationTemporaryFiles(
     .map((entry) => safeRelativePath(entry.relativePath)));
   const entries = await readdir(workspace.directory, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === MANIFEST_NAME) continue;
+    if (entry.name === MANIFEST_NAME || entry.name === MANIFEST_TEMP_NAME) continue;
     if (!registered.has(entry.name) || entry.isSymbolicLink() || !entry.isFile()) {
       throw new Error(`calibration_workspace_unregistered_entry:${entry.name}`);
     }
@@ -311,12 +354,21 @@ export async function refreshRegisteredCalibrationTemporaryFiles(
 export async function cleanupCalibrationWorkspace(root: string, sessionId: string): Promise<{ bytesRemoved: number }> {
   const workspace = await readCalibrationWorkspace(root, sessionId);
   const entries = await readdir(workspace.directory, { withFileTypes: true });
-  const allowed = new Set([MANIFEST_NAME, ...workspace.manifest.files.filter((entry) => entry.state !== "deleted")
+  const allowed = new Set([MANIFEST_NAME, MANIFEST_TEMP_NAME, ...workspace.manifest.files.filter((entry) => entry.state !== "deleted")
     .map((entry) => safeRelativePath(entry.relativePath))]);
   for (const entry of entries) {
     if (!allowed.has(entry.name) || entry.isSymbolicLink() || !entry.isFile()) {
       throw new Error(`calibration_workspace_unregistered_entry:${entry.name}`);
     }
+  }
+  const interruptedManifestWrite = join(workspace.directory, MANIFEST_TEMP_NAME);
+  const interruptedManifestInfo = await lstat(interruptedManifestWrite).catch((error: unknown) =>
+    isNotFound(error) ? null : Promise.reject(error));
+  if (interruptedManifestInfo) {
+    if (!interruptedManifestInfo.isFile() || interruptedManifestInfo.isSymbolicLink()) {
+      throw new Error("calibration_workspace_manifest_temporary_invalid");
+    }
+    await unlinkRegisteredFile(interruptedManifestWrite);
   }
   let bytesRemoved = 0;
   for (const entry of workspace.manifest.files) {
@@ -331,14 +383,50 @@ export async function cleanupCalibrationWorkspace(root: string, sessionId: strin
     const currentHash = await fileSha256(path);
     if (currentHash !== entry.sha256) throw new Error(`calibration_workspace_hash_changed:${entry.relativePath}`);
     bytesRemoved += info.size;
-    await unlink(path);
+    await unlinkRegisteredFile(path);
   }
   const remaining = await readdir(workspace.directory);
   if (remaining.length !== 1 || remaining[0] !== MANIFEST_NAME) {
     throw new Error("calibration_workspace_contains_entry_after_file_cleanup");
   }
-  await unlink(workspace.manifestPath);
+  await unlinkRegisteredFile(workspace.manifestPath);
   await rmdir(workspace.directory);
+  return { bytesRemoved };
+}
+
+/**
+ * Recovers only a registered, abandoned calibration directory whose manifest
+ * was truncated during an operating-system/process interruption. This is not a
+ * general recursive delete: the direct child, UUID and every regular filename
+ * must match the closed set emitted by the calibration kernel.
+ */
+export async function cleanupAbandonedCalibrationWorkspace(
+  root: string,
+  sessionId: string,
+): Promise<{ bytesRemoved: number }> {
+  assertSessionId(sessionId);
+  const controlledRoot = resolve(root);
+  const directory = join(controlledRoot, sessionId);
+  await assertDirectChild(controlledRoot, directory, sessionId);
+  const entries = await readdir(directory, { withFileTypes: true });
+  if (entries.length === 0) throw new Error("calibration_abandoned_workspace_empty");
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.isSymbolicLink() || !ABANDONED_WORKSPACE_FILE.test(entry.name)) {
+      throw new Error(`calibration_abandoned_workspace_unrecognized_entry:${entry.name}`);
+    }
+    const canonical = await realpath(join(directory, entry.name));
+    if (dirname(canonical) !== await realpath(directory)) {
+      throw new Error("calibration_abandoned_workspace_entry_outside_session");
+    }
+  }
+  let bytesRemoved = 0;
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    const info = await lstat(path);
+    bytesRemoved += info.size;
+    await unlinkRegisteredFile(path);
+  }
+  await rmdir(directory);
   return { bytesRemoved };
 }
 

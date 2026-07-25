@@ -1,21 +1,49 @@
-import type { CalibrationCapacityBoundary } from "../shared/types.js";
+import type {
+  CalibrationCapacityBoundary,
+  CalibrationProbeOutcome,
+} from "../shared/types.js";
+
+type SearchPhase = "seed" | "expand" | "binary" | "confirm";
+type Composition = CalibrationCapacityBoundary["searchTrace"][number]["composition"];
 
 export interface CapacityProbeResult {
-  passed: boolean;
+  outcome?: CalibrationProbeOutcome;
+  /** Compatibility with v4 callers. Prefer outcome for new probes. */
+  passed?: boolean;
   failures?: string[];
+  failureCode?: string | null;
+  composition?: Composition;
 }
-
 export interface CapacityDiscoveryOptions {
   seedCameraCount: number;
   generatorCameraLimit: number;
   confirmationRuns?: number;
+  /**
+   * Optional wall-clock budget expressed as complete probe executions.
+   * Diagnostic runs use this to return an honest preliminary boundary instead
+   * of silently turning a nominal ten-minute test into a long qualification.
+   */
+  maximumEvaluations?: number;
+  /**
+   * Wall-clock budget for discovery. Before a new tier starts, the search uses
+   * observed probe durations and a conservative reserve to avoid beginning
+   * work that cannot finish inside the diagnostic window.
+   */
+  maximumDurationMs?: number;
   operationalHeadroomPercent?: number;
+  infrastructureRetryCount?: number;
   signal?: AbortSignal;
   evaluate: (cameraCount: number, context: {
     attempt: number;
-    phase: "seed" | "expand" | "binary" | "confirm";
+    phase: SearchPhase;
     signal?: AbortSignal;
   }) => Promise<boolean | CapacityProbeResult>;
+}
+
+interface NormalizedProbe {
+  outcome: CalibrationProbeOutcome;
+  failureCode: string | null;
+  composition: Composition;
 }
 
 function positiveInteger(name: string, value: number): number {
@@ -27,14 +55,40 @@ function assertNotAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("capacity_discovery_aborted");
 }
 
+function normalizedProbe(result: boolean | CapacityProbeResult): NormalizedProbe {
+  if (typeof result === "boolean") {
+    return { outcome: result ? "pass" : "capacity_fail", failureCode: null, composition: [] };
+  }
+  const outcome = result.outcome ?? (result.passed === true ? "pass" : "capacity_fail");
+  return {
+    outcome,
+    failureCode: result.failureCode ?? result.failures?.[0] ?? null,
+    composition: structuredClone(result.composition ?? []),
+  };
+}
+
+function capacityBoolean(outcome: CalibrationProbeOutcome): boolean | null {
+  if (outcome === "pass") return true;
+  if (outcome === "capacity_fail") return false;
+  return null;
+}
+
 /**
- * Discovers a measured adjacent pass/fail boundary. The project camera count is
- * only the seed: it is deliberately probed both above and, when needed, below.
+ * Discovers a measured adjacent pass/fail boundary. Infrastructure failures
+ * are retried once by default and are never converted into capacity evidence.
  */
 export async function discoverCapacityBoundary(options: CapacityDiscoveryOptions): Promise<CalibrationCapacityBoundary> {
   const limit = positiveInteger("generatorCameraLimit", options.generatorCameraLimit);
   const seed = Math.min(positiveInteger("seedCameraCount", options.seedCameraCount), limit);
   const confirmationRuns = Math.min(10, positiveInteger("confirmationRuns", options.confirmationRuns ?? 2));
+  const infrastructureRetryCount = Math.min(3, Math.max(0, Math.floor(options.infrastructureRetryCount ?? 1)));
+  const maximumEvaluations = options.maximumEvaluations === undefined
+    ? Number.POSITIVE_INFINITY
+    : positiveInteger("maximumEvaluations", options.maximumEvaluations);
+  const maximumDurationMs = options.maximumDurationMs === undefined
+    ? Number.POSITIVE_INFINITY
+    : positiveInteger("maximumDurationMs", options.maximumDurationMs);
+  const discoveryStartedAt = performance.now();
   const headroomPercent = options.operationalHeadroomPercent ?? 20;
   if (!Number.isFinite(headroomPercent) || headroomPercent < 0 || headroomPercent >= 100) {
     throw new Error("operationalHeadroomPercent_must_be_between_0_and_100");
@@ -42,29 +96,71 @@ export async function discoverCapacityBoundary(options: CapacityDiscoveryOptions
 
   const searchTrace: CalibrationCapacityBoundary["searchTrace"] = [];
   let attempt = 0;
-  const probe = async (
-    cameraCount: number,
-    phase: "seed" | "expand" | "binary" | "confirm",
-  ): Promise<boolean> => {
-    assertNotAborted(options.signal);
-    attempt += 1;
-    const context = options.signal ? { attempt, phase, signal: options.signal } : { attempt, phase };
-    const result = await options.evaluate(cameraCount, context);
-    const passed = typeof result === "boolean" ? result : result.passed;
-    searchTrace.push({ cameraCount, passed, attempt, phase });
-    return passed;
+  let infrastructureFailure: string | null = null;
+
+  const probe = async (cameraCount: number, phase: SearchPhase): Promise<CalibrationProbeOutcome | "budget_exhausted"> => {
+    let retryOfAttempt: number | null = null;
+    for (let retry = 0; retry <= infrastructureRetryCount; retry += 1) {
+      assertNotAborted(options.signal);
+      if (attempt >= maximumEvaluations) return "budget_exhausted";
+      const elapsedMs = performance.now() - discoveryStartedAt;
+      const longestObservedMs = Math.max(0, ...searchTrace.map((item) => item.durationMs));
+      const conservativeNextProbeMs = longestObservedMs > 0
+        ? longestObservedMs * 2 + 30_000
+        : 0;
+      if (elapsedMs >= maximumDurationMs ||
+          (searchTrace.length > 0 && elapsedMs + conservativeNextProbeMs > maximumDurationMs)) {
+        return "budget_exhausted";
+      }
+      attempt += 1;
+      const currentAttempt = attempt;
+      const startedAt = performance.now();
+      const context = options.signal ? { attempt, phase, signal: options.signal } : { attempt, phase };
+      const result = normalizedProbe(await options.evaluate(cameraCount, context));
+      searchTrace.push({
+        cameraCount,
+        passed: capacityBoolean(result.outcome),
+        outcome: result.outcome,
+        attempt: currentAttempt,
+        phase,
+        durationMs: Math.max(0, performance.now() - startedAt),
+        failureCode: result.failureCode,
+        retryOfAttempt,
+        composition: result.composition,
+      });
+      if (result.outcome === "cancelled") throw new Error("capacity_discovery_aborted");
+      if (result.outcome !== "infrastructure_error") return result.outcome;
+      infrastructureFailure = result.failureCode ?? "calibration_infrastructure_error";
+      if (retry === infrastructureRetryCount) return "infrastructure_error";
+      retryOfAttempt ??= currentAttempt;
+    }
+    return "infrastructure_error";
   };
 
-  const seedPassed = await probe(seed, "seed");
-  let highestPassingCameraCount: number | null = seedPassed ? seed : null;
-  let firstFailingCameraCount: number | null = seedPassed ? null : seed;
+  let highestPassingCameraCount: number | null = null;
+  let firstFailingCameraCount: number | null = null;
+  const seedOutcome = await probe(seed, "seed");
+  if (seedOutcome === "budget_exhausted") {
+    return budgetBoundary(seed, limit, confirmationRuns, headroomPercent, searchTrace, highestPassingCameraCount, firstFailingCameraCount);
+  }
+  if (seedOutcome === "infrastructure_error") {
+    return incompleteBoundary(seed, limit, confirmationRuns, searchTrace, infrastructureFailure);
+  }
+  if (seedOutcome === "pass") highestPassingCameraCount = seed;
+  else firstFailingCameraCount = seed;
 
-  if (seedPassed) {
+  if (seedOutcome === "pass") {
     let candidate = seed;
     while (candidate < limit) {
       candidate = Math.min(limit, Math.max(candidate + 1, candidate * 2));
-      const passed = await probe(candidate, "expand");
-      if (passed) {
+      const outcome = await probe(candidate, "expand");
+      if (outcome === "budget_exhausted") {
+        return budgetBoundary(seed, limit, confirmationRuns, headroomPercent, searchTrace, highestPassingCameraCount, firstFailingCameraCount);
+      }
+      if (outcome === "infrastructure_error") {
+        return incompleteBoundary(seed, limit, confirmationRuns, searchTrace, infrastructureFailure);
+      }
+      if (outcome === "pass") {
         highestPassingCameraCount = candidate;
         if (candidate === limit) break;
       } else {
@@ -76,8 +172,14 @@ export async function discoverCapacityBoundary(options: CapacityDiscoveryOptions
     let candidate = seed;
     while (candidate > 1) {
       candidate = Math.max(1, Math.floor(candidate / 2));
-      const passed = await probe(candidate, "expand");
-      if (passed) {
+      const outcome = await probe(candidate, "expand");
+      if (outcome === "budget_exhausted") {
+        return budgetBoundary(seed, limit, confirmationRuns, headroomPercent, searchTrace, highestPassingCameraCount, firstFailingCameraCount);
+      }
+      if (outcome === "infrastructure_error") {
+        return incompleteBoundary(seed, limit, confirmationRuns, searchTrace, infrastructureFailure);
+      }
+      if (outcome === "pass") {
         highestPassingCameraCount = candidate;
         break;
       }
@@ -90,7 +192,14 @@ export async function discoverCapacityBoundary(options: CapacityDiscoveryOptions
     let high = firstFailingCameraCount;
     while (high - low > 1) {
       const middle = low + Math.floor((high - low) / 2);
-      if (await probe(middle, "binary")) low = middle;
+      const outcome = await probe(middle, "binary");
+      if (outcome === "budget_exhausted") {
+        return budgetBoundary(seed, limit, confirmationRuns, headroomPercent, searchTrace, low, high);
+      }
+      if (outcome === "infrastructure_error") {
+        return incompleteBoundary(seed, limit, confirmationRuns, searchTrace, infrastructureFailure);
+      }
+      if (outcome === "pass") low = middle;
       else high = middle;
     }
     highestPassingCameraCount = low;
@@ -101,14 +210,27 @@ export async function discoverCapacityBoundary(options: CapacityDiscoveryOptions
   if (highestPassingCameraCount !== null && firstFailingCameraCount === highestPassingCameraCount + 1) {
     adjacentBoundaryConfirmed = true;
     for (let run = 0; run < confirmationRuns; run += 1) {
-      const passConfirmed = await probe(highestPassingCameraCount, "confirm");
-      const failConfirmed = !(await probe(firstFailingCameraCount, "confirm"));
-      adjacentBoundaryConfirmed &&= passConfirmed && failConfirmed;
+      const passOutcome = await probe(highestPassingCameraCount, "confirm");
+      if (passOutcome === "budget_exhausted") {
+        return budgetBoundary(seed, limit, confirmationRuns, headroomPercent, searchTrace, highestPassingCameraCount, firstFailingCameraCount);
+      }
+      if (passOutcome === "infrastructure_error") {
+        return incompleteBoundary(seed, limit, confirmationRuns, searchTrace, infrastructureFailure);
+      }
+      const failOutcome = await probe(firstFailingCameraCount, "confirm");
+      if (failOutcome === "budget_exhausted") {
+        return budgetBoundary(seed, limit, confirmationRuns, headroomPercent, searchTrace, highestPassingCameraCount, firstFailingCameraCount);
+      }
+      if (failOutcome === "infrastructure_error") {
+        return incompleteBoundary(seed, limit, confirmationRuns, searchTrace, infrastructureFailure);
+      }
+      adjacentBoundaryConfirmed &&= passOutcome === "pass" && failOutcome === "capacity_fail";
     }
   }
 
   const observations = new Map<number, Set<boolean>>();
   for (const item of searchTrace) {
+    if (item.passed === null) continue;
     const values = observations.get(item.cameraCount) ?? new Set<boolean>();
     values.add(item.passed);
     observations.set(item.cameraCount, values);
@@ -127,10 +249,10 @@ export async function discoverCapacityBoundary(options: CapacityDiscoveryOptions
     ? "at_least"
     : adjacentBoundaryConfirmed && !nonMonotonic
       ? "exact"
-      : "uncertain";
+      : "interval";
   const operationalSafeCameraCount = highestPassingCameraCount === null
     ? null
-    : Math.max(1, Math.floor(highestPassingCameraCount * (1 - headroomPercent / 100)));
+    : Math.floor(highestPassingCameraCount * (1 - headroomPercent / 100));
 
   return {
     seedCameraCount: seed,
@@ -142,6 +264,58 @@ export async function discoverCapacityBoundary(options: CapacityDiscoveryOptions
     confirmationRuns,
     generatorLimit: limit,
     nonMonotonic,
+    infrastructureFailure: null,
+    maximumAttemptedCameraCount: Math.max(...searchTrace.map((item) => item.cameraCount), seed),
+    searchTrace,
+  };
+}
+
+function budgetBoundary(
+  seed: number,
+  limit: number,
+  confirmationRuns: number,
+  headroomPercent: number,
+  searchTrace: CalibrationCapacityBoundary["searchTrace"],
+  highestPassingCameraCount: number | null,
+  firstFailingCameraCount: number | null,
+): CalibrationCapacityBoundary {
+  return {
+    seedCameraCount: seed,
+    highestPassingCameraCount,
+    firstFailingCameraCount,
+    operationalSafeCameraCount: highestPassingCameraCount === null
+      ? null
+      : Math.floor(highestPassingCameraCount * (1 - headroomPercent / 100)),
+    bound: highestPassingCameraCount !== null && firstFailingCameraCount === null ? "at_least" : "interval",
+    adjacentBoundaryConfirmed: false,
+    confirmationRuns,
+    generatorLimit: limit,
+    nonMonotonic: false,
+    infrastructureFailure: null,
+    maximumAttemptedCameraCount: Math.max(...searchTrace.map((item) => item.cameraCount), seed),
+    searchTrace,
+  };
+}
+
+function incompleteBoundary(
+  seed: number,
+  limit: number,
+  confirmationRuns: number,
+  searchTrace: CalibrationCapacityBoundary["searchTrace"],
+  infrastructureFailure: string | null,
+): CalibrationCapacityBoundary {
+  return {
+    seedCameraCount: seed,
+    highestPassingCameraCount: null,
+    firstFailingCameraCount: null,
+    operationalSafeCameraCount: null,
+    bound: "inconclusive",
+    adjacentBoundaryConfirmed: false,
+    confirmationRuns,
+    generatorLimit: limit,
+    nonMonotonic: false,
+    infrastructureFailure: infrastructureFailure ?? "calibration_infrastructure_error",
+    maximumAttemptedCameraCount: Math.max(...searchTrace.map((item) => item.cameraCount), seed),
     searchTrace,
   };
 }

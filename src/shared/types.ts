@@ -1,6 +1,7 @@
-export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/3.1.0" as const;
+export const WORKLOAD_CONTRACT_VERSION = "perceptrum-workload/4.0.0" as const;
 export type WorkloadContractVersion =
   | typeof WORKLOAD_CONTRACT_VERSION
+  | "perceptrum-workload/3.1.0"
   | "perceptrum-workload/3.0.0"
   | "perceptrum-workload/2.0.0"
   | "perceptrum-workload/1.1.0"
@@ -9,18 +10,25 @@ export type WorkloadContractVersion =
 export const LEGACY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.0.0" as const;
 export const TELEMETRY_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/1.1.0" as const;
 export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0" as const;
-export const LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/3.0.0" as const;
-export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/4.0.0" as const;
-export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/2.0.0" as const;
+export const INITIAL_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/3.0.0" as const;
+export const LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/4.0.0" as const;
+export const PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/5.0.0" as const;
+export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/6.0.0" as const;
+export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/4.0.0" as const;
 export const PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT = "d918faa0ecd6a9906b711039e5d89f78e0536c44" as const;
+export const PERCEPTRUM_AUTHORITY_CONTRACT_VERSION = "perceptrum-authority-contract/2.0.0" as const;
 export const LEGACY_CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
-export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/3.0.0" as const;
+export const CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/4.0.0" as const;
 export const CALIBRATION_PROGRESS_VERSION = "qual-hardware-calibration-progress/2.0.0" as const;
 export const CALIBRATION_CHECKPOINT_VERSION = "qual-hardware-calibration-checkpoint/1.0.0" as const;
-export const LEGACY_QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/1.0.0" as const;
-export const LEGACY_QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/1.0.0" as const;
-export const QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/2.0.0" as const;
-export const QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/2.0.0" as const;
+export const INITIAL_QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/1.0.0" as const;
+export const INITIAL_QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/1.0.0" as const;
+export const LEGACY_QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/2.0.0" as const;
+export const LEGACY_QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/2.0.0" as const;
+export const PREVIOUS_QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/3.0.0" as const;
+export const PREVIOUS_QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/3.0.0" as const;
+export const QHCAL_PACKAGE_VERSION = "qual-hardware-calibration-package/4.0.0" as const;
+export const QHCALSET_PACKAGE_VERSION = "qual-hardware-calibration-collection/4.0.0" as const;
 export const BENCHMARK_SUITE_VERSION = "qual-hardware-benchmark-suite/1.0.0" as const;
 export const LEGACY_COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/2.0.0" as const;
 export const COMPONENT_CATALOG_VERSION = "qual-hardware-component-catalog/3.0.0" as const;
@@ -39,6 +47,9 @@ export const CALIBRATION_HARDWARE_VERSION = "qual-hardware-calibration-hardware/
 export const CALIBRATION_COMPUTE_EVIDENCE_VERSION = "qual-hardware-calibration-compute-evidence/2.0.0" as const;
 export const CALIBRATION_RUNTIME_MANIFEST_VERSION = "qual-hardware-calibration-runtime-manifest/3.0.0" as const;
 export const FLEET_PLAN_VERSION = "qual-hardware-fleet-plan/1.0.0" as const;
+export const CALIBRATION_DIAGNOSTIC_REPORT_VERSION = "qual-hardware-calibration-diagnostic-report/1.0.0" as const;
+export const EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/1.0.0" as const;
+export const NATIVE_BENCHMARK_VERSION = "qual-hardware-native-benchmark/1.0.0" as const;
 export const MAX_PROJECT_CAMERAS = 1_000_000 as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
 export const CATALOG_BUNDLE_VERSION = "qual-hardware-catalog-bundle/1.0.0" as const;
@@ -54,6 +65,8 @@ export type Codec = "h264" | "h265";
 export type DecodeMode = "cpu" | "gpu";
 export type InputType = "video" | "image";
 export type PackagingMode = "frame_sequence" | "mosaic_2x2" | "mosaic_3x3";
+export type AgentExecutionBackend = "local_aiq" | "remote_vision" | "native_cv";
+export type AgentExecutionScope = "camera_agent" | "inference_group";
 export type InferenceModel =
   | "gpt-5.4"
   | "gpt-5"
@@ -123,7 +136,8 @@ export type CalibrationGpuMediaBackend =
   | "d3d11va_amf"
   | "vaapi"
   | "unavailable";
-export type CalibrationCapacityBound = "exact" | "at_least" | "uncertain";
+export type CalibrationProbeOutcome = "pass" | "capacity_fail" | "infrastructure_error" | "cancelled";
+export type CalibrationCapacityBound = "exact" | "at_least" | "interval" | "inconclusive" | "uncertain";
 export type CalibrationGpuClassification = "compute" | "media_only" | "display_only" | "unavailable";
 export type CalibrationNetworkEvidence =
   | "loopback_measured_physical_link_unverified"
@@ -139,6 +153,30 @@ export interface AgentFeatures {
   negativeReferences: number;
 }
 
+export interface PerceptrumAuthorityContract {
+  schemaVersion: typeof PERCEPTRUM_AUTHORITY_CONTRACT_VERSION;
+  repository: "perceptrum_desktop_aspp";
+  legacyCompatibleCommit: typeof PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT;
+  capturedAt: string;
+  status: "verified" | "drifted" | "unavailable";
+  behaviorSnapshotSha256: string;
+  files: Array<{
+    role: "jobs_ui" | "job_types" | "job_runtime" | "agent_runtime" | "camera_session" | "frame_writer";
+    path: string;
+    sizeBytes: number;
+    sha256: string;
+  }>;
+  rules: {
+    videoModelFps: { minimum: 1; maximum: 10 };
+    individualCadenceSeconds: [10, 60];
+    groupCadenceSeconds: [10, 60, 300, 600];
+    imageWritesSnapshotEverySeconds: 10;
+    sharedDecodeWithinCamera: true;
+    videoCaptureDominatesMixedCamera: true;
+    inferenceCallsRemainAdditive: true;
+  };
+}
+
 export interface AgentLoad {
   id: string;
   name: string;
@@ -147,6 +185,10 @@ export interface AgentLoad {
   packaging: PackagingMode;
   modelFps: number;
   runEverySeconds: 10 | 60 | 300 | 600;
+  /** Derived automatically for legacy scenarios when omitted. */
+  executionBackend?: AgentExecutionBackend | undefined;
+  /** Perceptrum executes either one Agent per camera or one grouped inference. */
+  executionScope?: AgentExecutionScope | undefined;
   features: AgentFeatures;
 }
 
@@ -848,18 +890,123 @@ export interface CalibrationCapacityBoundary {
   confirmationRuns: number;
   generatorLimit: number | null;
   nonMonotonic: boolean;
+  infrastructureFailure: string | null;
+  maximumAttemptedCameraCount: number;
   searchTrace: Array<{
     cameraCount: number;
-    passed: boolean;
+    /** Legacy-compatible aggregate. Null means the attempt was not capacity evidence. */
+    passed: boolean | null;
+    outcome: CalibrationProbeOutcome;
     attempt: number;
     phase: "seed" | "expand" | "binary" | "confirm";
+    durationMs: number;
+    failureCode: string | null;
+    retryOfAttempt: number | null;
+    composition: Array<{
+      groupIndex: number;
+      groupName: string;
+      cameras: number;
+      videoCameras: number;
+      frameCameras: number;
+    }>;
   }>;
+}
+
+export interface CalibrationDiagnosticReportModel {
+  schemaVersion: typeof CALIBRATION_DIAGNOSTIC_REPORT_VERSION;
+  generatedAt: string;
+  runId: string;
+  title: "Relatório de diagnóstico do Qual Hardware";
+  conclusion: "approved" | "not_approved" | "inconclusive";
+  validity: "diagnostic" | "engineering" | "commercial";
+  requested: {
+    cameras: number;
+    rawTrialOutcome: CalibrationProbeOutcome | "not_tested";
+    operationallyApproved: boolean | null;
+    composition: CalibrationCapacityBoundary["searchTrace"][number]["composition"];
+  };
+  capacity: {
+    safeCameras: number | null;
+    safeComposition: CalibrationCapacityBoundary["searchTrace"][number]["composition"];
+    highestPassingCameras: number | null;
+    firstFailingCameras: number | null;
+    maximumAttemptedCameras: number;
+    bound: CalibrationCapacityBound;
+    testedAboveRequested: boolean;
+  };
+  hardware: {
+    cpu: string;
+    sockets: number;
+    physicalCores: number;
+    logicalCores: number;
+    ramBytes: number;
+    gpus: Array<{
+      id: string;
+      name: string;
+      classification: CalibrationGpuClassification;
+      vramBytes: number | null;
+      receivedLoad: boolean;
+      telemetryMeasured: boolean;
+    }>;
+    storage: string;
+    networkLinks: CalibrationHardwarePreflight["networkLinks"];
+    operatingSystem: string;
+  };
+  bottleneck: {
+    stage: CalibrationStage | null;
+    labelPt: string;
+    explanationPt: string;
+  };
+  searchTrace: CalibrationCapacityBoundary["searchTrace"];
+  stages: Array<{
+    stage: CalibrationStage;
+    labelPt: string;
+    evidence: TelemetryEvidenceStatus | "legacy";
+    safeCameraCapacity: number | null;
+    utilizationPercent: number | null;
+    explanationPt: string;
+  }>;
+  fleetPlan: {
+    status: "measured" | "planning_only" | "blocked";
+    projectCameras: number;
+    safeCamerasPerServer: number | null;
+    activeServers: number | null;
+    reserveServers: number | null;
+    totalServers: number | null;
+    cpuDescription: string;
+    gpusPerServer: number;
+    ramBytesPerServer: number;
+    explanationPt: string;
+  };
+  findings: Array<{
+    severity: "information" | "warning" | "error";
+    code: string;
+    titlePt: string;
+    consequencePt: string;
+    actionPt: string;
+  }>;
+  methodology: string[];
+  technicalEvidence: {
+    workloadProfileId: string | null;
+    workloadSignature: string | null;
+    runtimeManifestHash: string | null;
+    environmentSignature: string | null;
+    environmentEvidenceLevel: CalibrationEvidenceLevel;
+    methodLabelPt: string;
+    measurementKind: "real" | "estimated" | "inventory_only";
+    componentsFound: string[];
+    componentsMissing: string[];
+    authoritySnapshotHash: string | null;
+    externalRequestCount: 0;
+  };
 }
 
 export interface LocalCalibrationRun {
   schemaVersion:
     | typeof AUTONOMOUS_LOCAL_CALIBRATION_VERSION
+    | typeof PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
+    | typeof INITIAL_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof LOCAL_CALIBRATION_VERSION
     | typeof TELEMETRY_LOCAL_CALIBRATION_VERSION
     | typeof LEGACY_LOCAL_CALIBRATION_VERSION;
@@ -868,7 +1015,7 @@ export interface LocalCalibrationRun {
   createdAt: string;
   startedAt: string;
   completedAt: string;
-  workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION | "perceptrum-workload/3.0.0" | "perceptrum-workload/2.0.0";
+  workloadContractVersion: WorkloadContractVersion;
   mode: CalibrationMode | "full";
   executionMode?: "readiness" | "production_pipeline";
   developmentOnly?: true;
@@ -921,12 +1068,13 @@ export interface LocalCalibrationRun {
   executionHealth?: {
     status: "completed" | "completed_with_errors";
     infrastructureErrors: string[];
+    conclusion?: "approved" | "not_approved" | "inconclusive";
   };
   capacityRecommendation?: {
     safeCameraCount: number | null;
     maximumTestedCameraCount: number;
     confidence: "high" | "medium" | "insufficient";
-    basis: "physical_measurement";
+    basis: "physical_measurement" | "generic_native_estimate";
   };
   sensorCoverage?: {
     measured: string[];
@@ -949,8 +1097,13 @@ export interface LocalCalibrationRun {
     p99LatencyMs: number | null;
     errors: string[];
   };
-  kernelVersion?: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/1.0.0";
+  kernelVersion?: typeof CALIBRATION_KERNEL_VERSION |
+    "qual-hardware-calibration-kernel/3.0.0" |
+    "qual-hardware-calibration-kernel/2.0.0" |
+    "qual-hardware-calibration-kernel/1.0.0";
   runtimeManifestHash?: string;
+  environmentSignature?: string;
+  environmentProvenance?: CalibrationEnvironmentProvenance;
   runtimeProvenance?: {
     platform: NodeJS.Platform;
     architecture: string;
@@ -976,6 +1129,7 @@ export interface LocalCalibrationRun {
   workloadProfileId?: string;
   workloadProfileSignature?: string;
   compatiblePerceptrumCommit?: string;
+  perceptrumAuthority?: PerceptrumAuthorityContract;
   cameraTiers?: number[];
   tierResults?: CalibrationTierResult[];
   repetitions?: CalibrationRepetitionResult[];
@@ -1028,6 +1182,18 @@ export interface LocalCalibrationRun {
     payloadSha256: string;
     persistedAt: string;
     storage: "documents_append_only" | "application_data_append_only";
+  };
+  diagnosticReport?: {
+    schemaVersion: typeof CALIBRATION_DIAGNOSTIC_REPORT_VERSION;
+    generatedAt: string;
+    directory: string;
+    files: Array<{
+      format: "pdf" | "txt" | "xlsx" | "json";
+      fileName: string;
+      sha256: string;
+      sizeBytes: number;
+    }>;
+    generationError: string | null;
   };
   notes: string[];
 }
@@ -1243,7 +1409,7 @@ export interface QhcalPackageProvenance {
 }
 
 export interface QhcalUnsignedPayload {
-  schemaVersion: typeof QHCAL_PACKAGE_VERSION | typeof LEGACY_QHCAL_PACKAGE_VERSION;
+  schemaVersion: typeof QHCAL_PACKAGE_VERSION | typeof PREVIOUS_QHCAL_PACKAGE_VERSION | typeof LEGACY_QHCAL_PACKAGE_VERSION | typeof INITIAL_QHCAL_PACKAGE_VERSION;
   packageId: string;
   createdAt: string;
   device: QhcalDeviceProof;
@@ -1260,7 +1426,7 @@ export interface QhcalPackage extends QhcalUnsignedPayload {
 }
 
 export interface QhcalSetUnsignedPayload {
-  schemaVersion: typeof QHCALSET_PACKAGE_VERSION | typeof LEGACY_QHCALSET_PACKAGE_VERSION;
+  schemaVersion: typeof QHCALSET_PACKAGE_VERSION | typeof PREVIOUS_QHCALSET_PACKAGE_VERSION | typeof LEGACY_QHCALSET_PACKAGE_VERSION | typeof INITIAL_QHCALSET_PACKAGE_VERSION;
   collectionId: string;
   createdAt: string;
   packages: QhcalPackage[];
@@ -1293,7 +1459,7 @@ export interface CalibrationPlan {
   mode: CalibrationMode;
   executionMode: "readiness" | "production_pipeline";
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
-  kernelVersion: typeof CALIBRATION_KERNEL_VERSION;
+  kernelVersion: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/3.0.0" | "qual-hardware-calibration-kernel/2.0.0";
   strategy: "adaptive";
   workloadProfile: CalibrationWorkloadProfile;
   cameraTiers: number[];
@@ -1303,6 +1469,7 @@ export interface CalibrationPlan {
     seedCameraCount?: number;
     generatorCameraLimit?: number;
     confirmationRuns?: number;
+    maximumEvaluations?: number;
     operationalHeadroomPercent?: number;
   };
   qualification: { repetitions: 1 | 3; cooldownSeconds: number; maximumVariabilityPercent: number };
@@ -1311,7 +1478,7 @@ export interface CalibrationPlan {
   localOnly: true;
   rtspOrigin: "rtsp://127.0.0.1";
   aiqOrigin: "http://127.0.0.1";
-  inferenceProvider: "aiq_local";
+  inferenceProvider: "automatic_offline";
   phases: Array<{ name: "warmup" | "ramp" | "sustained" | "surge"; durationSeconds: number; loadPercent: number }>;
   sourceProfiles: Array<Pick<CameraSourceProfile, "codec" | "width" | "height" | "sourceFps" | "bitrateMbps">>;
   requestedInferenceFps: number[];
@@ -1319,13 +1486,15 @@ export interface CalibrationPlan {
 }
 
 export interface CalibrationWorkloadProfile {
-  schemaVersion: "qual-hardware-calibration-workload-profile/1.0.0";
+  schemaVersion: "qual-hardware-calibration-workload-profile/2.0.0";
   id: string;
   signature: string;
   targetBuildHash: string;
   workloadContractVersion: WorkloadContractVersion;
   operatingSystem: "auto" | OperatingSystemFamily | undefined;
   cameraGroups: Array<{
+    id: string;
+    name: string;
     sharePpm: number;
     codec: Codec;
     width: number;
@@ -1335,7 +1504,10 @@ export interface CalibrationWorkloadProfile {
     decodeMode: DecodeMode;
     motionPercent: number;
     storage: CameraStoragePolicy;
-    agents: Array<Omit<AgentLoad, "id" | "name">>;
+    agents: Array<Omit<AgentLoad, "id" | "name"> & {
+      executionBackend: AgentExecutionBackend;
+      executionScope: AgentExecutionScope;
+    }>;
   }>;
   concurrentWorkloads: ConcurrentWorkloads;
 }
@@ -1348,6 +1520,8 @@ export interface CalibrationTierResult {
   startedAt: string;
   completedAt: string;
   passed: boolean;
+  outcome?: CalibrationProbeOutcome;
+  composition?: CalibrationCapacityBoundary["searchTrace"][number]["composition"];
   frameDeliveryRate: number;
   inferenceSuccessRate: number;
   p99InferenceLatencyMs: number;
@@ -1371,7 +1545,7 @@ export interface CalibrationRepetitionResult {
 
 export interface CalibrationRuntimeStatus {
   schemaVersion: "qual-hardware-calibration-runtime-status/1.0.0";
-  kernelVersion: typeof CALIBRATION_KERNEL_VERSION;
+  kernelVersion: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/3.0.0" | "qual-hardware-calibration-kernel/2.0.0";
   authorityCommit: string;
   platform: NodeJS.Platform;
   architecture: string;
@@ -1381,6 +1555,9 @@ export interface CalibrationRuntimeStatus {
   readyForQuickTest: boolean;
   readyForFullQualification: boolean;
   manifestHash: string;
+  environmentSignature?: string;
+  environmentEvidenceLevel?: CalibrationEvidenceLevel;
+  environmentProvenance?: CalibrationEnvironmentProvenance;
   contracts: Array<{
     id: "authority" | "pipeline" | "sources";
     status: "verified" | "missing" | "mismatch";
@@ -1410,6 +1587,127 @@ export interface CalibrationRuntimeStatus {
     failures: string[];
   };
   reasons: string[];
+}
+
+export type ExecutionEnvironmentComponentOrigin =
+  | "perceptrum"
+  | "system_path"
+  | "known_installation"
+  | "os_native"
+  | "built_in_proxy"
+  | "missing";
+
+export type ExecutionEnvironmentComponentStatus =
+  | "installed"
+  | "missing"
+  | "incompatible"
+  | "not_applicable"
+  | "restart_required";
+
+export type CalibrationEvidenceLevel =
+  | "exact_perceptrum"
+  | "compatible_local_stack"
+  | "generic_native"
+  | "inventory_only";
+
+export interface ExecutionEnvironmentComponent {
+  id:
+    | "application"
+    | "gpu-driver"
+    | "ffmpeg"
+    | "ffprobe"
+    | "llama-server"
+    | "qwen-vl-2b"
+    | "qwen-vl-2b-mmproj"
+    | "qwen-vl-4b"
+    | "qwen-vl-4b-mmproj"
+    | "perceptrum"
+    | "native-benchmark"
+    | "telemetry";
+  name: string;
+  purpose: string;
+  status: ExecutionEnvironmentComponentStatus;
+  origin: ExecutionEnvironmentComponentOrigin;
+  path: string | null;
+  version: string | null;
+  sha256: string | null;
+  selfTest: "passed" | "failed" | "not_run" | "not_applicable";
+  capabilities: string[];
+  impact: string;
+  instruction: string;
+  downloadLinkId: string | null;
+  diagnosticOnly: boolean;
+}
+
+export type QwenVisionModelFit =
+  | "gpu_memory"
+  | "shared_memory"
+  | "system_memory"
+  | "insufficient_memory"
+  | "compute_limited"
+  | "missing_projector";
+
+export interface QwenVisionModelCandidate {
+  id: string;
+  family: "Qwen3-VL";
+  modelPath: string;
+  modelFileName: string;
+  modelSizeBytes: number;
+  projectorPath: string | null;
+  projectorFileName: string | null;
+  projectorSizeBytes: number | null;
+  parameterBillions: number;
+  quantization: string;
+  estimatedMemoryBytes: number;
+  fit: QwenVisionModelFit;
+  compatible: boolean;
+}
+
+export interface QwenVisionModelSelection {
+  schemaVersion: "qual-hardware-qwen-vision-selection/1.0.0";
+  mode: "automatic" | "manual";
+  systemMemoryBudgetBytes: number;
+  acceleratorMemoryBudgetBytes: number | null;
+  effectiveMemoryBudgetBytes: number;
+  recommendedCoreModelId: string | null;
+  recommendedCoreMaxModelId: string | null;
+  selectedCoreModelId: string | null;
+  selectedCoreMaxModelId: string | null;
+  candidates: QwenVisionModelCandidate[];
+  warnings: string[];
+}
+
+export interface ExecutionEnvironment {
+  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION;
+  detectedAt: string;
+  platform: NodeJS.Platform;
+  architecture: string;
+  supported: boolean;
+  readiness: "ready_full" | "ready_diagnostic" | "unsupported";
+  evidenceLevel: CalibrationEvidenceLevel;
+  environmentSignature: string;
+  components: ExecutionEnvironmentComponent[];
+  qwenModelSelection?: QwenVisionModelSelection;
+  missingRequiredComponentIds: ExecutionEnvironmentComponent["id"][];
+  warnings: string[];
+  externalDownloadsPerformed: false;
+}
+
+export interface CalibrationEnvironmentProvenance {
+  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION;
+  detectedAt: string;
+  readiness: ExecutionEnvironment["readiness"];
+  evidenceLevel: CalibrationEvidenceLevel;
+  components: Array<Pick<ExecutionEnvironmentComponent,
+    "id" | "name" | "status" | "origin" | "path" | "version" | "sha256" | "selfTest" | "capabilities">>;
+  missingRequiredComponentIds: ExecutionEnvironmentComponent["id"][];
+}
+
+export interface DependencyDownloadLink {
+  id: string;
+  label: string;
+  url: string;
+  platforms: Array<"windows" | "ubuntu" | "macos">;
 }
 
 export type CalibrationRuntimeClassification = "candidate" | "production";

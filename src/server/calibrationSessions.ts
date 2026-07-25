@@ -59,6 +59,8 @@ export function assertAutonomousCalibrationSessionContract(
 }
 export interface DesktopCalibrationBridge {
   openPath?(path: string): Promise<void>;
+  openExternalUrl?(url: string): Promise<void>;
+  selectEnvironmentComponent?(componentId: string): Promise<string | null>;
 }
 
 export function calibrationPayloadSha256(result: LocalCalibrationRun): string {

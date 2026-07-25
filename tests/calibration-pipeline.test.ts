@@ -2,6 +2,8 @@ import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCalibrationPlan } from "../src/engine/calibration.js";
@@ -12,10 +14,15 @@ import {
   CALIBRATION_NETWORK_RESERVE_PERCENT,
   allocateCalibrationCameraGroups,
   calibrationLlamaContextSize,
+  calibrationMediaCommand,
   exactCameraGeneratorLimit,
   estimateCalibrationMediaRingBytes,
   evaluateCalibrationNetworkCapacity,
+  genericNativeMediaSampleLimit,
+  genericNativePressureMetric,
+  nativeBenchmarkProcessTimeoutMs,
   OfflineCalibrationPipeline,
+  parsePerceptrumWorkerMeasurement,
   planCalibrationInferenceLoad,
 } from "../src/server/calibrationPipeline.js";
 import {
@@ -26,6 +33,7 @@ import {
 } from "../src/server/calibrationTemporaryFiles.js";
 
 const temporaryRoots: string[] = [];
+const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
   for (const root of temporaryRoots.splice(0)) {
@@ -53,7 +61,11 @@ function status(assets: CalibrationRuntimeStatus["assets"] = []): CalibrationRun
 }
 
 async function executable(name: string): Promise<string | null> {
-  for (const root of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
+  const roots = [
+    ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
+    ...(process.platform === "win32" ? ["C:\\ffmpeg\\bin"] : []),
+  ];
+  for (const root of roots) {
     const candidate = join(root, process.platform === "win32" ? `${name}.exe` : name);
     try { await access(candidate); return candidate; } catch { /* Continue. */ }
   }
@@ -66,7 +78,8 @@ async function fixture(
   advancedTelemetry = false,
   diskStatus?: () => Promise<{ totalBytes: number; freeBytes: number; reserveBytes: number; projectedPeakBytes: number; canStart: boolean }>,
   hardware?: CalibrationHardwarePreflight,
-  onChildProcess?: (event: { action: "started" | "stopped"; pid: number; kind: "ffmpeg" | "ffprobe" | "mediamtx" | "llama-server" }) => void,
+  onChildProcess?: (event: { action: "started" | "stopped"; pid: number; kind: "ffmpeg" | "ffprobe" | "mediamtx" | "llama-server" | "native-benchmark" | "perceptrum-worker" }) => void,
+  timeScale = 0.001,
 ) {
   const root = await mkdtemp(join(tmpdir(), "qual-hardware-pipeline-test-"));
   temporaryRoots.push(root);
@@ -81,7 +94,7 @@ async function fixture(
     runtimeStatus,
     ...(hardware ? { hardware } : {}),
     advancedTelemetry,
-    timeScale: 0.001,
+    timeScale,
     cancelled: () => false,
     ...(onChildProcess ? { onChildProcess } : {}),
     ...(diskStatus ? { diskStatus, diskCheckIntervalMs: 5 } : {}),
@@ -90,6 +103,68 @@ async function fixture(
 }
 
 describe("offline Perceptrum-equivalent calibration pipeline", () => {
+  it("bounds the generic FFmpeg sample while preserving the requested baseline", () => {
+    expect(genericNativeMediaSampleLimit({
+      tier: 12,
+      seedCameraCount: 12,
+      logicalProcessors: 24,
+      cameraGroupCount: 2,
+    })).toBe(12);
+    expect(genericNativeMediaSampleLimit({
+      tier: 186,
+      seedCameraCount: 12,
+      logicalProcessors: 24,
+      cameraGroupCount: 2,
+    })).toBe(24);
+    expect(genericNativeMediaSampleLimit({
+      tier: 1_000,
+      seedCameraCount: 64,
+      logicalProcessors: 128,
+      cameraGroupCount: 8,
+    })).toBe(24);
+  });
+
+  it("keeps a bounded wall-clock margin for the native benchmark", () => {
+    expect(nativeBenchmarkProcessTimeoutMs(30_000)).toBe(67_500);
+    expect(nativeBenchmarkProcessTimeoutMs(120_000)).toBe(180_000);
+    expect(nativeBenchmarkProcessTimeoutMs(25)).toBe(60_000);
+  });
+
+  it("reports generic utilization from workload pressure instead of worker saturation", () => {
+    expect(genericNativePressureMetric(0.125, 8)).toEqual({
+      samples: 8, average: 12.5, p95: 12.5, p99: 12.5, peak: 12.5,
+    });
+    expect(genericNativePressureMetric(1.25).p95).toBe(100);
+  });
+
+  it("accepts only isolated Perceptrum worker measurements with zero external access", () => {
+    const measurement = {
+      phase: "discovery", tier: 8, computeMode: "cpu_only",
+      inferenceBackend: "cpu", inferenceDeviceId: "cpu", inferenceDeviceIds: [], deviceInference: [],
+      mediaDeviceIds: [], gpuMediaBackend: "unavailable", mediaExecution: "cpu", mediaFallbackUsed: false,
+      cpuWorkloadMeasured: true, gpuInferenceMeasured: false, gpuMediaMeasured: false,
+      combinedCpuGpuMeasured: false, durationSeconds: 1, actualConcurrentMediaPipelines: 8,
+      exactCameraConcurrency: true, framesPlanned: 8, framesDecoded: 8, framesExtracted: 8,
+      framesEncoded: 0, inferencesPlanned: 1, inferencesAttempted: 1, inferenceFramesPacked: 1,
+      inferenceMaximumConcurrency: 1, inferenceErrors: [], inferenceIntervalMs: 1_000, framesInferred: 1,
+      p95InferenceLatencyMs: 10, p99InferenceLatencyMs: 12, databaseOperations: 8, dashboardQueries: 8,
+      completedJobRuns: 8, completedStepRuns: 8, completedIntelligenceJobs: 8, processedCameraCount: 8,
+      p95DatabaseLatencyMs: 1, p95DashboardLatencyMs: 1, mediaDurationMs: 1, memoryBytesPerSecond: 1,
+      networkIngressMbps: 1, physicalNetworkCapacityMbps: 1_000, physicalNetworkUsableMbps: 800,
+      physicalNetworkLinkVerified: true, temporaryBytesEstimated: 1, temporaryBytesFreeBeforePhase: 1_000,
+      cpuUtilizationPercent: null, memoryUsedBytes: null, hardwareTelemetry: { provider: "worker" },
+      rtspMeasured: true, mediaMeasured: true, localInferenceMeasured: true, queueGrowthPerMinute: 0,
+      failures: [], measuredStages: ["rtsp_ingest"],
+    };
+    expect(parsePerceptrumWorkerMeasurement({
+      protocol: "perceptrum-hardware-benchmark/1.0.0", requestId: "one", operation: "runTier",
+      ok: true, isolated: true, productionDataAccess: false, externalRequestCount: 0, measurement,
+    }, { phase: "discovery", tier: 8, computeMode: "cpu_only" }).tier).toBe(8);
+    expect(() => parsePerceptrumWorkerMeasurement({
+      protocol: "perceptrum-hardware-benchmark/1.0.0", operation: "runTier",
+      ok: true, isolated: true, productionDataAccess: true, externalRequestCount: 0, measurement,
+    }, { phase: "discovery", tier: 8, computeMode: "cpu_only" })).toThrow("contract_mismatch");
+  });
   it("bounds the exact load generator by CPU, memory, and a hard safety ceiling", () => {
     expect(exactCameraGeneratorLimit({ logicalProcessors: 24, totalMemoryBytes: 32 * 1024 ** 3 })).toBe(192);
     expect(exactCameraGeneratorLimit({ logicalProcessors: 2, totalMemoryBytes: 4 * 1024 ** 3 })).toBe(16);
@@ -99,12 +174,34 @@ describe("offline Perceptrum-equivalent calibration pipeline", () => {
   it("uses the agent interval instead of treating model FPS as request FPS", () => {
     const plan = createCalibrationPlan(createDefaultScenario(8), "validation");
     expect(planCalibrationInferenceLoad(plan.workloadProfile, 8, 120)).toEqual({
-      requestsPlanned: 16,
-      framesPlanned: 64,
+      requestsPlanned: 96,
+      framesPlanned: 384,
       requestsPerWindow: 8,
-      windowCount: 2,
-      intervalMs: 60_000,
+      windowCount: 12,
+      intervalMs: 10_000,
     });
+  });
+
+  it("uses a periodic snapshot command for FRAME and a continuous clip command for VÍDEO FULL", () => {
+    const frameScenario = createDefaultScenario(8);
+    frameScenario.cameraGroups[0]!.agents[0]!.inputType = "image";
+    frameScenario.cameraGroups[0]!.agents[0]!.runEverySeconds = 60;
+    const frameProfile = createCalibrationPlan(frameScenario, "quick").workloadProfile.cameraGroups[0]!;
+    const frame = calibrationMediaCommand({
+      sourceArguments: ["-i", "source.mp4"], durationSeconds: 120, profile: frameProfile,
+      outputPath: "snapshot.jpg", computeMode: "cpu_only", gpuMediaBackend: "unavailable",
+    });
+    expect(frame.outputKind).toBe("frame_snapshot");
+    expect(frame.arguments.join(" ")).toContain("fps=0.016666666666666666");
+    expect(frame.arguments).not.toContain("-f");
+
+    const videoProfile = createCalibrationPlan(createDefaultScenario(8), "quick").workloadProfile.cameraGroups[0]!;
+    const video = calibrationMediaCommand({
+      sourceArguments: ["-i", "source.mp4"], durationSeconds: 120, profile: videoProfile,
+      outputPath: "clip-%d.mp4", computeMode: "cpu_only", gpuMediaBackend: "unavailable",
+    });
+    expect(video.outputKind).toBe("video_clip");
+    expect(video.arguments).toContain("segment");
   });
 
   it("allocates a complete vision context to every llama.cpp slot", () => {
@@ -127,7 +224,7 @@ describe("offline Perceptrum-equivalent calibration pipeline", () => {
   });
 
   it("pins the golden pipeline contract to the immutable Perceptrum authority", async () => {
-    const contract = JSON.parse(await readFile(join(import.meta.dirname, "..", "contracts", "calibration-pipeline-contract-v1.json"), "utf8")) as {
+    const contract = JSON.parse(await readFile(join(import.meta.dirname, "..", "contracts", "calibration-pipeline-contract-v2.json"), "utf8")) as {
       schemaVersion: string;
       authority: { commit: string };
       jobRuntime: { requiredTables: string[] };
@@ -146,6 +243,11 @@ describe("offline Perceptrum-equivalent calibration pipeline", () => {
       { ...structuredClone(scenario.cameraGroups[0]!), id: randomUUID(), name: "minority", count: 3, source: { ...scenario.cameraGroups[0]!.source, codec: "h265" } },
     ];
     const profile = createCalibrationPlan(scenario, "quick").workloadProfile;
+    const dominantIndex = profile.cameraGroups[0]!.sharePpm >= profile.cameraGroups[1]!.sharePpm ? 0 : 1;
+    expect(allocateCalibrationCameraGroups(profile, 1)).toEqual(
+      profile.cameraGroups.map((_, index) => index === dominantIndex ? 1 : 0),
+    );
+    expect(allocateCalibrationCameraGroups(profile, 2)).toEqual([1, 1]);
     const allocation = allocateCalibrationCameraGroups(profile, 4);
     expect(allocation.reduce((sum, count) => sum + count, 0)).toBe(4);
     expect([...allocation].sort((left, right) => left - right)).toEqual([1, 3]);
@@ -273,23 +375,87 @@ process.stdout.write(JSON.stringify({
       expectedSizeBytes: null, version: null, licenseSpdx: null, sbomRef: null,
     });
     const item = await fixture(status([asset("ffmpeg", ffmpeg), asset("ffprobe", ffprobe)]));
-    const summary = await item.pipeline.initialize();
-    expect(summary.mediaAvailable).toBe(true);
-    expect(summary.rtspAvailable).toBe(false);
-    const result = await item.pipeline.executePhase({ phase: "warmup", tier: 4, durationSeconds: 1 });
-    expect(result.framesDecoded).toBeGreaterThan(0);
-    expect(result.framesEncoded).toBeGreaterThan(0);
-    expect(result.framesExtracted).toBe(1);
-    expect(result.actualConcurrentMediaPipelines).toBe(4);
-    expect(result.exactCameraConcurrency).toBe(true);
-    expect(result.measuredStages).toEqual(expect.arrayContaining([
-      "video_decode", "bgr_processing", "video_encode", "disk_read", "disk_write", "frame_extraction",
-    ]));
-    await item.pipeline.close();
-    item.database.close();
-    await refreshRegisteredCalibrationTemporaryFiles(item.root, item.sessionId);
-    await cleanupCalibrationWorkspace(item.root, item.sessionId);
-  }, 30_000);
+    try {
+      const summary = await item.pipeline.initialize();
+      expect(summary.mediaAvailable).toBe(true);
+      expect(summary.rtspAvailable).toBe(true);
+      await execFileAsync(ffmpeg, [
+        "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-rtsp_transport", "tcp", "-i", summary.rtspOrigin,
+        "-t", "1", "-an", "-f", "null", "-",
+      ], { timeout: 15_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+      const result = await item.pipeline.executePhase({ phase: "warmup", tier: 4, durationSeconds: 1 });
+      expect(result.framesDecoded).toBeGreaterThan(0);
+      expect(result.framesEncoded).toBeGreaterThan(0);
+      expect(result.framesExtracted).toBe(1);
+      expect(result.actualConcurrentMediaPipelines).toBe(4);
+      expect(result.failures.filter((failure) => failure.includes("media_pipeline"))).toEqual([]);
+      expect(result.measuredStages).toEqual(expect.arrayContaining([
+        "video_decode", "bgr_processing", "video_encode", "disk_read", "disk_write", "frame_extraction",
+      ]));
+    } finally {
+      await item.pipeline.close();
+      item.database.close();
+      await refreshRegisteredCalibrationTemporaryFiles(item.root, item.sessionId);
+      await cleanupCalibrationWorkspace(item.root, item.sessionId);
+    }
+  }, 60_000);
+
+  it("keeps twelve concurrent mixed VÍDEO FULL and FRAME pipelines alive through the internal RTSP loopback", async () => {
+    const ffmpeg = await executable("ffmpeg");
+    const ffprobe = await executable("ffprobe");
+    if (!ffmpeg || !ffprobe) return;
+    const asset = (id: string, path: string): CalibrationRuntimeStatus["assets"][number] => ({
+      id, status: "system_only", path, sha256: "b".repeat(64), sizeBytes: 1,
+      expectedSizeBytes: null, version: null, licenseSpdx: null, sbomRef: null,
+    });
+    const scenario = createDefaultScenario(12);
+    const fullVideo = scenario.cameraGroups[0]!;
+    fullVideo.name = "VÍDEO FULL - AiQ Max";
+    fullVideo.count = 4;
+    fullVideo.source.sourceFps = 5;
+    fullVideo.agents[0]!.model = "aiq-3.7-max";
+    fullVideo.agents[0]!.inputType = "video";
+    fullVideo.agents[0]!.packaging = "frame_sequence";
+    fullVideo.agents[0]!.modelFps = 5;
+    const frame = structuredClone(fullVideo);
+    frame.id = randomUUID();
+    frame.name = "FRAME - AiQ Core";
+    frame.count = 8;
+    frame.agents[0]!.id = randomUUID();
+    frame.agents[0]!.name = "FRAME - AiQ Core";
+    frame.agents[0]!.model = "aiq-3.7";
+    frame.agents[0]!.inputType = "image";
+    frame.agents[0]!.modelFps = 1;
+    scenario.cameraGroups = [fullVideo, frame];
+    scenario.concurrentWorkloads.activeJobs = 12;
+    const plan = createCalibrationPlan(scenario, "quick");
+    const item = await fixture(
+      status([asset("ffmpeg", ffmpeg), asset("ffprobe", ffprobe)]),
+      plan,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      1,
+    );
+    try {
+      await item.pipeline.initialize();
+      const result = await item.pipeline.executePhase({
+        phase: "discovery",
+        tier: 12,
+        durationSeconds: 10,
+        computeMode: "cpu_only",
+      });
+      expect(result.actualConcurrentMediaPipelines).toBe(12);
+      expect(result.failures.filter((failure) => failure.includes("media_pipeline"))).toEqual([]);
+    } finally {
+      await item.pipeline.close();
+      item.database.close();
+      await refreshRegisteredCalibrationTemporaryFiles(item.root, item.sessionId);
+      await cleanupCalibrationWorkspace(item.root, item.sessionId);
+    }
+  }, 120_000);
 
   it("runs the physical Apple GPU media lane when VideoToolbox is available", async () => {
     if (process.platform !== "darwin") return;

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  cleanupAbandonedCalibrationWorkspace,
   cleanupCalibrationWorkspace,
   calibrationDiskReserveBytes,
   createCalibrationWorkspace,
@@ -155,6 +156,55 @@ describe("session-owned calibration temporary files", () => {
     expect(new Set(reopened.manifest.files.map((entry) => entry.relativePath)).size).toBe(count);
     await expect(cleanupCalibrationWorkspace(created.root, created.manifest.sessionId))
       .resolves.toEqual({ bytesRemoved: 0 });
+  });
+
+  it("preserva o manifesto válido quando uma gravação temporária é interrompida", async () => {
+    const created = await workspace();
+    await writeFile(join(created.directory, ".session-manifest.write.tmp"), "{\"marker\":");
+    await expect(readCalibrationWorkspace(created.root, created.manifest.sessionId)).resolves.toMatchObject({
+      manifest: { sessionId: created.manifest.sessionId },
+    });
+    await expect(refreshRegisteredCalibrationTemporaryFiles(created.root, created.manifest.sessionId)).resolves.toBeDefined();
+    await expect(cleanupCalibrationWorkspace(created.root, created.manifest.sessionId))
+      .resolves.toEqual({ bytesRemoved: 0 });
+  });
+
+  it("recovers an abandoned session only when its truncated manifest contains exclusively kernel files", async () => {
+    const created = await workspace();
+    await writeFile(created.manifestPath, "");
+    await writeFile(join(created.directory, "pipeline-probe.sqlite"), Buffer.alloc(1_024, 4));
+    await writeFile(join(created.directory, "media-6-1-18-0.mkv"), Buffer.alloc(512, 5));
+
+    await expect(cleanupAbandonedCalibrationWorkspace(created.root, created.manifest.sessionId))
+      .resolves.toEqual({ bytesRemoved: 1_536 });
+    expect(await readdir(created.root)).toEqual([]);
+  });
+
+  it("lets interrupted-session recovery remove a kernel-owned directory after a zero-byte manifest", async () => {
+    const created = await workspace();
+    await writeFile(created.manifestPath, "");
+    await writeFile(join(created.directory, "synthetic-frame.jpg"), Buffer.alloc(256, 6));
+    const service = new CalibrationKernelService({
+      temporaryRoot: created.root,
+      evidenceDirectory: join(created.root, "evidence"),
+      resourceRoot: fileURLToPath(new URL("..", import.meta.url)),
+      appVersion: "test",
+    });
+
+    const cleanup = await service.retryCleanup(created.manifest.sessionId, true);
+    expect(cleanup.state).toBe("completed");
+    expect(cleanup.remainingBytes).toBe(0);
+    expect(await readdir(created.root)).toEqual([]);
+  });
+
+  it("refuses abandoned-session recovery when any filename is outside the kernel allowlist", async () => {
+    const created = await workspace();
+    await writeFile(created.manifestPath, "");
+    await writeFile(join(created.directory, "foreign.bin"), "preserve");
+
+    await expect(cleanupAbandonedCalibrationWorkspace(created.root, created.manifest.sessionId))
+      .rejects.toThrow("unrecognized_entry:foreign.bin");
+    expect(await readFile(join(created.directory, "foreign.bin"), "utf8")).toBe("preserve");
   });
 
   it("refreshes mutable hashes only for an explicitly interrupted-session recovery", async () => {

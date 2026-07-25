@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiquimist.ai/schemas/perceptrum-workload-v4.json",
+  "title": "Perceptrum mixed VIDEO/FRAME production workload",
+  "schemaVersion": "perceptrum-workload/4.0.0",
+  "authorityContract": "perceptrum-authority-contract/2.0.0",
+  "analysisInputs": {
+    "video": {
+      "label": "VÍDEO FULL",
+      "costs": ["rtsp_stream", "shared_decode", "video_window", "frame_packaging", "inference"],
+      "encodeWhen": ["continuous_recording", "video_clip_required"]
+    },
+    "image": {
+      "label": "FRAME",
+      "costs": ["rtsp_stream", "shared_decode", "single_snapshot", "inference_at_cadence"],
+      "encodeWhen": ["continuous_recording", "another_video_consumer"]
+    }
+  },
+  "executionBackends": ["local_aiq", "remote_vision", "native_cv"],
+  "executionScopes": ["camera_agent", "inference_group"],
+  "videoModelFps": {"minimum":1,"maximum":10},
+  "individualCadenceSeconds": [10,60],
+  "groupCadenceSeconds": [10,60,300,600],
+  "capacitySearch": {
+    "seedIsNotCeiling": true,
+    "probeOutcomes": ["pass","capacity_fail","infrastructure_error","cancelled"],
+    "infrastructureRetryCount": 1,
+    "headroomPercent": 20,
+    "preserveGroupProportions": true
+  },
+  "networkPolicy": {
+    "loopbackOnly": true,
+    "externalRequests": 0,
+    "openAiRequests": 0
+  }
+}

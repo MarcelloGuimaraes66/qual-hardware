@@ -12,6 +12,12 @@ import { join } from "node:path";
 import { createGunzip, gunzipSync, gzipSync } from "node:zlib";
 import { qhcalPackageSchema, qhcalSetPackageSchema } from "../shared/schemas.js";
 import {
+  INITIAL_QHCAL_PACKAGE_VERSION,
+  INITIAL_QHCALSET_PACKAGE_VERSION,
+  LEGACY_QHCAL_PACKAGE_VERSION,
+  LEGACY_QHCALSET_PACKAGE_VERSION,
+  PREVIOUS_QHCAL_PACKAGE_VERSION,
+  PREVIOUS_QHCALSET_PACKAGE_VERSION,
   QHCAL_PACKAGE_VERSION,
   QHCALSET_PACKAGE_VERSION,
   type CalibrationDeviceIdentity,
@@ -24,7 +30,7 @@ import {
   type QhcalSetUnsignedPayload,
   type QhcalUnsignedPayload,
 } from "../shared/types.js";
-import { canonicalSha256 } from "../engine/calibrationProfile.js";
+import { calibrationWorkloadProfileSignature } from "../engine/calibrationProfile.js";
 import { calibrationHardwareDigest } from "./calibrationHardware.js";
 
 export const QHCAL_MIME = "application/vnd.qual-hardware.calibration+gzip";
@@ -34,6 +40,12 @@ export const QHCAL_MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
 export const QHCALSET_MAX_COMPRESSED_BYTES = 250 * 1024 * 1024;
 export const QHCALSET_MAX_DECOMPRESSED_BYTES = 500 * 1024 * 1024;
 export const QHCALSET_MAX_RESULTS = 10_000;
+const READABLE_QHCAL_VERSIONS = new Set<string>([
+  QHCAL_PACKAGE_VERSION, PREVIOUS_QHCAL_PACKAGE_VERSION, LEGACY_QHCAL_PACKAGE_VERSION, INITIAL_QHCAL_PACKAGE_VERSION,
+]);
+const READABLE_QHCALSET_VERSIONS = new Set<string>([
+  QHCALSET_PACKAGE_VERSION, PREVIOUS_QHCALSET_PACKAGE_VERSION, LEGACY_QHCALSET_PACKAGE_VERSION, INITIAL_QHCALSET_PACKAGE_VERSION,
+]);
 
 interface StoredIdentity {
   schemaVersion: "qual-hardware-calibration-device-identity/1.0.0";
@@ -140,10 +152,10 @@ async function decompressPortablePackage(bytes: Uint8Array): Promise<unknown> {
       total += chunk.byteLength;
       if (!format && total <= 256 * 1024) {
         const prefix = Buffer.concat(chunks).toString("utf8");
-        if (prefix.includes(`"schemaVersion":"${QHCALSET_PACKAGE_VERSION}"`)) {
+        if ([...READABLE_QHCALSET_VERSIONS].some((version) => prefix.includes(`"schemaVersion":"${version}"`))) {
           format = "qhcalset";
           limit = QHCALSET_MAX_DECOMPRESSED_BYTES;
-        } else if (prefix.includes(`"schemaVersion":"${QHCAL_PACKAGE_VERSION}"`)) {
+        } else if ([...READABLE_QHCAL_VERSIONS].some((version) => prefix.includes(`"schemaVersion":"${version}"`))) {
           format = "qhcal";
         }
       }
@@ -183,7 +195,7 @@ export function verifyQhcalPackage(value: QhcalPackage): { packageDigest: string
   const runDigest = exchangeDigest(parsed.run);
   if (runDigest !== parsed.runDigest) throw new Error("calibration_run_digest_mismatch");
   const { id: _profileId, signature: _profileSignature, ...profilePayload } = parsed.workloadProfile;
-  if (canonicalSha256(profilePayload) !== parsed.workloadProfile.signature ||
+  if (calibrationWorkloadProfileSignature(profilePayload) !== parsed.workloadProfile.signature ||
       parsed.workloadProfile.id !== `workload:${parsed.workloadProfile.signature}` ||
       parsed.run.workloadProfileId !== parsed.workloadProfile.id ||
       parsed.run.workloadProfileSignature !== parsed.workloadProfile.signature) {
@@ -305,7 +317,7 @@ export class CalibrationExchangeService {
   async parseAny(bytes: Uint8Array): Promise<{ format: "qhcal"; packages: QhcalPackage[]; packageDigest: string } |
     { format: "qhcalset"; packages: QhcalPackage[]; packageDigest: string }> {
     const raw = await decompressPortablePackage(bytes) as { schemaVersion?: unknown };
-    if (raw.schemaVersion === QHCAL_PACKAGE_VERSION) {
+    if (typeof raw.schemaVersion === "string" && READABLE_QHCAL_VERSIONS.has(raw.schemaVersion)) {
       const packageValue = qhcalPackageSchema.parse(raw) as QhcalPackage;
       verifyQhcalPackage(packageValue);
       if (bytes.byteLength > QHCAL_MAX_COMPRESSED_BYTES || canonicalJsonBytes(raw).byteLength > QHCAL_MAX_DECOMPRESSED_BYTES) {
@@ -313,7 +325,7 @@ export class CalibrationExchangeService {
       }
       return { format: "qhcal", packages: [packageValue], packageDigest: exchangeDigest(packageValue) };
     }
-    if (raw.schemaVersion === QHCALSET_PACKAGE_VERSION) {
+    if (typeof raw.schemaVersion === "string" && READABLE_QHCALSET_VERSIONS.has(raw.schemaVersion)) {
       const set = qhcalSetPackageSchema.parse(raw) as QhcalSetPackage;
       const verified = verifyQhcalSetPackage(set);
       return { format: "qhcalset", packages: set.packages, packageDigest: verified.packageDigest };

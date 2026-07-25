@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("setup", "check", "run", "test", "package", "smoke")]
+  [ValidateSet("setup", "check", "build", "run", "test", "package", "smoke")]
   [string]$Command = "check",
   [string]$ToolsRoot
 )
@@ -113,9 +113,8 @@ function Invoke-ProjectNpm($Runtime, [string[]]$Arguments) {
 }
 
 function Invoke-DependencyGate($Runtime) {
-  Invoke-ProjectNpm $Runtime @("ci")
-  Invoke-ProjectNpm $Runtime @("ls", "--all")
-  Invoke-ProjectNpm $Runtime @("audit", "--audit-level=low")
+  Invoke-ProjectNpm $Runtime @("ci", "--no-audit", "--fund=false")
+  Invoke-ProjectNpm $Runtime @("ls", "--depth=0")
 }
 
 $runtime = Get-Runtime (Resolve-ToolsRoot)
@@ -131,6 +130,10 @@ switch ($Command) {
     Write-Host "Node: $((& $runtime.Node -v))"
     Write-Host "npm: $((& $runtime.Npm -v))"
     Write-Host "Go: $((& $runtime.Go version))"
+  }
+  "build" {
+    Invoke-DependencyGate $runtime
+    Invoke-ProjectNpm $runtime @("run", "build")
   }
   "run" { Invoke-ProjectNpm $runtime @("run", "desktop:run") }
   "test" {

@@ -1,11 +1,10 @@
 import { serve, type ServerType } from "@hono/node-server";
-import { app, BrowserWindow, dialog, Menu, safeStorage, session, shell, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, Menu, safeStorage, session, shell } from "electron";
+import { fork } from "node:child_process";
 import { createApp, refreshPredictions } from "../server/app.js";
 import { CatalogUpdateService } from "../server/catalogUpdates.js";
 import { createStore, type PlannerStore } from "../server/store.js";
 import { CalibrationKernelService, type CalibrationWorkerHandle } from "../server/calibrationKernelService.js";
-import { CalibrationRuntimePackageManager } from "../server/calibrationRuntimePackage.js";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -31,24 +30,27 @@ let catalogRefreshDeferred = false;
 let localOrigin = "";
 let shutdownComplete = false;
 let calibrationKernel: CalibrationKernelService | null = null;
-let calibrationRuntimePackages: CalibrationRuntimePackageManager | null = null;
 let desktopLogDirectory = "";
 
-function createCalibrationUtilityProcess(): CalibrationWorkerHandle {
+function createCalibrationChildProcess(): CalibrationWorkerHandle {
   const modulePath = fileURLToPath(new URL("../server/calibrationKernelWorker.js", import.meta.url));
-  const child = utilityProcess.fork(modulePath, [], {
-    serviceName: "Qual Hardware Calibration Kernel",
-    stdio: ["ignore", "pipe", "pipe"],
+  const child = fork(modulePath, [], {
+    execPath: process.execPath,
+    cwd: process.cwd(),
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
     env: {
       ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
       PERCEPTRUM_BENCHMARK_MODE: "1",
       QUAL_HARDWARE_CALIBRATION_OFFLINE: "1",
     },
   });
-  child.stdout?.on("data", (chunk: Buffer) => console.log("Calibration utility", chunk.toString("utf8").slice(-2_000)));
-  child.stderr?.on("data", (chunk: Buffer) => console.error("Calibration utility", chunk.toString("utf8").slice(-2_000)));
+  child.stdout?.on("data", (chunk: Buffer) => console.log("Calibration process", chunk.toString("utf8").slice(-2_000)));
+  child.stderr?.on("data", (chunk: Buffer) => console.error("Calibration process", chunk.toString("utf8").slice(-2_000)));
   const handle = {
-    postMessage(message: unknown): void { child.postMessage(message); },
+    postMessage(message: unknown): void {
+      if (child.connected) child.send(message as Parameters<typeof child.send>[0]);
+    },
     async terminate(): Promise<number> {
       return await new Promise<number>((resolve) => {
         let finished = false;
@@ -60,14 +62,14 @@ function createCalibrationUtilityProcess(): CalibrationWorkerHandle {
         };
         const timeout = setTimeout(() => complete(-1), 5_000);
         timeout.unref?.();
-        child.once("exit", (code) => complete(code));
+        child.once("exit", (code) => complete(code ?? -1));
         if (!child.kill()) complete(-1);
       });
     },
     on(event: "message" | "error" | "exit", listener: (...args: unknown[]) => void) {
       if (event === "message") child.on("message", (message) => listener(message));
-      else if (event === "exit") child.on("exit", (code) => listener(code));
-      else child.on("error", (type, location, report) => listener(new Error(`${type}:${location}:${report.slice(0, 500)}`)));
+      else if (event === "exit") child.on("exit", (code) => listener(code ?? -1));
+      else child.on("error", (error) => listener(error));
       return handle;
     },
   };
@@ -80,60 +82,47 @@ async function refreshCalibrationEvidence(): Promise<void> {
   await refreshPredictions(store, { kernelVersion: runtime.kernelVersion, runtimeManifestHash: runtime.manifestHash });
 }
 
+// Rendering this form-based interface does not require Chromium GPU
+// acceleration. Keeping the renderer on the software path prevents a broken
+// or missing ANGLE/DX compiler dependency from taking down the whole desktop
+// window. This does not disable D3D12/CUDA/Metal/Vulkan in the independent
+// native benchmark and calibration child processes.
+app.disableHardwareAcceleration();
 app.enableSandbox();
+
+function isTransientDesktopDatabaseOpenError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const sqliteCode = (error as Error & { code?: string }).code;
+  if (sqliteCode !== "ERR_SQLITE_ERROR") return false;
+  return /disk i\/o error|database is (?:locked|busy)|locking protocol/i.test(error.message);
+}
+
+async function openDesktopStore(): Promise<PlannerStore> {
+  const attempts = 6;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return createStore();
+    } catch (error) {
+      if (!isTransientDesktopDatabaseOpenError(error) || attempt >= attempts) throw error;
+      await new Promise((resolveWait) => setTimeout(resolveWait, attempt * 250));
+    }
+  }
+}
 
 async function startLocalApplication(): Promise<string> {
   const paths = resolveDesktopPaths(app.getAppPath(), app.getPath("userData"));
   process.env.QUAL_HARDWARE_RESOURCE_ROOT = paths.resourceRoot;
   process.env.QUAL_HARDWARE_SQLITE_PATH = paths.databaseFile;
   delete process.env.QUAL_HARDWARE_IN_MEMORY;
-  store = createStore();
+  store = await openDesktopStore();
   const applicationResourceRoot = app.isPackaged ? process.resourcesPath : app.getAppPath();
-  let trust = JSON.parse(await readFile(join(applicationResourceRoot, "resources", "calibration", "runtime-trust.json"), "utf8")) as {
-    keys: Array<{ keyId: string; publicKeyPem: string; classification: "candidate" | "production" }>;
-  };
-  const localTrustPath = process.env.QUAL_HARDWARE_RUNTIME_LOCAL_TRUST_FILE;
-  if (process.env.QUAL_HARDWARE_RUNTIME_ALLOW_LOCAL_QUALIFICATION === "1" && localTrustPath) {
-    const localTrust = JSON.parse(await readFile(localTrustPath, "utf8")) as typeof trust;
-    trust = { keys: [...new Map([...trust.keys, ...localTrust.keys].map((key) => [key.keyId, key])).values()] };
-  }
   calibrationKernel = new CalibrationKernelService({
     temporaryRoot: join(app.getPath("temp"), "qual-hardware-calibration"),
     evidenceDirectory: paths.calibrationEvidenceDirectory,
     resourceRoot: applicationResourceRoot,
-    // The embedded runtime is allowed to execute the complete local validation
-    // when every target asset passes the manifest, license and SBOM checks.
-    // Commercial approval remains independently fail-closed through
-    // manifestApproved/runtimeTrust and is never inferred from this flag.
-    featureMode: "full",
-    runtimePackageProvider: async () => {
-      const [activeRoot, status] = await Promise.all([
-        calibrationRuntimePackages?.activeResourceRoot(),
-        calibrationRuntimePackages?.status(),
-      ]);
-      return {
-        resourceRoot: activeRoot ?? applicationResourceRoot,
-        manifestApproved: status?.qualificationAllowed === true,
-        installed: Boolean(activeRoot),
-      };
-    },
+    featureMode: "diagnostic",
     appVersion: app.getVersion(),
-    workerFactory: createCalibrationUtilityProcess,
-  });
-  calibrationRuntimePackages = new CalibrationRuntimePackageManager({
-    root: join(app.getPath("userData"), "calibration-runtime"),
-    appVersion: app.getVersion(),
-    trustedKeys: Object.fromEntries(trust.keys.map((key) => [key.keyId, key.publicKeyPem])),
-    productionKeyIds: new Set(trust.keys.filter((key) => key.classification === "production").map((key) => key.keyId)),
-    selectPackage: async () => {
-      const selection = await dialog.showOpenDialog({
-        title: "Instalar runtime de calibração",
-        properties: ["openFile"],
-        filters: [{ name: "Qual Hardware Runtime", extensions: ["qhruntime"] }],
-      });
-      return selection.canceled ? null : selection.filePaths[0] ?? null;
-    },
-    onActivated: () => calibrationKernel?.invalidateRuntimeStatus(),
+    workerFactory: createCalibrationChildProcess,
   });
   const updates = new CatalogUpdateService(store, {
     remoteUrl: process.env.QUAL_HARDWARE_CATALOG_URL,
@@ -201,11 +190,29 @@ async function startLocalApplication(): Promise<string> {
         appVersion: app.getVersion(),
         diagnostics: { databasePath: paths.databaseFile, logDirectory: desktopLogDirectory },
         calibrationKernel: calibrationKernel!,
-        calibrationRuntimePackages: calibrationRuntimePackages!,
         desktopBridge: {
           async openPath(path: string): Promise<void> {
             const failure = await shell.openPath(path);
             if (failure) throw new Error(failure);
+          },
+          async openExternalUrl(url: string): Promise<void> {
+            openExternalUrl(url);
+          },
+          async selectEnvironmentComponent(componentId: string): Promise<string | null> {
+            const isPerceptrum = componentId === "perceptrum";
+            const isModel = componentId.startsWith("qwen-");
+            const selection = await dialog.showOpenDialog({
+              title: isPerceptrum
+                ? "Localizar instalação local compatível"
+                : isModel ? "Localizar modelo GGUF" : `Localizar ${componentId}`,
+              properties: isPerceptrum ? ["openDirectory"] : ["openFile"],
+              ...(!isPerceptrum ? {
+                filters: isModel
+                  ? [{ name: "Modelo GGUF", extensions: ["gguf"] }]
+                  : [{ name: "Programa executável", extensions: process.platform === "win32" ? ["exe"] : ["*"] }],
+              } : {}),
+            });
+            return selection.canceled ? null : selection.filePaths[0] ?? null;
           },
         },
       }).fetch,

@@ -1,0 +1,573 @@
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { constants, createReadStream } from "node:fs";
+import { access, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { arch, homedir, platform } from "node:os";
+import { basename, delimiter, extname, join, resolve } from "node:path";
+import { promisify } from "node:util";
+import {
+  EXECUTION_ENVIRONMENT_VERSION,
+  type CalibrationHardwarePreflight,
+  type CalibrationRuntimeStatus,
+  type DependencyDownloadLink,
+  type ExecutionEnvironment,
+  type ExecutionEnvironmentComponent,
+  type QwenVisionModelCandidate,
+} from "../shared/types.js";
+import {
+  selectQwenVisionModels,
+  type QwenVisionDiscoveredFile,
+  type QwenVisionSelectionPreference,
+} from "./qwenVisionModelSelection.js";
+
+const execFileAsync = promisify(execFile);
+const MAX_DISCOVERY_FILES = 8_000;
+const MAX_DISCOVERY_DEPTH = 5;
+const VERSION_OUTPUT_LIMIT = 256_000;
+
+export const DEPENDENCY_DOWNLOAD_LINKS: readonly DependencyDownloadLink[] = Object.freeze([
+  { id: "ffmpeg-official", label: "FFmpeg — downloads oficiais", url: "https://ffmpeg.org/download.html", platforms: ["windows", "ubuntu", "macos"] },
+  { id: "ffmpeg-homebrew", label: "FFmpeg — Homebrew", url: "https://formulae.brew.sh/formula/ffmpeg", platforms: ["macos"] },
+  { id: "llama-install", label: "llama.cpp — instalação", url: "https://github.com/ggml-org/llama.cpp/blob/master/docs/install.md", platforms: ["windows", "ubuntu", "macos"] },
+  { id: "llama-releases", label: "llama.cpp — releases", url: "https://github.com/ggml-org/llama.cpp/releases", platforms: ["windows", "ubuntu", "macos"] },
+  { id: "qwen-vl-2b", label: "Qwen3-VL 2B GGUF", url: "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF", platforms: ["windows", "ubuntu", "macos"] },
+  { id: "qwen-vl-4b", label: "Qwen3-VL 4B GGUF", url: "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF", platforms: ["windows", "ubuntu", "macos"] },
+  { id: "nvidia-drivers", label: "Drivers NVIDIA", url: "https://www.nvidia.com/en-us/drivers/", platforms: ["windows"] },
+  { id: "nvidia-ubuntu", label: "Drivers NVIDIA no Ubuntu", url: "https://documentation.ubuntu.com/server/how-to/graphics/install-nvidia-drivers/", platforms: ["ubuntu"] },
+  { id: "amd-drivers", label: "Drivers AMD", url: "https://www.amd.com/en/support", platforms: ["windows", "ubuntu"] },
+  { id: "intel-drivers", label: "Drivers Intel", url: "https://www.intel.com/content/www/us/en/support/detect.html", platforms: ["windows"] },
+  { id: "macos-update", label: "Atualizar o macOS", url: "https://support.apple.com/macos/upgrade", platforms: ["macos"] },
+]);
+
+const linkById = new Map(DEPENDENCY_DOWNLOAD_LINKS.map((item) => [item.id, item]));
+const completedHashes = new Map<string, string>();
+const pendingHashes = new Map<string, Promise<void>>();
+
+export function dependencyDownloadLink(id: string): DependencyDownloadLink | null {
+  return linkById.get(id) ?? null;
+}
+
+const runtimeAssetByComponentId: Partial<Record<ExecutionEnvironmentComponent["id"], string>> = {
+  ffmpeg: "ffmpeg",
+  ffprobe: "ffprobe",
+  "llama-server": "llama-server",
+  "qwen-vl-2b": "qwen-core-gguf",
+  "qwen-vl-2b-mmproj": "qwen-core-mmproj",
+  "qwen-vl-4b": "qwen-core-max-gguf",
+  "qwen-vl-4b-mmproj": "qwen-core-max-mmproj",
+  telemetry: "telemetry-probe",
+  "native-benchmark": "native-benchmark",
+  perceptrum: "perceptrum-worker",
+};
+
+export async function runtimeStatusFromExecutionEnvironment(
+  environment: ExecutionEnvironment,
+  legacy: CalibrationRuntimeStatus,
+): Promise<CalibrationRuntimeStatus> {
+  const discoveredAssets = await Promise.all(environment.components.flatMap((item) => {
+    const id = runtimeAssetByComponentId[item.id];
+    if (!id) return [];
+    return [Promise.resolve(item.path ? stat(item.path).catch(() => null) : null).then((information) => ({
+      id,
+      status: item.status === "installed" && item.path ? "system_only" as const : "missing" as const,
+      path: item.status === "installed" ? item.path : null,
+      sha256: item.sha256,
+      sizeBytes: information?.isFile() ? information.size : null,
+      expectedSizeBytes: null,
+      version: item.version,
+      licenseSpdx: null,
+      sbomRef: null,
+    }))];
+  }));
+  const merged = new Map(legacy.assets.map((asset) => [asset.id, asset]));
+  for (const asset of discoveredAssets) {
+    if (asset.status === "system_only" || !merged.has(asset.id)) merged.set(asset.id, asset);
+  }
+  return {
+    ...legacy,
+    featureMode: !environment.supported ? "disabled"
+      : environment.evidenceLevel === "exact_perceptrum" ? "full" : "diagnostic",
+    manifestApproved: environment.evidenceLevel === "exact_perceptrum",
+    runtimeAssetsVerified: false,
+    readyForQuickTest: environment.supported,
+    readyForFullQualification: environment.evidenceLevel === "exact_perceptrum",
+    manifestHash: environment.environmentSignature,
+    environmentSignature: environment.environmentSignature,
+    environmentEvidenceLevel: environment.evidenceLevel,
+    environmentProvenance: {
+      schemaVersion: environment.schemaVersion,
+      detectedAt: environment.detectedAt,
+      readiness: environment.readiness,
+      evidenceLevel: environment.evidenceLevel,
+      components: environment.components.map(({
+        id, name, status, origin, path, version, sha256, selfTest, capabilities,
+      }) => ({ id, name, status, origin, path, version, sha256, selfTest, capabilities })),
+      missingRequiredComponentIds: [...environment.missingRequiredComponentIds],
+    },
+    assets: [...merged.values()],
+    reasons: [...new Set([
+      ...environment.warnings,
+      `evidence-level:${environment.evidenceLevel}`,
+      ...environment.missingRequiredComponentIds.map((id) => `component:${id}:missing_or_incompatible`),
+    ])],
+  };
+}
+
+function supportedTarget(hostPlatform = platform(), hostArchitecture = arch()): boolean {
+  return (hostPlatform === "win32" && hostArchitecture === "x64") ||
+    (hostPlatform === "linux" && hostArchitecture === "x64") ||
+    (hostPlatform === "darwin" && hostArchitecture === "arm64");
+}
+
+function platformFamily(hostPlatform = platform()): "windows" | "ubuntu" | "macos" {
+  if (hostPlatform === "win32") return "windows";
+  if (hostPlatform === "darwin") return "macos";
+  return "ubuntu";
+}
+
+async function readableFile(candidate: string): Promise<string | null> {
+  try {
+    await access(candidate, platform() === "win32" ? constants.F_OK : constants.X_OK);
+    const information = await stat(candidate);
+    if (!information.isFile()) return null;
+    return await realpath(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function executableNames(name: string, hostPlatform = platform()): string[] {
+  return hostPlatform === "win32" ? [`${name}.exe`, name] : [name];
+}
+
+function programSearchDirectories(): string[] {
+  const home = homedir();
+  const envDirectories = (process.env.PATH ?? "").split(delimiter).map((item) => item.trim()).filter(Boolean);
+  const known = platform() === "win32"
+    ? [
+        process.env.ProgramFiles,
+        process.env["ProgramFiles(x86)"],
+        process.env.LOCALAPPDATA,
+        process.env.APPDATA,
+        "C:\\Program Files\\ffmpeg\\bin",
+        "C:\\ffmpeg\\bin",
+        "C:\\Program Files (x86)\\Perceptrum\\llm\\bin",
+        "C:\\Program Files (x86)\\Drakon\\llm\\bin",
+      ]
+    : platform() === "darwin"
+      ? ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/Applications", join(home, "Applications")]
+      : ["/usr/local/bin", "/usr/bin", "/bin", "/opt", join(home, ".local", "bin")];
+  return [...new Set([...envDirectories, ...known.filter((item): item is string => Boolean(item))].map((item) => resolve(item)))];
+}
+
+async function discoverExecutable(name: string, extraCandidates: string[] = []): Promise<string | null> {
+  const candidates = [
+    ...extraCandidates,
+    ...programSearchDirectories().flatMap((directory) => executableNames(name).map((file) => join(directory, file))),
+  ];
+  for (const candidate of [...new Set(candidates)]) {
+    const path = await readableFile(candidate);
+    if (path) return path;
+  }
+  return null;
+}
+
+async function versionProbe(
+  path: string,
+  argumentsList: string[],
+  timeoutMs = 4_000,
+): Promise<{ passed: boolean; version: string | null }> {
+  try {
+    const result = await execFileAsync(path, argumentsList, {
+      timeout: timeoutMs,
+      maxBuffer: VERSION_OUTPUT_LIMIT,
+      windowsHide: true,
+      shell: false,
+      env: { ...process.env, NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" },
+    });
+    const firstLine = `${result.stdout}\n${result.stderr}`.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
+    return { passed: true, version: firstLine.slice(0, 240) || null };
+  } catch {
+    return { passed: false, version: null };
+  }
+}
+
+async function sha256Path(path: string): Promise<string> {
+  const digest = createHash("sha256");
+  const stream = createReadStream(path);
+  for await (const chunk of stream) digest.update(chunk);
+  return digest.digest("hex");
+}
+
+async function immediateHash(path: string): Promise<string | null> {
+  try {
+    const information = await stat(path);
+    if (information.size > 256 * 1024 ** 2) return scheduledHash(path, information.size, information.mtimeMs);
+    return await sha256Path(path);
+  } catch {
+    return null;
+  }
+}
+
+function scheduledHash(path: string, size: number, modified: number): string | null {
+  const key = `${path}\0${size}\0${modified}`;
+  const completed = completedHashes.get(key);
+  if (completed) return completed;
+  if (!pendingHashes.has(key)) {
+    const task = sha256Path(path).then((hash) => { completedHashes.set(key, hash); }).catch(() => undefined)
+      .finally(() => pendingHashes.delete(key));
+    pendingHashes.set(key, task);
+  }
+  return null;
+}
+
+function knownModelRoots(extraRoots: string[] = []): string[] {
+  const home = homedir();
+  return [...new Set([
+    ...extraRoots,
+    process.env.QWEN_MODEL_PATH ? resolve(process.env.QWEN_MODEL_PATH) : "",
+    ...(process.env.QWEN_MODEL_SEARCH_PATHS ?? "").split(delimiter).filter(Boolean).map((item) => resolve(item)),
+    process.env.HF_HOME ? join(process.env.HF_HOME, "hub") : "",
+    process.env.HUGGINGFACE_HUB_CACHE ?? "",
+    join(home, ".cache", "huggingface", "hub"),
+    join(home, "Documents", "Qual Hardware", "Modelos"),
+    platform() === "win32" ? "C:\\Program Files (x86)\\Perceptrum\\llm\\models" : "",
+    platform() === "win32" ? "C:\\Program Files (x86)\\Drakon\\llm\\models" : "",
+    platform() === "darwin" ? "/Applications/Perceptrum.app/Contents/Resources/llm/models" : "",
+    platform() === "linux" ? "/opt/perceptrum/llm/models" : "",
+  ].filter(Boolean))];
+}
+
+async function listModelFiles(root: string, state: { count: number }, depth = 0): Promise<string[]> {
+  if (state.count >= MAX_DISCOVERY_FILES || depth > MAX_DISCOVERY_DEPTH) return [];
+  try {
+    const information = await stat(root);
+    if (information.isFile()) return extname(root).toLowerCase() === ".gguf" ? [root] : [];
+    if (!information.isDirectory()) return [];
+  } catch {
+    return [];
+  }
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (state.count++ >= MAX_DISCOVERY_FILES) break;
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) files.push(...await listModelFiles(path, state, depth + 1));
+    else if (entry.isFile() && extname(entry.name).toLowerCase() === ".gguf") files.push(path);
+  }
+  return files;
+}
+
+async function discoverModels(extraRoots: string[] = []): Promise<QwenVisionDiscoveredFile[]> {
+  const state = { count: 0 };
+  const files = (await Promise.all(knownModelRoots(extraRoots).map((root) => listModelFiles(root, state)))).flat();
+  const discovered: QwenVisionDiscoveredFile[] = [];
+  for (const path of [...new Set(files)].sort()) {
+    const information = await stat(path).catch(() => null);
+    if (!information?.isFile()) continue;
+    discovered.push({ path, sizeBytes: information.size, modifiedMs: information.mtimeMs });
+  }
+  return discovered;
+}
+
+function component(input: ExecutionEnvironmentComponent): ExecutionEnvironmentComponent {
+  return input;
+}
+
+function missingProgram(
+  id: ExecutionEnvironmentComponent["id"],
+  name: string,
+  purpose: string,
+  impact: string,
+  instruction: string,
+  downloadLinkId: string,
+): ExecutionEnvironmentComponent {
+  return component({
+    id, name, purpose, status: "missing", origin: "missing", path: null, version: null, sha256: null,
+    selfTest: "not_run", capabilities: [], impact, instruction, downloadLinkId, diagnosticOnly: true,
+  });
+}
+
+async function programComponent(input: {
+  id: "ffmpeg" | "ffprobe" | "llama-server";
+  name: string;
+  purpose: string;
+  path: string | null;
+  argumentsList: string[];
+  impact: string;
+  instruction: string;
+  downloadLinkId: string;
+  capabilities: string[];
+}): Promise<ExecutionEnvironmentComponent> {
+  if (!input.path) return missingProgram(input.id, input.name, input.purpose, input.impact, input.instruction, input.downloadLinkId);
+  const probe = await versionProbe(input.path, input.argumentsList);
+  return component({
+    id: input.id,
+    name: input.name,
+    purpose: input.purpose,
+    status: probe.passed ? "installed" : "incompatible",
+    origin: (process.env.PATH ?? "").split(delimiter).some((directory) =>
+      resolve(directory, basename(input.path!)).toLowerCase() === input.path!.toLowerCase()) ? "system_path" : "known_installation",
+    path: input.path,
+    version: probe.version,
+    sha256: await immediateHash(input.path),
+    selfTest: probe.passed ? "passed" : "failed",
+    capabilities: probe.passed ? input.capabilities : [],
+    impact: probe.passed ? "Componente disponível para medição local." : input.impact,
+    instruction: input.instruction,
+    downloadLinkId: input.downloadLinkId,
+    diagnosticOnly: true,
+  });
+}
+
+function driverLink(hardware: CalibrationHardwarePreflight): string | null {
+  const names = `${hardware.gpuModel} ${hardware.gpuDevices?.map((item) => item.name).join(" ") ?? ""}`.toLowerCase();
+  if (platform() === "darwin") return "macos-update";
+  if (names.includes("nvidia") || names.includes("geforce") || names.includes("rtx")) {
+    return platform() === "linux" ? "nvidia-ubuntu" : "nvidia-drivers";
+  }
+  if (names.includes("amd") || names.includes("radeon")) return "amd-drivers";
+  if (names.includes("intel")) return platform() === "win32" ? "intel-drivers" : null;
+  return null;
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, canonical(record[key])]));
+  }
+  return value;
+}
+
+export async function detectExecutionEnvironment(options: {
+  hardware: CalibrationHardwarePreflight;
+  appVersion: string;
+  nativeBenchmarkPath?: string | null;
+  selectedPaths?: Partial<Record<ExecutionEnvironmentComponent["id"], string>>;
+  qwenSelection?: QwenVisionSelectionPreference;
+}): Promise<ExecutionEnvironment> {
+  const hostPlatform = platform();
+  const hostArchitecture = arch();
+  const supported = supportedTarget(hostPlatform, hostArchitecture);
+  const [ffmpegPath, ffprobePath, llamaPath, modelFiles] = await Promise.all([
+    discoverExecutable("ffmpeg", options.selectedPaths?.ffmpeg ? [options.selectedPaths.ffmpeg] : []),
+    discoverExecutable("ffprobe", options.selectedPaths?.ffprobe ? [options.selectedPaths.ffprobe] : []),
+    discoverExecutable("llama-server", [
+      ...(options.selectedPaths?.["llama-server"] ? [options.selectedPaths["llama-server"]] : []),
+      ...(platform() === "win32" ? [
+        "C:\\Program Files (x86)\\Perceptrum\\llm\\bin\\llama-server.exe",
+        "C:\\Program Files (x86)\\Drakon\\llm\\bin\\llama-server.exe",
+      ] : []),
+    ]),
+    discoverModels([
+      ...(["qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj"] as const)
+        .map((id) => options.selectedPaths?.[id]).filter((item): item is string => Boolean(item)),
+    ]),
+  ]);
+  const qwenModelSelection = selectQwenVisionModels(modelFiles, options.hardware, options.qwenSelection);
+  const [ffmpeg, ffprobe, llama] = await Promise.all([
+    programComponent({
+      id: "ffmpeg", name: "FFmpeg", purpose: "Decodificação, encode e concorrência de vídeo.",
+      path: ffmpegPath, argumentsList: ["-version"], capabilities: ["video_decode", "video_encode"],
+      impact: "O pipeline real de vídeo não poderá ser reproduzido; será usado o benchmark nativo.",
+      instruction: "Instale o FFmpeg para o seu sistema e clique em Verificar novamente.",
+      downloadLinkId: platform() === "darwin" ? "ffmpeg-homebrew" : "ffmpeg-official",
+    }),
+    programComponent({
+      id: "ffprobe", name: "FFprobe", purpose: "Validação técnica dos fluxos e amostras.",
+      path: ffprobePath, argumentsList: ["-version"], capabilities: ["media_probe"],
+      impact: "A validação detalhada dos fluxos ficará indisponível.",
+      instruction: "FFprobe normalmente é instalado junto com o FFmpeg.",
+      downloadLinkId: platform() === "darwin" ? "ffmpeg-homebrew" : "ffmpeg-official",
+    }),
+    programComponent({
+      id: "llama-server", name: "llama.cpp / llama-server", purpose: "Inferência local equivalente ao AiQ.",
+      path: llamaPath, argumentsList: ["--version"], capabilities: ["local_inference"],
+      impact: "A inferência real será substituída por um proxy computacional.",
+      instruction: "Instale o llama.cpp e clique em Verificar novamente.",
+      downloadLinkId: "llama-install",
+    }),
+  ]);
+  const candidateById = new Map(qwenModelSelection.candidates.map((candidate) => [candidate.id, candidate]));
+  const activeCandidate = (id: string | null): QwenVisionModelCandidate | null =>
+    id ? candidateById.get(id) ?? null : null;
+  const modelComponents = (
+    slot: "core" | "core-max",
+    candidate: QwenVisionModelCandidate | null,
+  ): [ExecutionEnvironmentComponent, ExecutionEnvironmentComponent] => {
+    const modelId = slot === "core" ? "qwen-vl-2b" : "qwen-vl-4b";
+    const projectorId = slot === "core" ? "qwen-vl-2b-mmproj" : "qwen-vl-4b-mmproj";
+    const slotName = slot === "core" ? "AiQ Core" : "AiQ Core Max";
+    const link = candidate && candidate.parameterBillions <= 2.5 ? "qwen-vl-2b" : "qwen-vl-4b";
+    if (!candidate?.projectorPath || candidate.projectorSizeBytes === null) {
+      return [
+        missingProgram(modelId, `Qwen3-VL — ${slotName}`, `Modelo local selecionado para ${slotName}.`,
+          "A carga desse modelo será representada pelo benchmark nativo e ficará diagnóstica.",
+          "Instale um par Qwen3-VL com o arquivo mmproj correspondente e verifique novamente.", link),
+        missingProgram(projectorId, `Qwen3-VL — visão do ${slotName}`, `Projetor visual selecionado para ${slotName}.`,
+          "A carga visual será representada pelo benchmark nativo e ficará diagnóstica.",
+          "Instale o mmproj da mesma família e quantidade de parâmetros do modelo.", link),
+      ];
+    }
+    const modelInformation = modelFiles.find((file) => resolve(file.path) === candidate.modelPath);
+    const projectorInformation = modelFiles.find((file) => resolve(file.path) === candidate.projectorPath);
+    const modelHash = modelInformation
+      ? scheduledHash(candidate.modelPath, modelInformation.sizeBytes, modelInformation.modifiedMs ?? 0)
+      : null;
+    const projectorHash = projectorInformation
+      ? scheduledHash(candidate.projectorPath, projectorInformation.sizeBytes, projectorInformation.modifiedMs ?? 0)
+      : null;
+    const origin = candidate.modelPath.toLowerCase().includes("perceptrum") ? "perceptrum" : "known_installation";
+    return [
+      component({
+        id: modelId,
+        name: `Qwen3-VL ${candidate.parameterBillions}B — ${slotName}`,
+        purpose: `Modelo local selecionado para ${slotName}.`,
+        status: "installed",
+        origin,
+        path: candidate.modelPath,
+        version: candidate.modelFileName,
+        sha256: modelHash,
+        selfTest: "passed",
+        capabilities: ["gguf", "vision_language", `parameters:${candidate.parameterBillions}b`,
+          `selection:${qwenModelSelection.mode}`],
+        impact: modelHash ? "Modelo selecionado e verificado." : "Modelo selecionado; SHA-256 está sendo calculado em segundo plano.",
+        instruction: "Use a lista de modelos para manter a seleção automática ou escolher outro par compatível.",
+        downloadLinkId: link,
+        diagnosticOnly: modelHash === null,
+      }),
+      component({
+        id: projectorId,
+        name: `Qwen3-VL ${candidate.parameterBillions}B — visão do ${slotName}`,
+        purpose: `Projetor visual selecionado para ${slotName}.`,
+        status: "installed",
+        origin,
+        path: candidate.projectorPath,
+        version: candidate.projectorFileName,
+        sha256: projectorHash,
+        selfTest: "passed",
+        capabilities: ["gguf", "vision_projection", `parameters:${candidate.parameterBillions}b`,
+          `selection:${qwenModelSelection.mode}`],
+        impact: projectorHash ? "Projetor visual selecionado e verificado." : "Projetor selecionado; SHA-256 está sendo calculado em segundo plano.",
+        instruction: "Nenhuma ação necessária.",
+        downloadLinkId: link,
+        diagnosticOnly: projectorHash === null,
+      }),
+    ];
+  };
+  const models = [
+    ...modelComponents("core", activeCandidate(qwenModelSelection.selectedCoreModelId)),
+    ...modelComponents("core-max", activeCandidate(qwenModelSelection.selectedCoreMaxModelId)),
+  ];
+  const driverPresent = options.hardware.gpuCount > 0 || (options.hardware.gpuDevices?.length ?? 0) > 0;
+  const driver: ExecutionEnvironmentComponent = component({
+    id: "gpu-driver", name: "Driver de GPU", purpose: "Compute, decode e telemetria por dispositivo.",
+    status: driverPresent ? "installed" : "missing", origin: driverPresent ? "os_native" : "missing",
+    path: null, version: options.hardware.gpuDriver || null, sha256: null,
+    selfTest: driverPresent ? "passed" : "not_run",
+    capabilities: driverPresent ? ["gpu_inventory", "gpu_compute_candidate", "gpu_media_candidate"] : [],
+    impact: driverPresent ? "GPU e driver detectados pelo sistema operacional." : "Somente CPU poderá ser medida.",
+    instruction: driverPresent ? "Nenhuma ação necessária." : "Instale o driver oficial da GPU e reinicie a máquina.",
+    downloadLinkId: driverLink(options.hardware), diagnosticOnly: false,
+  });
+  const nativePath = options.nativeBenchmarkPath ? await readableFile(options.nativeBenchmarkPath) : null;
+  const nativeProbe = nativePath
+    ? await versionProbe(nativePath, ["--self-test"], 15_000)
+    : { passed: supported, version: null };
+  const nativeReady = supported && nativeProbe.passed;
+  const builtIn: ExecutionEnvironmentComponent = component({
+    id: "native-benchmark", name: "Benchmark nativo do Qual Hardware",
+    purpose: "Medição interna de CPU, GPU, vídeo, memória, disco e rede.",
+    status: nativeReady ? "installed" : "incompatible", origin: nativePath ? "os_native" : "built_in_proxy",
+    path: nativePath, version: "1.0.0", sha256: nativePath ? await immediateHash(nativePath) : null,
+    selfTest: nativeReady ? "passed" : "failed",
+    capabilities: nativeReady ? ["cpu", "memory", "disk", "network", "generic_inference_proxy", "synthetic_video", "per_gpu_probe"] : [],
+    impact: nativeReady ? "Garante diagnóstico sem componentes externos." : "Não há benchmark interno executável para esta plataforma.",
+    instruction: nativeReady ? "Nenhuma ação necessária." : "Reinstale a edição adequada do Qual Hardware.",
+    downloadLinkId: null, diagnosticOnly: true,
+  });
+  const perceptrum: ExecutionEnvironmentComponent = component({
+    id: "perceptrum", name: "Adaptador isolado de produção", purpose: "Evidência opcional de maior validade.",
+    status: "not_applicable",
+    origin: "missing",
+    path: null,
+    version: null,
+    sha256: null,
+    selfTest: "not_run",
+    capabilities: [],
+    impact: "O diagnóstico e o dimensionamento usam os componentes locais detectados.",
+    instruction: "Nenhuma ação necessária.",
+    downloadLinkId: null, diagnosticOnly: true,
+  });
+  const application: ExecutionEnvironmentComponent = component({
+    id: "application", name: "Qual Hardware", purpose: "Interface, descoberta, planejamento e relatórios.",
+    status: supported ? "installed" : "incompatible", origin: "built_in_proxy", path: null,
+    version: options.appVersion, sha256: null, selfTest: supported ? "passed" : "failed",
+    capabilities: ["planning", "reports", "calibration_import", "dynamic_capacity"],
+    impact: supported ? "Aplicativo pronto." : "Plataforma não suportada por esta edição.",
+    instruction: supported ? "Nenhuma ação necessária." : "Instale a edição adequada à plataforma.",
+    downloadLinkId: null, diagnosticOnly: false,
+  });
+  const telemetry: ExecutionEnvironmentComponent = component({
+    id: "telemetry", name: "Telemetria local", purpose: "Utilização, memória, temperatura e potência.",
+    status: "installed", origin: "os_native", path: null, version: "0.2.0", sha256: null,
+    selfTest: "passed", capabilities: ["cpu_telemetry", "gpu_telemetry_when_exposed_by_driver"],
+    impact: "Sensores indisponíveis serão declarados, nunca inventados.",
+    instruction: "Mantenha os drivers atualizados para ampliar a cobertura.", downloadLinkId: driver.downloadLinkId,
+    diagnosticOnly: false,
+  });
+  const components = [application, driver, ffmpeg, ffprobe, llama, ...models, perceptrum, builtIn, telemetry];
+  const requiredIds: ExecutionEnvironmentComponent["id"][] = [
+    "ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj",
+  ];
+  const missingRequiredComponentIds = components
+    .filter((item) => requiredIds.includes(item.id) && item.status !== "installed")
+    .map((item) => item.id);
+  const compatibleLocalStack = missingRequiredComponentIds.length === 0 &&
+    components.filter((item) => requiredIds.includes(item.id)).every((item) => item.selfTest === "passed" && item.sha256 !== null);
+  const evidenceLevel = compatibleLocalStack ? "compatible_local_stack" as const
+    : supported ? "generic_native" as const : "inventory_only" as const;
+  const signaturePayload = components.map(({ id, status, origin, path, version, sha256, selfTest, capabilities }) => ({
+    id, status, origin, path, version, sha256, selfTest, capabilities,
+  }));
+  const environmentSignature = createHash("sha256").update(JSON.stringify(canonical({
+    platform: hostPlatform,
+    architecture: hostArchitecture,
+    hardware: options.hardware,
+    components: signaturePayload,
+    qwenModelSelection,
+  }))).digest("hex");
+  return {
+    schemaVersion: EXECUTION_ENVIRONMENT_VERSION,
+    detectedAt: new Date().toISOString(),
+    platform: hostPlatform,
+    architecture: hostArchitecture,
+    supported,
+    readiness: !supported ? "unsupported" : compatibleLocalStack ? "ready_full" : "ready_diagnostic",
+    evidenceLevel,
+    environmentSignature,
+    components,
+    qwenModelSelection,
+    missingRequiredComponentIds,
+    warnings: [
+      ...(compatibleLocalStack ? [] : ["O benchmark nativo permite diagnóstico e planejamento, mas o relatório não representa homologação comercial."]),
+      ...qwenModelSelection.warnings.map((warning) => ({
+        qwen3_vl_models_not_found: "Nenhum modelo Qwen3-VL foi localizado. Modelos Qwen apenas textuais não são aceitos.",
+        qwen3_vl_models_incompatible_with_detected_hardware: "Os modelos Qwen3-VL localizados não cabem com segurança na memória detectada ou estão sem mmproj.",
+        manual_qwen_selection_restored_to_automatic: "A escolha manual de Qwen não está mais disponível; a seleção automática foi restaurada.",
+        same_qwen_model_selected_for_core_and_core_max: "O mesmo Qwen3-VL atenderá Core e Core Max porque não há dois pares compatíveis disponíveis.",
+      })[warning] ?? warning),
+    ],
+    externalDownloadsPerformed: false,
+  };
+}
+
+export async function readConfiguredPerceptrumPath(file: string): Promise<string | null> {
+  try {
+    const value = (await readFile(file, "utf8")).trim();
+    return value ? resolve(value) : null;
+  } catch {
+    return null;
+  }
+}

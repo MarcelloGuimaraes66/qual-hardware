@@ -1,20 +1,20 @@
 {
   "schemaVersion": "qual-hardware-calibration-runtime-manifest/3.0.0",
-  "kernelVersion": "qual-hardware-calibration-kernel/2.0.0",
+  "kernelVersion": "qual-hardware-calibration-kernel/4.0.0",
   "authorityCommit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
-  "pipelineImplementation": "perceptrum-equivalent-v2-multi-device",
+  "pipelineImplementation": "perceptrum-equivalent-v3-mixed-workload",
   "supportedTargets": [
     "darwin-arm64",
     "win32-x64",
     "linux-x64"
   ],
   "authorityContract": {
-    "relativePath": "contracts/calibration-kernel-authority-v1.json",
-    "sha256": "ff8f066d5b2cabdf957b2b2ce07803b8526d31eb92db599c531b0859a4de7168"
+    "relativePath": "contracts/calibration-kernel-authority-v2.json",
+    "sha256": "66b83006e00ef3afb143155e08c74561f4c7bc92a2de26c6cb61a8f809f9c0ec"
   },
   "pipelineContract": {
-    "relativePath": "contracts/calibration-pipeline-contract-v1.json",
-    "sha256": "56a15cffdf05f44e108c3e8d74e290bbd211caab56af6445967cb26ef7fa074a"
+    "relativePath": "contracts/calibration-pipeline-contract-v2.json",
+    "sha256": "b56551586f583c38ffce0a0a399b7c14e1e690750deef2a1ed34629e68a83773"
   },
   "sourceLock": {
     "relativePath": "resources/calibration/asset-sources.lock.json",

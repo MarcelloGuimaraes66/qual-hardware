@@ -89,7 +89,7 @@ async function runQwen(collectionFile: string, outputFile: string): Promise<void
   let metadata: Readonly<QwenCatalogMetadata> = QWEN_CATALOG_METADATA;
   let used = false;
   if (collection.qwenCandidates.length) {
-    const selectedModel = await discoverBestQwenTextModel({ explicitPath: process.env.QWEN_MODEL_PATH });
+    const selectedModel = await discoverBestQwenTextModel({ explicitPath: process.env.QWEN_MODEL_PATH ?? null });
     const executable = await discoverLlamaCppServer();
     if (selectedModel && executable) {
       const expectedHash = process.env.QWEN_MODEL_SHA256?.trim() || (process.env.CI ? QWEN_CATALOG_MODEL_SHA256 : null);
@@ -216,14 +216,14 @@ function componentsFromHardware(observations: SourceObservation[]): HardwareComp
       canonicalMpn: identity.sku, aliases: [identity.sku], architecture: normalized(observation.payload.architecture) ?? "not_published",
       marketState: "reference_only", inventoryState: "discovered_inventory", specificationVersion: `official-observation-${observation.contentHash.slice(0, 12)}`,
       specifications: { ...specifications, name: normalized(observation.payload.name), evidenceLocator: observation.evidenceLocator }, sourceUrls: [observation.url],
-      evidence: authoritative ? [{
+      ...(authoritative ? { evidence: [{
         sourceId: observation.sourceId,
         url: observation.url,
         retrievedAt: observation.retrievedAt,
         evidenceLocator: observation.evidenceLocator,
         rawArtifactSha256: observation.contentHash,
         licensePolicy: "Normalized public manufacturer facts with attribution; source document is not redistributed unless its license permits it.",
-      }] : undefined,
+      }] } : {}),
       discoveredAt: observation.retrievedAt, updatedAt: observation.retrievedAt,
     };
     components.set(identity.id, withTechnicalSpecification(candidate, observation.retrievedAt));
@@ -478,8 +478,10 @@ async function build(collectionFile: string, qwenFile: string, outputDirectory: 
     collectorCommit: process.env.GITHUB_SHA ?? argument("commit", "0846ff7"), hardware: HARDWARE_CATALOG,
     components, benchmarks, prices, sources: collection.sources, qwenUsed: qwen.used,
     ...(qwenMetadata ? { qwen: qwenMetadata } : {}),
-    previousHardwareCount: previousBundle?.hardware.length,
-    previousSourceCount: previousBundle?.sources.length,
+    ...(previousBundle ? {
+      previousHardwareCount: previousBundle.hardware.length,
+      previousSourceCount: previousBundle.sources.length,
+    } : {}),
     summary: { added, updated, unchanged, rejected: priceGate.rejected.length, checkedWithoutChanges: added === 0 && updated === 0 },
   });
   const failed = collection.results.filter((result) => result.run.status === "failed");
@@ -535,7 +537,7 @@ async function validateFile(path: string): Promise<void> {
   else if (basename(path) === "catalog-payload.json") catalogBundleSchema.parse(value);
   else if (basename(path) === "catalog-bundle.json") {
     const envelope = signedCatalogBundleSchema.parse(value) as SignedCatalogBundle;
-    const publicKey = OFFICIAL_CATALOG_CHANNEL.keyRing[envelope.keyId];
+    const publicKey = (OFFICIAL_CATALOG_CHANNEL.keyRing as Readonly<Record<string, string>>)[envelope.keyId];
     if (!publicKey) throw new Error("unknown_catalog_signing_key");
     verifyCatalogBundle(envelope, publicKey);
   }
@@ -545,7 +547,7 @@ async function validateFile(path: string): Promise<void> {
     if (payload.schemaVersion !== "qual-hardware-publication-report/1.0.0") throw new Error("invalid_publication_report");
     if (report.payload) {
       if (typeof report.keyId !== "string" || typeof report.signature !== "string") throw new Error("invalid_signed_publication_report");
-      const publicKey = OFFICIAL_CATALOG_CHANNEL.keyRing[report.keyId];
+      const publicKey = (OFFICIAL_CATALOG_CHANNEL.keyRing as Readonly<Record<string, string>>)[report.keyId];
       if (!publicKey || !cryptoVerify(null, Buffer.from(JSON.stringify(payload)), publicKey, Buffer.from(report.signature, "base64"))) {
         throw new Error("invalid_publication_report_signature");
       }

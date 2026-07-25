@@ -49,7 +49,7 @@ const LENOVO_PX = "https://www.lenovo.com/us/en/p/workstations/thinkstation-p-se
 
 function workstationComponents(values: [number, number, number, number, number, number, number, number]): ReferenceCostComponentUsd[] {
   const ids: Array<ReferenceCostComponentUsd["componentId"]> = ["cpu", "motherboard", "ram", "gpu", "storage", "network", "power_cooling_chassis", "integration"];
-  const labels = ["CPU", "Placa-mae / plataforma", "Memoria RAM", "GPU", "NVMe operacional", "Rede", "Fonte, refrigeracao e chassi", "Montagem e integracao"];
+  const labels = ["CPU", "Placa-mãe / plataforma", "Memória RAM", "GPU", "NVMe operacional", "Rede", "Fonte, refrigeração e chassi", "Montagem e integração"];
   return ids.map((componentId, index) => ({ componentId, component: labels[index]!, usdPerNode: values[index]! }));
 }
 

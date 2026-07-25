@@ -1,6 +1,9 @@
 node_modules/
 dist/
 release/
+resources/native/*/build/
+resources/native/*/qual-hardware-native-bench
+resources/native/*/qual-hardware-native-bench.exe
 release-*/
 .playwright-cli/
 output/

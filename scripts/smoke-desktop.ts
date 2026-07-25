@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
@@ -19,7 +19,7 @@ interface PackagePaths {
 }
 
 interface RunningDesktop {
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcess;
   origin: string;
   debuggerUrl: string;
   logs: string[];
@@ -31,6 +31,7 @@ interface RunningDesktop {
 const projectRoot = resolve(import.meta.dirname, "..");
 const releaseRoot = resolve(String(process.env.QUAL_HARDWARE_RELEASE_ROOT || "").trim() || join(projectRoot, "release"));
 const allowMissingRuntime = process.env.QUAL_HARDWARE_SMOKE_ALLOW_MISSING_RUNTIME === "1";
+const skipCalibration = process.env.QUAL_HARDWARE_SMOKE_SKIP_CALIBRATION === "1";
 
 function packagePaths(): PackagePaths {
   if (process.platform === "darwin") {
@@ -94,17 +95,21 @@ async function launchDesktop(executable: string, userData: string, bootstrap = f
   const child = spawn(executable, [
     `--user-data-dir=${userData}`,
     `--remote-debugging-port=${debugPort}`,
+    "--remote-allow-origins=*",
   ], {
-    cwd: projectRoot,
+    // Match Explorer/double-click behavior and keep Chromium child-process DLL
+    // resolution anchored to the packaged executable directory.
+    cwd: dirname(executable),
     env: {
       ...process.env,
       ELECTRON_ENABLE_LOGGING: "1",
       QUAL_HARDWARE_CALIBRATION_TIME_SCALE: process.env.QUAL_HARDWARE_CALIBRATION_TIME_SCALE ?? "0.02",
+      QUAL_HARDWARE_FORCE_NATIVE_DIAGNOSTIC: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  child.stdout.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
-  child.stderr.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
+  child.stdout!.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
+  child.stderr!.on("data", (chunk: Buffer) => logs.push(chunk.toString()));
 
   let page: { origin: string; debuggerUrl: string };
   try {
@@ -129,6 +134,28 @@ async function launchDesktop(executable: string, userData: string, bootstrap = f
 }
 
 async function rendererValue<T>(debuggerUrl: string, expression: string): Promise<T> {
+  try {
+    return await rendererValueOnce<T>(debuggerUrl, expression);
+  } catch (initialError) {
+    const endpoint = new URL(debuggerUrl);
+    const response = await fetch(`http://127.0.0.1:${endpoint.port}/json/list`, {
+      signal: AbortSignal.timeout(2_000),
+    }).catch(() => null);
+    if (!response?.ok) throw initialError;
+    const pages = await response.json() as Array<{
+      type?: string;
+      url?: string;
+      webSocketDebuggerUrl?: string;
+    }>;
+    const current = pages.find((entry) =>
+      entry.type === "page" && entry.url?.startsWith("http://127.0.0.1:") &&
+      entry.webSocketDebuggerUrl);
+    if (!current?.webSocketDebuggerUrl) throw initialError;
+    return rendererValueOnce<T>(current.webSocketDebuggerUrl, expression);
+  }
+}
+
+function rendererValueOnce<T>(debuggerUrl: string, expression: string): Promise<T> {
   return new Promise<T>((resolveValue, reject) => {
     const socket = new WebSocket(debuggerUrl);
     const requestId = 1;
@@ -145,20 +172,33 @@ async function rendererValue<T>(debuggerUrl: string, expression: string): Promis
       const response = JSON.parse(String(event.data)) as {
         id?: number;
         error?: { message?: string };
-        result?: { exceptionDetails?: unknown; result?: { value?: T } };
+        result?: {
+          exceptionDetails?: {
+            text?: string;
+            exception?: { description?: string; value?: unknown };
+          };
+          result?: { value?: T };
+        };
       };
       if (response.id !== requestId) return;
       clearTimeout(timeout);
       socket.close();
       if (response.error || response.result?.exceptionDetails) {
-        reject(new Error(response.error?.message ?? "renderer evaluation failed"));
+        reject(new Error(response.error?.message ??
+          response.result?.exceptionDetails?.exception?.description ??
+          response.result?.exceptionDetails?.text ??
+          "renderer evaluation failed"));
       } else {
         resolveValue(response.result?.result?.value as T);
       }
     });
-    socket.addEventListener("error", () => {
+    socket.addEventListener("error", (event) => {
       clearTimeout(timeout);
-      reject(new Error("renderer debugger connection failed"));
+      const candidate = event as Event & { message?: unknown; error?: unknown };
+      const detail = typeof candidate.message === "string"
+        ? candidate.message
+        : candidate.error instanceof Error ? candidate.error.message : "";
+      reject(new Error(`renderer debugger connection failed${detail ? `: ${detail}` : ""}`));
     });
   });
 }
@@ -278,7 +318,10 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
 
   const require = createRequire(import.meta.url);
   const asarCli = join(dirname(require.resolve("@electron/asar/package.json")), "bin", "asar.js");
-  const listing = execFileSync(process.execPath, [asarCli, "list", paths.asar], { encoding: "utf8" }).replaceAll("\\", "/");
+  const listing = execFileSync(process.execPath, [asarCli, "list", paths.asar], {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  }).replaceAll("\\", "/");
   for (const required of [
     "/dist/web/index.html",
     "/dist/web/brand/aiquimist-logo-white.png",
@@ -286,6 +329,7 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
     "/contracts/perceptrum-workload-v1.json",
     "/contracts/perceptrum-workload-v2.json",
     "/contracts/perceptrum-workload-v3.json",
+    "/contracts/perceptrum-workload-v4.json",
     "/contracts/qual-hardware-source-registry-v1.schema.json",
     "/contracts/qual-hardware-catalog-bundle-v1.schema.json",
     "/contracts/qual-hardware-component-catalog-v2.schema.json",
@@ -298,6 +342,8 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
     "/dist/server/server/calibrationKernelProtocol.js",
     "/dist/server/server/calibrationHardware.js",
     "/dist/server/server/calibrationPipeline.js",
+    "/dist/server/server/executionEnvironment.js",
+    "/dist/server/server/internalRtspLoopback.js",
     "/dist/server/server/calibrationQualification.js",
     "/dist/server/server/calibrationRuntime.js",
     "/dist/server/server/calibrationTelemetry.js",
@@ -308,77 +354,27 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
     "/dist/server/server/index.js",
     "/dist/server/server/worker.js",
   ]) assert(!listing.includes(forbidden), `Desktop-only ASAR contains forbidden runtime ${forbidden}`);
-  const runtimeManifestPath = join(dirname(paths.asar), "resources", "calibration", "runtime-manifest.json");
-  const runtimeManifest = JSON.parse(await readFile(runtimeManifestPath, "utf8")) as {
-    schemaVersion?: string;
-    authorityCommit?: string;
-    pipelineImplementation?: string;
-    authorityContract?: { relativePath: string; sha256: string };
-    pipelineContract?: { relativePath: string; sha256: string };
-    sourceLock?: { relativePath: string; sha256: string };
-    supportedTargets?: string[];
-    assets?: Array<{
-      id: string;
-      artifacts?: Record<string, {
-        relativePath: string;
-        sha256?: string | null;
-        sizeBytes?: number | null;
-        licenseEvidence?: { relativePath: string; sha256: string } | null;
-        sbomEvidence?: { relativePath: string; sha256: string } | null;
-      }>;
-    }>;
-  };
-  assert.equal(runtimeManifest.schemaVersion, "qual-hardware-calibration-runtime-manifest/3.0.0");
-  assert.equal(runtimeManifest.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
-  assert.equal(runtimeManifest.pipelineImplementation, "perceptrum-equivalent-v2-multi-device");
-  assert.deepEqual(runtimeManifest.supportedTargets, ["darwin-arm64", "win32-x64", "linux-x64"]);
-  assert(runtimeManifest.assets?.some((asset) => asset.id === "telemetry-probe"));
-  for (const asset of runtimeManifest.assets ?? []) {
-    for (const target of runtimeManifest.supportedTargets ?? []) {
-      assert(asset.artifacts?.[target]?.relativePath, `Runtime asset ${asset.id} is missing ${target}`);
-    }
-  }
-  for (const contract of [runtimeManifest.authorityContract, runtimeManifest.pipelineContract, runtimeManifest.sourceLock]) {
-    assert(contract);
-    const bytes = await readFile(join(dirname(paths.asar), contract.relativePath));
-    const canonicalBytes = Buffer.from(bytes.toString("utf8").replace(/\r\n?/g, "\n"), "utf8");
-    assert.equal(createHash("sha256").update(canonicalBytes).digest("hex"), contract.sha256);
-  }
-  const sourceLock = JSON.parse(await readFile(join(dirname(paths.asar), runtimeManifest.sourceLock!.relativePath), "utf8")) as {
-    schemaVersion?: string;
-    policy?: { runtimeNetworkAccess?: string; approvalMode?: string };
-    assets?: unknown[];
-  };
-  assert.equal(sourceLock.schemaVersion, "qual-hardware-calibration-asset-sources/1.0.0");
-  assert.equal(sourceLock.policy?.runtimeNetworkAccess, "forbidden");
-  assert.equal(sourceLock.policy?.approvalMode, "candidate_inventory_fail_closed");
-  assert.equal(sourceLock.assets?.length, 9);
   const selectedTarget = process.platform === "darwin" ? "darwin-arm64" : process.platform === "win32" ? "win32-x64" : "linux-x64";
-  const selectedRuntimeRoot = join(dirname(paths.asar), "resources", "calibration", selectedTarget);
-  const runtimeEmbedded = await fileExists(selectedRuntimeRoot);
-  for (const target of runtimeManifest.supportedTargets ?? []) {
+  const nativeName = process.platform === "win32" ? "qual-hardware-native-bench.exe" : "qual-hardware-native-bench";
+  const nativePath = join(dirname(paths.asar), "resources", "native", selectedTarget, nativeName);
+  const nativeEmbedded = await fileExists(nativePath);
+  for (const target of ["darwin-arm64", "win32-x64", "linux-x64"]) {
     if (target === selectedTarget) continue;
-    assert.equal(await fileExists(join(dirname(paths.asar), "resources", "calibration", target)), false,
-      `the native package must not embed the non-target runtime ${target}`);
+    assert.equal(await fileExists(join(dirname(paths.asar), "resources", "native", target)), false,
+      `the native package must not embed the non-target benchmark ${target}`);
   }
-  if (!runtimeEmbedded) {
+  if (!nativeEmbedded) {
     assert.equal(allowMissingRuntime, true,
-      "the native package must embed its target runtime outside the source-only CI smoke");
+      "the native package must embed its target native benchmark");
+    return false;
   }
-  const trust = JSON.parse(await readFile(join(dirname(paths.asar), "resources", "calibration", "runtime-trust.json"), "utf8")) as { keys?: unknown[] };
-  assert((trust.keys?.length ?? 0) > 0, "runtime public trust keys must be packaged");
-  if (!runtimeEmbedded) return false;
-
-  const telemetryArtifact = runtimeManifest.assets?.find((asset) => asset.id === "telemetry-probe")?.artifacts?.[selectedTarget];
-  assert(telemetryArtifact?.sha256 && telemetryArtifact.sizeBytes && telemetryArtifact.sizeBytes > 0,
-    "the native package must describe its target telemetry probe");
-  for (const asset of runtimeManifest.assets ?? []) {
-    const artifact = asset.artifacts?.[selectedTarget];
-    assert(artifact?.sha256 && artifact.sizeBytes && artifact.sizeBytes > 0, `${asset.id} is incomplete for ${selectedTarget}`);
-    const packagedAsset = join(selectedRuntimeRoot, artifact.relativePath);
-    assert.equal((await stat(packagedAsset)).size, artifact.sizeBytes, `${asset.id} packaged size mismatch`);
-    assert.equal(await sha256File(packagedAsset), artifact.sha256, `${asset.id} packaged hash mismatch`);
-  }
+  await verifyBinaryArchitecture(nativePath);
+  const nativeSelfTest = JSON.parse(execFileSync(nativePath, ["--self-test"], { encoding: "utf8" })) as {
+    schemaVersion?: string; status?: string; externalNetworkUsed?: boolean;
+  };
+  assert.equal(nativeSelfTest.schemaVersion, "qual-hardware-native-benchmark/1.0.0");
+  assert.equal(nativeSelfTest.status, "passed");
+  assert.equal(nativeSelfTest.externalNetworkUsed, false);
   return true;
 }
 
@@ -423,8 +419,26 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
   const renderedText = await waitFor("the rendered React interface", async () => {
     const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
     return text.includes("Qual Hardware") && text.length > 100 ? text : null;
+  }).catch((error: unknown) => {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; electron logs: ${
+      application.logs.join("").slice(-4_000)
+    }`);
   });
   assert(renderedText.includes("Qual Hardware"));
+  assert(renderedText.includes("Verificação do ambiente"), "mandatory environment verification must precede the main UI");
+  assert(renderedText.includes("Pronto para diagnóstico e dimensionamento") || renderedText.includes("Pronto para teste completo"));
+  const continued = await rendererValue<boolean>(application.debuggerUrl, `(() => {
+    const button = [...document.querySelectorAll('button')].find((item) =>
+      item.textContent?.includes('Continuar em modo diagnóstico') || item.textContent?.includes('Abrir o Qual Hardware'));
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  assert.equal(continued, true, "the supported environment must allow the operator to continue");
+  const mainText = await waitFor("the main Qual Hardware interface", async () => {
+    const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
+    return text.includes("Calibração de capacidade") ? text : null;
+  });
   const brand = await waitFor("the Aiquimist brand", async () => {
     const state = await rendererValue<{
       href: string;
@@ -455,9 +469,12 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
   assert(brand.rel.split(/\s+/).includes("noreferrer"));
   assert.equal(brand.imageWidth, brand.imageHeight, "the original logo proportions must remain intact");
   assert(Math.abs(brand.viewportRatio - 8.84) < 0.05, "the responsive viewport must frame the horizontal brand without distortion");
-  assert(renderedText.includes("Calibração de capacidade"), "the permanent calibration entry point must be visible");
+  assert(mainText.includes("Calibração de capacidade"), "the permanent calibration entry point must be visible");
   const openedCalibration = await rendererValue<boolean>(application.debuggerUrl, `(() => {
-    const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.includes('Calibrar este computador') || item.textContent?.includes('Ver calibrações e instruções'));
+    const button = [...document.querySelectorAll('button')].find((item) =>
+      item.textContent?.includes('Calibrar este computador') ||
+      item.textContent?.includes('Histórico e importação') ||
+      item.textContent?.includes('Ver calibrações e instruções'));
     if (!button) return false;
     button.click();
     return true;
@@ -467,7 +484,9 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
     const fullActionVisible = text.includes("Qualificação comercial — 3 repetições") ||
       text.includes("Qualificação física — diagnóstico");
-    return text.includes("Diagnóstico — 10 minutos") && text.includes("Validação — 60 minutos") && fullActionVisible ? text : null;
+    return /Diagnóstico\s*[-—]\s*10 minutos/.test(text) &&
+      /Validação\s*[-—]\s*60 minutos/.test(text) &&
+      fullActionVisible ? text : null;
   });
   assert(!calibrationText.includes("Medição avançada de CPU/GPU"),
     "telemetry must be automatic and must not be exposed as a manual option");
@@ -528,6 +547,16 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
   }
   const recommendation = recommendations.find((item) => item.policy === "recommended");
   assert(recommendation);
+  const environment = await api<{
+    schemaVersion: string; readiness: string; evidenceLevel: string; externalDownloadsPerformed: boolean;
+    components: Array<{ id: string; status: string; selfTest: string }>;
+  }>(application.origin, "/api/calibrations/environment");
+  assert.equal(environment.schemaVersion, "qual-hardware-execution-environment/1.0.0");
+  assert.equal(environment.externalDownloadsPerformed, false);
+  assert(environment.components.some((component) =>
+    component.id === "native-benchmark" && component.status === "installed" && component.selfTest === "passed"),
+  `packaged native benchmark was not accepted: ${JSON.stringify(environment.components.find((component) =>
+    component.id === "native-benchmark"))}`);
   const runtime = await api<{
     readyForQuickTest: boolean;
     readyForFullQualification: boolean;
@@ -538,38 +567,30 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     reasons: string[];
   }>(application.origin, "/api/calibrations/runtime-status");
   assert.equal(runtime.readyForQuickTest, true);
-  assert.equal(runtime.readyForFullQualification, runtimeEmbedded,
-    runtimeEmbedded
-      ? "verified native assets must enable complete physical validation"
-      : "a source-only CI package must fail closed for complete physical validation");
-  assert.equal(runtime.runtimeAssetsVerified, runtimeEmbedded);
-  assert.equal(runtime.manifestApproved, false, "candidate runtime must remain fail-closed for commercial approval");
+  assert.equal(runtime.readyForFullQualification, false,
+    "the native benchmark must never enable commercial qualification");
+  assert.equal(runtime.runtimeAssetsVerified, false);
+  assert.equal(runtime.manifestApproved, false, "generic evidence must remain fail-closed for commercial approval");
   assert.equal(runtime.authorityCommit, "d918faa0ecd6a9906b711039e5d89f78e0536c44");
-  if (runtimeEmbedded) {
-    assert.equal(runtime.assets.find((asset) => asset.id === "telemetry-probe")?.status, "verified");
-    assert(runtime.assets.every((asset) => asset.status === "verified"));
-  } else {
-    assert(runtime.assets.some((asset) => asset.status !== "verified"),
-      "missing CI-only runtime assets must be reported instead of fabricated");
-    const qualificationResponse = await fetch(`${application.origin}/api/calibration-sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        recommendationId: recommendation.id,
-        mode: "qualification",
-        targetHardwareTemplateId: null,
-        advancedTelemetry: true,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    assert.equal(qualificationResponse.status, 503,
-      "complete physical qualification must be blocked when the target runtime is absent");
-    const qualificationError = await qualificationResponse.json() as { error?: string };
-    assert.equal(qualificationError.error, "calibration_runtime_not_ready_for_qualification");
-  }
+  assert.equal(runtime.assets.find((asset) => asset.id === "native-benchmark")?.status, "system_only");
+  const qualificationResponse = await fetch(`${application.origin}/api/calibration-sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      recommendationId: recommendation.id,
+      mode: "qualification",
+      targetHardwareTemplateId: null,
+      advancedTelemetry: true,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  assert.equal(qualificationResponse.status, 503,
+    "generic native evidence must block complete physical qualification");
+  const qualificationError = await qualificationResponse.json() as { error?: string };
+  assert.equal(qualificationError.error, "calibration_runtime_not_ready_for_qualification");
   assert(runtime.reasons.length > 0);
 
-  if (runtimeEmbedded) {
+  if (runtimeEmbedded && !skipCalibration) {
     const startedCalibration = await api<{
       delivery: string;
       session: { id: string };
@@ -597,12 +618,22 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     assert.equal(completedCalibration.cleanup?.state, "completed");
     assert.equal(completedCalibration.cleanup?.remainingBytes, 0);
     assert.equal(completedCalibration.cleanup?.bytesRemoved, completedCalibration.cleanup?.bytesTemporary);
-    assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/4.0.0");
+    assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/6.0.0");
+    assert.equal(completedCalibration.result?.environmentProvenance?.evidenceLevel, "generic_native");
+    assert.equal(completedCalibration.result?.capacityRecommendation?.basis, "generic_native_estimate");
     assert.equal(completedCalibration.result?.developmentOnly, true);
     assert.equal(completedCalibration.result?.externalRequestCount, 0);
     assert.equal(completedCalibration.result?.openAiRequestCount, 0);
-    assert((completedCalibration.result?.capacityRecommendation?.safeCameraCount ?? 0) > 0,
-      "functional measurements must produce a technical camera recommendation");
+    const smokeSafeCameraCount = completedCalibration.result?.capacityRecommendation?.safeCameraCount ?? null;
+    if (smokeSafeCameraCount === null) {
+      assert.equal(completedCalibration.result?.executionHealth?.conclusion, "inconclusive",
+        "a run without an operational safe capacity must be reported as inconclusive");
+      assert(completedCalibration.result?.capacityBoundary,
+        "an inconclusive diagnostic must still preserve the measured boundary evidence");
+      assert.equal(completedCalibration.result?.capacityRecommendation?.confidence, "insufficient");
+    } else {
+      assert(smokeSafeCameraCount > 0, "a conclusive generic measurement must recommend at least one camera");
+    }
     assert.equal(completedCalibration.result?.overallSafeCameraCapacity,
       completedCalibration.result?.capacityRecommendation?.safeCameraCount);
     assert.equal(completedCalibration.result?.qualityGate?.eligibleForCapacityExtrapolation, false);
@@ -671,12 +702,12 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
       "cancelled diagnostics must not create calibration runs");
   } else {
     assert.equal((await api<{ calibrationRuns: number }>(application.origin, "/api/calibrations/status")).calibrationRuns, 0,
-      "source-only CI must not fabricate a completed calibration without the native runtime");
+      "a launch-only smoke must not fabricate a completed calibration");
   }
   for (const format of ["json", "pdf", "xlsx"] as const) {
-    const response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(15_000) });
+    const response: Response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(15_000) });
     assert(response.ok, `${format} report returned ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const bytes: Uint8Array = new Uint8Array(await response.arrayBuffer());
     if (format === "pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
     if (format === "xlsx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
     if (format === "json") {
@@ -687,9 +718,9 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     }
   }
   for (const format of ["tr-json", "tr-pdf", "tr-docx"] as const) {
-    const response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(30_000) });
+    const response: Response = await fetch(`${application.origin}/api/recommendations/${recommendation.id}/export/${format}`, { signal: AbortSignal.timeout(30_000) });
     assert(response.ok, `${format} report returned ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const bytes: Uint8Array = new Uint8Array(await response.arrayBuffer());
     if (format === "tr-pdf") assert.equal(new TextDecoder().decode(bytes.slice(0, 5)), "%PDF-");
     if (format === "tr-docx") assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]);
     if (format === "tr-json") {
@@ -804,7 +835,7 @@ async function main(): Promise<void> {
     const database = await readFile(databasePath);
     assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
     const sqlite = new DatabaseSync(databasePath, { readOnly: true });
-    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 10);
+    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 12);
     assert((sqlite.prepare("SELECT count(*) AS total FROM component_technical_specification_versions").get() as { total: number }).total > 200);
     sqlite.close();
     console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}`);

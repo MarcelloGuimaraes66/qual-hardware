@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS calibration_extension_metadata (
 ) STRICT;
 INSERT OR IGNORE INTO calibration_extension_metadata(singleton,extension_version,installed_at)
   VALUES(1,2,datetime('now'));
-UPDATE calibration_extension_metadata SET extension_version=3 WHERE singleton=1 AND extension_version<3;
+UPDATE calibration_extension_metadata SET extension_version=5 WHERE singleton=1 AND extension_version<5;
 
 CREATE TABLE IF NOT EXISTS calibration_runtime_manifests (
   manifest_hash TEXT PRIMARY KEY,
@@ -193,13 +193,38 @@ CREATE TABLE IF NOT EXISTS calibration_device_results (
 
 CREATE TABLE IF NOT EXISTS calibration_capacity_boundaries (
   run_id TEXT PRIMARY KEY REFERENCES calibration_runs_v2(id),
-  bound_kind TEXT NOT NULL CHECK (bound_kind IN ('exact','at_least','uncertain')),
+  bound_kind TEXT NOT NULL CHECK (bound_kind IN ('exact','at_least','interval','inconclusive','uncertain')),
   highest_passing_cameras INTEGER,
   first_failing_cameras INTEGER,
   safe_cameras INTEGER,
   boundary_json TEXT NOT NULL CHECK (json_valid(boundary_json)),
   recorded_at TEXT NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_probe_results (
+  run_id TEXT NOT NULL REFERENCES calibration_runs_v2(id),
+  attempt INTEGER NOT NULL CHECK (attempt > 0),
+  camera_count INTEGER NOT NULL CHECK (camera_count BETWEEN 1 AND 1000000),
+  outcome TEXT NOT NULL CHECK (outcome IN ('pass','capacity_fail','infrastructure_error','cancelled')),
+  probe_json TEXT NOT NULL CHECK (json_valid(probe_json)),
+  recorded_at TEXT NOT NULL,
+  PRIMARY KEY(run_id,attempt)
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_probe_results_boundary_idx
+  ON calibration_probe_results(run_id,camera_count,outcome);
+
+CREATE TABLE IF NOT EXISTS calibration_diagnostic_reports (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES calibration_runs_v2(id),
+  schema_version TEXT NOT NULL,
+  model_sha256 TEXT NOT NULL CHECK (length(model_sha256) = 64),
+  model_json TEXT NOT NULL CHECK (json_valid(model_json)),
+  files_json TEXT NOT NULL CHECK (json_valid(files_json)),
+  generated_at TEXT NOT NULL,
+  UNIQUE(run_id,model_sha256)
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_diagnostic_reports_run_idx
+  ON calibration_diagnostic_reports(run_id,generated_at DESC);
 
 CREATE TABLE IF NOT EXISTS fleet_plans (
   id TEXT PRIMARY KEY,
@@ -850,5 +875,52 @@ CREATE TABLE IF NOT EXISTS component_report_sections (
   PRIMARY KEY(component_kind, section_code)
 ) STRICT;
 
-PRAGMA user_version = 10;
+-- v12 records every local execution environment used for diagnostics. It is
+-- additive: historical component manifests and v1-v11 calibration rows remain
+-- readable and unchanged.
+CREATE TABLE IF NOT EXISTS calibration_execution_environments (
+  environment_signature TEXT PRIMARY KEY CHECK (length(environment_signature) = 64),
+  schema_version TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  architecture TEXT NOT NULL,
+  readiness TEXT NOT NULL CHECK (readiness IN ('ready_full','ready_diagnostic','unsupported')),
+  evidence_level TEXT NOT NULL CHECK (evidence_level IN ('exact_perceptrum','compatible_local_stack','generic_native','inventory_only')),
+  environment_json TEXT NOT NULL CHECK (json_valid(environment_json)),
+  detected_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_environment_components (
+  environment_signature TEXT NOT NULL REFERENCES calibration_execution_environments(environment_signature),
+  component_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('installed','missing','incompatible','not_applicable','restart_required')),
+  origin TEXT NOT NULL CHECK (origin IN ('perceptrum','system_path','known_installation','os_native','built_in_proxy','missing')),
+  path TEXT,
+  version TEXT,
+  sha256 TEXT,
+  self_test TEXT NOT NULL CHECK (self_test IN ('passed','failed','not_run','not_applicable')),
+  diagnostic_only INTEGER NOT NULL CHECK (diagnostic_only IN (0,1)),
+  component_json TEXT NOT NULL CHECK (json_valid(component_json)),
+  recorded_at TEXT NOT NULL,
+  PRIMARY KEY(environment_signature,component_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS calibration_environment_self_tests (
+  id TEXT PRIMARY KEY,
+  environment_signature TEXT NOT NULL REFERENCES calibration_execution_environments(environment_signature),
+  component_id TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('passed','failed','not_run','not_applicable')),
+  recorded_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS calibration_environment_self_tests_lookup_idx
+  ON calibration_environment_self_tests(environment_signature,component_id,recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS calibration_environment_warnings (
+  environment_signature TEXT NOT NULL REFERENCES calibration_execution_environments(environment_signature),
+  warning TEXT NOT NULL,
+  recorded_at TEXT NOT NULL,
+  PRIMARY KEY(environment_signature,warning)
+) STRICT;
+
+PRAGMA user_version = 12;
 COMMIT;

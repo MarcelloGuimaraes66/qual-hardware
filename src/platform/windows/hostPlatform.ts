@@ -4,9 +4,16 @@ import type { HostPlatformAdapter } from "../shared/hostPlatform.js";
 
 async function terminateWindowsProcessTree(pid: number, force: boolean): Promise<void> {
   if (!Number.isSafeInteger(pid) || pid <= 0) return;
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return;
+  }
   await new Promise<void>((resolveStop) => {
     execFile("taskkill.exe", ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])], {
       windowsHide: true,
+      timeout: 5_000,
+      killSignal: "SIGKILL",
     }, () => resolveStop());
   });
 }

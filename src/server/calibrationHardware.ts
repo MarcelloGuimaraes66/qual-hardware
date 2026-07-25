@@ -164,6 +164,7 @@ export function calibrationProcessorGroups(logicalCores: number): CalibrationPro
 async function windowsGroupAndNumaTopology(logicalCores: number, ramBytes: number): Promise<{
   processorGroups: CalibrationProcessorGroup[];
   numaNodes: Array<Pick<CalibrationNumaNode, "id" | "processorGroupIds" | "logicalProcessorCount" | "memoryBytes">>;
+  processors: Array<{ deviceId: string; name: string; physicalCores: number; logicalCores: number }>;
 }> {
   const fallbackGroups = calibrationProcessorGroups(logicalCores);
   const script = String.raw`
@@ -208,13 +209,17 @@ if([QualHardwareTopology]::GetNumaHighestNodeNumber([ref]$highest)){
     }
   }
 }
-[pscustomobject]@{processorGroups=$groups;numaNodes=$nodes} | ConvertTo-Json -Compress -Depth 5`;
+$processors=@(Get-CimInstance Win32_Processor | ForEach-Object {
+  [pscustomobject]@{deviceId=$_.DeviceID;name=$_.Name;physicalCores=$_.NumberOfCores;logicalCores=$_.NumberOfLogicalProcessors}
+})
+[pscustomobject]@{processorGroups=$groups;numaNodes=$nodes;processors=$processors} | ConvertTo-Json -Compress -Depth 5`;
   try {
     const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script],
       { timeout: 15_000, maxBuffer: 2_000_000 });
     const parsed = JSON.parse(stdout) as {
       processorGroups?: Array<{ id?: number; logicalProcessorCount?: number; activeProcessorMask?: string }>;
       numaNodes?: Array<{ id?: number; processorGroupId?: number; logicalProcessorCount?: number }>;
+      processors?: Array<{ deviceId?: string; name?: string; physicalCores?: number; logicalCores?: number }>;
     };
     const groups = (parsed.processorGroups ?? []).map((item): CalibrationProcessorGroup => ({
       id: Number(item.id ?? 0),
@@ -234,9 +239,15 @@ if([QualHardwareTopology]::GetNumaHighestNodeNumber([ref]$highest)){
     return {
       processorGroups: groups.length > 0 ? groups : fallbackGroups,
       numaNodes: nodes,
+      processors: (parsed.processors ?? []).map((item) => ({
+        deviceId: String(item.deviceId ?? "package-0"),
+        name: String(item.name ?? "CPU"),
+        physicalCores: Math.max(1, Number(item.physicalCores ?? logicalCores)),
+        logicalCores: Math.max(1, Number(item.logicalCores ?? logicalCores)),
+      })),
     };
   } catch {
-    return { processorGroups: fallbackGroups, numaNodes: [] };
+    return { processorGroups: fallbackGroups, numaNodes: [], processors: [] };
   }
 }
 
@@ -255,15 +266,14 @@ async function cpuTopology(
     if (platform() === "win32") {
       const nativeTopology = await windowsGroupAndNumaTopology(logicalCoreCount, ramBytes);
       groups = nativeTopology.processorGroups;
-      const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command",
-        "Get-CimInstance Win32_Processor | Select-Object DeviceID,Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json -Compress"], { timeout: 10_000 });
-      const parsed = JSON.parse(stdout) as Record<string, unknown> | Array<Record<string, unknown>>;
-      const items = Array.isArray(parsed) ? parsed : [parsed];
-      const packages = items.map((item, index): CalibrationCpuPackage => ({
-        id: String(item.DeviceID ?? `package-${index}`),
-        model: String(item.Name ?? cpuModel),
-        physicalCores: Math.max(1, Number(item.NumberOfCores ?? physicalCoreCount)),
-        logicalCores: Math.max(1, Number(item.NumberOfLogicalProcessors ?? logicalCoreCount)),
+      const processors = nativeTopology.processors.length > 0 ? nativeTopology.processors : [{
+        deviceId: "package-0", name: cpuModel, physicalCores: physicalCoreCount, logicalCores: logicalCoreCount,
+      }];
+      const packages = processors.map((item, index): CalibrationCpuPackage => ({
+        id: item.deviceId || `package-${index}`,
+        model: item.name || cpuModel,
+        physicalCores: item.physicalCores,
+        logicalCores: item.logicalCores,
         processorGroupIds: groups.map((group) => group.id),
         numaNodeIds: [index],
       }));
@@ -500,8 +510,21 @@ export async function detectCalibrationHardware(): Promise<CalibrationHardwarePr
   const logicalCores = Math.max(1, cpus().length);
   const cpuModel = cpus()[0]?.model ?? "CPU unavailable";
   const ramBytes = totalmem();
-  const [physicalCoreCount, detectedGpu] = await Promise.all([physicalCores(logicalCores), gpu()]);
-  const topology = await cpuTopology(cpuModel, physicalCoreCount, logicalCores, ramBytes);
+  const windowsTopologyPromise = platform() === "win32"
+    ? cpuTopology(cpuModel, logicalCores, logicalCores, ramBytes) : null;
+  const physicalCorePromise = windowsTopologyPromise
+    ? windowsTopologyPromise.then((topology) =>
+        Math.max(1, topology.cpuPackages.reduce((sum, item) => sum + item.physicalCores, 0)))
+    : physicalCores(logicalCores);
+  const topologyPromise = windowsTopologyPromise ??
+    physicalCorePromise.then((count) => cpuTopology(cpuModel, count, logicalCores, ramBytes));
+  const [physicalCoreCount, detectedGpu, topology, detectedFormFactor, detectedNetworkLinks] = await Promise.all([
+    physicalCorePromise,
+    gpu(),
+    topologyPromise,
+    formFactor(),
+    networkLinks(),
+  ]);
   return {
     schemaVersion: CALIBRATION_HARDWARE_VERSION,
     detectedAt: new Date().toISOString(),
@@ -514,7 +537,7 @@ export async function detectCalibrationHardware(): Promise<CalibrationHardwarePr
     ramBytes,
     operatingSystem: calibrationOperatingSystem(),
     operatingSystemVersion: release(),
-    formFactor: await formFactor(),
-    networkLinks: await networkLinks(),
+    formFactor: detectedFormFactor,
+    networkLinks: detectedNetworkLinks,
   };
 }

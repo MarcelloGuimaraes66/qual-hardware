@@ -53,7 +53,7 @@ export interface CalibrationKernelWorkerInput {
 export type CalibrationKernelWorkerMessage =
   | { type: "progress"; progress: CalibrationSessionProgress }
   | { type: "checkpoint"; checkpoint: CalibrationCheckpoint }
-  | { type: "child_process"; action: "started" | "stopped"; pid: number; kind: "ffmpeg" | "ffprobe" | "mediamtx" | "llama-server" }
+  | { type: "child_process"; action: "started" | "stopped"; pid: number; kind: "ffmpeg" | "ffprobe" | "mediamtx" | "llama-server" | "native-benchmark" | "perceptrum-worker" }
   | { type: "result"; result: LocalCalibrationRun }
   | { type: "cancelled"; detail: string; diagnostic: CalibrationKernelDiagnosticPayload }
   | { type: "failed"; error: string; diagnostic: CalibrationKernelDiagnosticPayload };

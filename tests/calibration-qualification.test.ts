@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { REQUIRED_CALIBRATION_STAGES } from "../src/engine/calibration.js";
 import {
   evaluateCalibrationQualification,
+  quickDiagnosticSafeCameraCapacity,
   selectTechnicalCalibrationMeasurements,
+  technicalPhaseCoverageComplete,
   type CalibrationQualificationInput,
 } from "../src/server/calibrationQualification.js";
 import type { PipelinePhaseMeasurement } from "../src/server/calibrationPipeline.js";
@@ -25,6 +27,8 @@ function measurement(
     inferenceBackend: gpu ? "cuda" : "cpu",
     inferenceDeviceId: gpu ? "Cuda0" : "none",
     gpuMediaBackend: gpu ? "cuda_nvenc" : "unavailable",
+    mediaExecution: gpu ? "cuda_nvenc" : "cpu",
+    mediaFallbackUsed: false,
     cpuWorkloadMeasured: true,
     gpuInferenceMeasured: gpu,
     gpuMediaMeasured: gpu,
@@ -109,11 +113,12 @@ function validInput(): CalibrationQualificationInput {
     cpuInferenceAvailable: true,
     gpuInferenceAvailable: true,
     gpuMediaAvailable: true,
+    localInferenceRequired: true,
+    primaryComputeMode: "gpu_accelerated",
     externalRequestCount: 0,
     openAiRequestCount: 0,
-    measurements: [1, 2, 3].flatMap(() => phases.flatMap((phase) => [
-      measurement(phase, "cpu_only"), measurement(phase, "gpu_accelerated"),
-    ])),
+    measurements: [1, 2, 3].flatMap(() =>
+      phases.map((phase) => measurement(phase, "gpu_accelerated"))),
     repetitions: repetitions(),
   };
 }
@@ -125,7 +130,7 @@ describe("commercial calibration qualification", () => {
     expect(result.failures).toEqual([]);
     expect(result.pipelineComplete).toBe(true);
     expect(result.repeatVariabilityPercent).toBe(0);
-    expect(result.qualifiedMeasurements).toHaveLength(24);
+    expect(result.qualifiedMeasurements).toHaveLength(12);
   });
 
   it("does not let an expected failed upper discovery tier contaminate a successful lower qualification", () => {
@@ -173,9 +178,79 @@ describe("commercial calibration qualification", () => {
     const selected = selectTechnicalCalibrationMeasurements(input, qualification);
 
     expect(qualification.qualifiedMeasurements).toEqual([]);
-    expect(selected).toHaveLength(8);
+    expect(selected).toHaveLength(4);
     expect(selected.every((item) => item.tier === 4 && item.phase !== "discovery")).toBe(true);
     expect(selected.flatMap((item) => item.inferenceErrors)).toEqual([]);
+  });
+
+  it("accepts all final quick phases after technical selection removed discovery probes", () => {
+    const finalMeasurements = phases.map((phase) => ({
+      ...measurement(phase, "gpu_accelerated"),
+      tier: 148,
+      actualConcurrentMediaPipelines: 148,
+    }));
+    expect(technicalPhaseCoverageComplete({
+      mode: "quick",
+      phaseNames: phases,
+      primaryComputeMode: "gpu_accelerated",
+      measurements: finalMeasurements,
+      highestMeasuredPassingCapacity: 186,
+    })).toBe(true);
+  });
+
+  it("reduces a quick estimate so the proven steady load contains a failed 120% surge", () => {
+    const finalMeasurements = phases.map((phase) => ({
+      ...measurement(phase, "gpu_accelerated"),
+      tier: phase === "surge" ? 178 : phase === "warmup" ? 119 : 148,
+      actualConcurrentMediaPipelines: phase === "surge" ? 0 : phase === "warmup" ? 119 : 148,
+      failures: phase === "surge" ? ["media_concurrency_capacity_exhausted"] : [],
+    }));
+    expect(quickDiagnosticSafeCameraCapacity({
+      selectedTier: 148,
+      primaryComputeMode: "gpu_accelerated",
+      phases: [
+        { name: "warmup", loadPercent: 80 },
+        { name: "ramp", loadPercent: 100 },
+        { name: "sustained", loadPercent: 100 },
+        { name: "surge", loadPercent: 120 },
+      ],
+      measurements: finalMeasurements,
+    })).toBe(123);
+  });
+
+  it("keeps the selected quick tier when the 120% surge passes", () => {
+    const finalMeasurements = phases.map((phase) => ({
+      ...measurement(phase, "gpu_accelerated"),
+      tier: phase === "surge" ? 178 : phase === "warmup" ? 119 : 148,
+      actualConcurrentMediaPipelines: phase === "surge" ? 178 : phase === "warmup" ? 119 : 148,
+      failures: [],
+    }));
+    expect(quickDiagnosticSafeCameraCapacity({
+      selectedTier: 148,
+      primaryComputeMode: "gpu_accelerated",
+      phases: [
+        { name: "warmup", loadPercent: 80 },
+        { name: "ramp", loadPercent: 100 },
+        { name: "sustained", loadPercent: 100 },
+        { name: "surge", loadPercent: 120 },
+      ],
+      measurements: finalMeasurements,
+    })).toBe(148);
+  });
+
+  it("keeps the discovery-only fallback for an abbreviated quick diagnostic", () => {
+    expect(technicalPhaseCoverageComplete({
+      mode: "quick",
+      phaseNames: phases,
+      primaryComputeMode: "gpu_accelerated",
+      measurements: [{
+        ...measurement("warmup", "gpu_accelerated"),
+        phase: "discovery",
+        tier: 12,
+        actualConcurrentMediaPipelines: 12,
+      }],
+      highestMeasuredPassingCapacity: 12,
+    })).toBe(true);
   });
 
   it("fails closed when any mandatory proof is absent or external traffic is observed", () => {
@@ -207,7 +282,7 @@ describe("commercial calibration qualification", () => {
 
   it("rejects more than 10% variation in repeated physical measurements", () => {
     const input = validInput();
-    input.measurements[16]!.p99InferenceLatencyMs = 1_200;
+    input.measurements[8]!.p99InferenceLatencyMs = 1_200;
     const result = evaluateCalibrationQualification(input);
     expect(result.repeatVariabilityPercent).toBeCloseTo(20);
     expect(result.eligible).toBe(false);

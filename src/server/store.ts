@@ -18,6 +18,7 @@ import type {
   CalibrationCheckpoint,
   CalibrationCollectionSnapshot,
   CalibrationDeviceIdentity,
+  CalibrationDiagnosticReportModel,
   CalibrationExportEvent,
   CalibrationImportBatch,
   CalibrationImportItem,
@@ -30,6 +31,7 @@ import type {
   CatalogSource,
   CatalogUpdateRun,
   EvidenceCatalogSnapshot,
+  ExecutionEnvironment,
   HardwareComponent,
   ComponentTechnicalSpecification,
   HardwareNodeTemplate,
@@ -68,8 +70,14 @@ export interface PlannerStore {
   listRecommendations(scenarioId: string): Promise<CapacityRecommendation[]>;
   getRecommendation(id: string): Promise<CapacityRecommendation | null>;
   saveCalibrationRun(run: LocalCalibrationRun): Promise<void>;
+  saveExecutionEnvironment(environment: ExecutionEnvironment): Promise<void>;
   commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void>;
   listCalibrationRuns(): Promise<LocalCalibrationRun[]>;
+  saveCalibrationDiagnosticReport(input: {
+    runId: string;
+    model: CalibrationDiagnosticReportModel;
+    files: Array<{ format: "pdf" | "txt" | "xlsx" | "json"; fileName: string; sha256: string; sizeBytes: number }>;
+  }): Promise<void>;
   saveCalibrationSession(session: CalibrationSessionRecord): Promise<void>;
   getCalibrationSession(id: string): Promise<CalibrationSessionRecord | null>;
   listCalibrationSessions(): Promise<CalibrationSessionRecord[]>;
@@ -161,6 +169,8 @@ export class MemoryPlannerStore implements PlannerStore {
   private scenarios = new Map<string, ScenarioRecord>();
   private recommendations = new Map<string, CapacityRecommendation>();
   private calibrationRuns = new Map<string, LocalCalibrationRun>();
+  private executionEnvironments = new Map<string, ExecutionEnvironment>();
+  private calibrationDiagnosticReports = new Map<string, unknown>();
   private calibrationSessions = new Map<string, CalibrationSessionRecord>();
   private calibrationCheckpoints = new Map<string, CalibrationCheckpoint[]>();
   private calibrationLineage = new Map<string, CalibrationSessionLineage>();
@@ -225,12 +235,23 @@ export class MemoryPlannerStore implements PlannerStore {
     if (this.calibrationRuns.has(run.id)) throw new Error("duplicate_calibration_run");
     this.calibrationRuns.set(run.id, structuredClone(run));
   }
+  async saveExecutionEnvironment(environment: ExecutionEnvironment): Promise<void> {
+    this.executionEnvironments.set(environment.environmentSignature, structuredClone(environment));
+  }
   async commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void> {
     await this.saveCalibrationRun(run);
     await this.savePredictions(predictions);
   }
   async listCalibrationRuns(): Promise<LocalCalibrationRun[]> {
     return [...this.calibrationRuns.values()].sort((left, right) => right.completedAt.localeCompare(left.completedAt));
+  }
+  async saveCalibrationDiagnosticReport(input: {
+    runId: string;
+    model: CalibrationDiagnosticReportModel;
+    files: Array<{ format: "pdf" | "txt" | "xlsx" | "json"; fileName: string; sha256: string; sizeBytes: number }>;
+  }): Promise<void> {
+    this.calibrationDiagnosticReports.set(`${input.runId}:${createHash("sha256")
+      .update(JSON.stringify(input.model)).digest("hex")}`, structuredClone(input));
   }
   async saveCalibrationSession(session: CalibrationSessionRecord): Promise<void> {
     this.calibrationSessions.set(session.id, structuredClone(session));
@@ -520,6 +541,30 @@ function migrateCalibrationTierCapacity(database: DatabaseSync): void {
   `);
 }
 
+function migrateCalibrationCapacityBoundaryKinds(database: DatabaseSync): void {
+  const table = database.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='calibration_capacity_boundaries'",
+  ).get() as { sql?: string } | undefined;
+  if (!table?.sql || table.sql.includes("'inconclusive'")) return;
+  database.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE calibration_capacity_boundaries RENAME TO calibration_capacity_boundaries_v10;
+    CREATE TABLE calibration_capacity_boundaries (
+      run_id TEXT PRIMARY KEY REFERENCES calibration_runs_v2(id),
+      bound_kind TEXT NOT NULL CHECK (bound_kind IN ('exact','at_least','interval','inconclusive','uncertain')),
+      highest_passing_cameras INTEGER,
+      first_failing_cameras INTEGER,
+      safe_cameras INTEGER,
+      boundary_json TEXT NOT NULL CHECK (json_valid(boundary_json)),
+      recorded_at TEXT NOT NULL
+    ) STRICT;
+    INSERT INTO calibration_capacity_boundaries
+      SELECT * FROM calibration_capacity_boundaries_v10;
+    DROP TABLE calibration_capacity_boundaries_v10;
+    COMMIT;
+  `);
+}
+
 function catalogPublication(bundle: CatalogBundle, keyId: string, bundleSha256: string, etag: string | null): CatalogPublication {
   return {
     sequence: bundle.sequence, publicationId: bundle.publicationId, catalogVersion: bundle.catalogVersion,
@@ -572,6 +617,7 @@ export class SqlitePlannerStore implements PlannerStore {
     try {
       migrateCalibrationSessionEventStates(this.database);
       migrateCalibrationTierCapacity(this.database);
+      migrateCalibrationCapacityBoundaryKinds(this.database);
       this.database.exec(schemaSql);
       const integrity = this.database.prepare("PRAGMA integrity_check").get() as Record<string, unknown> | undefined;
       if (!integrity || Object.values(integrity)[0] !== "ok") throw new Error("calibration_extension_post_migration_integrity_check_failed");
@@ -638,6 +684,12 @@ export class SqlitePlannerStore implements PlannerStore {
       ).run(run.id, run.capacityBoundary.bound, run.capacityBoundary.highestPassingCameraCount,
         run.capacityBoundary.firstFailingCameraCount, run.capacityBoundary.operationalSafeCameraCount,
         JSON.stringify(run.capacityBoundary), recordedAt);
+      const insertProbe = this.database.prepare(
+        "INSERT INTO calibration_probe_results(run_id,attempt,camera_count,outcome,probe_json,recorded_at) VALUES(?,?,?,?,?,?)",
+      );
+      for (const probe of run.capacityBoundary.searchTrace) {
+        insertProbe.run(run.id, probe.attempt, probe.cameraCount, probe.outcome, JSON.stringify(probe), recordedAt);
+      }
     }
     if (run.runtimeManifestHash) {
       this.database.prepare(
@@ -1032,6 +1084,45 @@ export class SqlitePlannerStore implements PlannerStore {
     if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
     this.insertCalibrationRunV2(run);
   }
+  async saveExecutionEnvironment(environment: ExecutionEnvironment): Promise<void> {
+    this.inTransaction(() => {
+      this.database.prepare(
+        `INSERT INTO calibration_execution_environments(
+          environment_signature,schema_version,platform,architecture,readiness,evidence_level,
+          environment_json,detected_at,last_seen_at
+        ) VALUES(?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(environment_signature) DO UPDATE SET
+          environment_json=excluded.environment_json,readiness=excluded.readiness,
+          evidence_level=excluded.evidence_level,last_seen_at=excluded.last_seen_at`,
+      ).run(environment.environmentSignature, environment.schemaVersion, environment.platform,
+        environment.architecture, environment.readiness, environment.evidenceLevel,
+        JSON.stringify(environment), environment.detectedAt, environment.detectedAt);
+      const insertComponent = this.database.prepare(
+        `INSERT INTO calibration_environment_components(
+          environment_signature,component_id,status,origin,path,version,sha256,self_test,
+          diagnostic_only,component_json,recorded_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(environment_signature,component_id) DO UPDATE SET
+          status=excluded.status,origin=excluded.origin,path=excluded.path,version=excluded.version,
+          sha256=excluded.sha256,self_test=excluded.self_test,diagnostic_only=excluded.diagnostic_only,
+          component_json=excluded.component_json,recorded_at=excluded.recorded_at`,
+      );
+      for (const component of environment.components) {
+        insertComponent.run(environment.environmentSignature, component.id, component.status, component.origin,
+          component.path, component.version, component.sha256, component.selfTest, component.diagnosticOnly ? 1 : 0,
+          JSON.stringify(component), environment.detectedAt);
+        this.database.prepare(
+          "INSERT INTO calibration_environment_self_tests(id,environment_signature,component_id,outcome,recorded_at) VALUES(?,?,?,?,?)",
+        ).run(randomUUID(), environment.environmentSignature, component.id, component.selfTest, environment.detectedAt);
+      }
+      const insertWarning = this.database.prepare(
+        "INSERT OR IGNORE INTO calibration_environment_warnings(environment_signature,warning,recorded_at) VALUES(?,?,?)",
+      );
+      for (const warning of environment.warnings) {
+        insertWarning.run(environment.environmentSignature, warning, environment.detectedAt);
+      }
+    }, "IMMEDIATE");
+  }
   async commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void> {
     if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");
     this.inTransaction(() => {
@@ -1051,6 +1142,18 @@ export class SqlitePlannerStore implements PlannerStore {
     const legacy = rows(this.database.prepare("SELECT run_json FROM calibration_runs ORDER BY completed_at DESC").all())
       .map((row) => parseJson<LocalCalibrationRun>(row.run_json)).filter((run) => !currentIds.has(run.id));
     return [...current, ...legacy].sort((left, right) => right.completedAt.localeCompare(left.completedAt));
+  }
+  async saveCalibrationDiagnosticReport(input: {
+    runId: string;
+    model: CalibrationDiagnosticReportModel;
+    files: Array<{ format: "pdf" | "txt" | "xlsx" | "json"; fileName: string; sha256: string; sizeBytes: number }>;
+  }): Promise<void> {
+    const modelJson = JSON.stringify(input.model);
+    const modelSha256 = createHash("sha256").update(modelJson).digest("hex");
+    this.database.prepare(
+      "INSERT OR IGNORE INTO calibration_diagnostic_reports(id,run_id,schema_version,model_sha256,model_json,files_json,generated_at) VALUES(?,?,?,?,?,?,?)",
+    ).run(randomUUID(), input.runId, input.model.schemaVersion, modelSha256, modelJson,
+      JSON.stringify(input.files), input.model.generatedAt);
   }
   async saveCalibrationSession(session: CalibrationSessionRecord): Promise<void> {
     if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");

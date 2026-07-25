@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import { buildCapacityPredictions, createCalibrationPlan } from "../src/engine/calibration.js";
+import { buildCalibrationDiagnosticReport } from "../src/engine/calibrationDiagnostic.js";
 import { createDefaultScenario } from "../src/shared/schemas.js";
 import {
   assertDedicatedSqlitePath,
@@ -36,7 +37,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS scenarios");
     expect(sql).toContain(") STRICT;");
     expect(sql).toContain(`PRAGMA user_version = ${QUAL_HARDWARE_SQLITE_SCHEMA_VERSION}`);
-    expect(sql.toLowerCase()).not.toContain("perceptrum");
+    expect(sql.toLowerCase()).not.toContain("camera_credentials");
     expect(sql.toLowerCase()).not.toContain("postgres");
   });
 
@@ -55,7 +56,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await reopenedStore.close();
   });
 
-  it("keeps schema v10 while storing all autonomous session states as append-only events", async () => {
+  it("keeps schema v12 while storing all autonomous session states as append-only events", async () => {
     const directory = await mkdtemp(join(tmpdir(), "qual-hardware-calibration-extension-"));
     cleanupDirectories.push(directory);
     const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
@@ -73,16 +74,82 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await store.close();
 
     const database = new DatabaseSync(databasePath, { readOnly: true });
-    expect((database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(10);
+    expect((database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(12);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_sessions").get() as { count: number }).count).toBe(0);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_sessions_v2").get() as { count: number }).count).toBe(1);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_session_events").get() as { count: number }).count).toBe(3);
-    expect((database.prepare("SELECT extension_version FROM calibration_extension_metadata WHERE singleton=1").get() as { extension_version: number }).extension_version).toBe(3);
+    expect((database.prepare("SELECT extension_version FROM calibration_extension_metadata WHERE singleton=1").get() as { extension_version: number }).extension_version).toBe(5);
     for (const table of ["calibration_checkpoints", "calibration_session_lineage", "calibration_device_identities",
       "measured_system_identities", "calibration_run_provenance", "calibration_import_batches",
-      "calibration_import_items", "calibration_export_events", "calibration_collection_snapshots"]) {
+      "calibration_import_items", "calibration_export_events", "calibration_collection_snapshots",
+      "calibration_probe_results", "calibration_diagnostic_reports"]) {
       expect(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)).toBeTruthy();
     }
+    database.close();
+  });
+
+  it("persists the detected environment, component self-tests and warnings in SQLite v12", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-environment-"));
+    cleanupDirectories.push(directory);
+    const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
+    const store = new SqlitePlannerStore(databasePath);
+    await store.saveExecutionEnvironment({
+      schemaVersion: "qual-hardware-execution-environment/1.0.0",
+      detectedAt: "2026-07-23T18:00:00.000Z",
+      platform: "win32",
+      architecture: "x64",
+      supported: true,
+      readiness: "ready_diagnostic",
+      evidenceLevel: "generic_native",
+      environmentSignature: "e".repeat(64),
+      components: [{
+        id: "native-benchmark", name: "Benchmark nativo", purpose: "Diagnóstico",
+        status: "installed", origin: "built_in_proxy", path: null, version: "1.0.0",
+        sha256: null, selfTest: "passed", capabilities: ["cpu"], impact: "Disponível.",
+        instruction: "Nenhuma ação.", downloadLinkId: null, diagnosticOnly: true,
+      }],
+      missingRequiredComponentIds: ["ffmpeg"],
+      warnings: ["FFmpeg ausente; será usado o diagnóstico genérico."],
+      externalDownloadsPerformed: false,
+    });
+    await store.close();
+
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    expect((database.prepare("SELECT COUNT(*) count FROM calibration_execution_environments").get() as { count: number }).count).toBe(1);
+    expect((database.prepare("SELECT COUNT(*) count FROM calibration_environment_components").get() as { count: number }).count).toBe(1);
+    expect((database.prepare("SELECT COUNT(*) count FROM calibration_environment_self_tests").get() as { count: number }).count).toBe(1);
+    expect((database.prepare("SELECT COUNT(*) count FROM calibration_environment_warnings").get() as { count: number }).count).toBe(1);
+    expect((database.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check).toBe("ok");
+    database.close();
+  });
+
+  it("links each diagnostic model and exported file to its calibration run", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-diagnostic-report-"));
+    cleanupDirectories.push(directory);
+    const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
+    const store = new SqlitePlannerStore(databasePath);
+    const run = autonomousCalibrationRun();
+    await store.commitCalibrationRun(run, []);
+    const model = buildCalibrationDiagnosticReport(run, autonomousCalibrationWorkloadProfile());
+    await store.saveCalibrationDiagnosticReport({
+      runId: run.id,
+      model,
+      files: [
+        { format: "txt", fileName: `${run.id}-resumo.txt`, sha256: "a".repeat(64), sizeBytes: 100 },
+        { format: "pdf", fileName: `${run.id}-diagnostico.pdf`, sha256: "b".repeat(64), sizeBytes: 200 },
+        { format: "xlsx", fileName: `${run.id}-diagnostico.xlsx`, sha256: "c".repeat(64), sizeBytes: 300 },
+      ],
+    });
+    await store.close();
+
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    const row = database.prepare(
+      "SELECT run_id,model_sha256,model_json,files_json FROM calibration_diagnostic_reports",
+    ).get() as { run_id: string; model_sha256: string; model_json: string; files_json: string };
+    expect(row.run_id).toBe(run.id);
+    expect(row.model_sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.parse(row.model_json).runId).toBe(run.id);
+    expect(JSON.parse(row.files_json)).toHaveLength(3);
     database.close();
   });
 
@@ -122,7 +189,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     const migrated = new SqlitePlannerStore(databasePath);
     await migrated.close();
     const check = new DatabaseSync(databasePath);
-    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(10);
+    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(12);
     const tierSql = (check.prepare("SELECT sql FROM sqlite_master WHERE name='calibration_tier_results'").get() as { sql: string }).sql;
     expect(tierSql).toContain("1000000");
     expect((check.prepare("SELECT tier FROM calibration_tier_results WHERE id='legacy-tier'").get() as { tier: number }).tier).toBe(4096);
@@ -230,7 +297,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await store.close();
     const backups = await readdir(join(directory, "schema-backups"));
     expect(backups).toHaveLength(1);
-    expect(backups[0]).toMatch(/^qual-hardware-pre-v10-.*-[0-9a-f-]{36}\.sqlite$/);
+    expect(backups[0]).toMatch(/^qual-hardware-pre-v12-.*-[0-9a-f-]{36}\.sqlite$/);
     const backup = new DatabaseSync(join(directory, "schema-backups", backups[0]!), { readOnly: true });
     expect(Object.values(backup.prepare("PRAGMA integrity_check").get() as Record<string, unknown>)[0]).toBe("ok");
     expect((backup.prepare("SELECT value FROM preserved_user_data WHERE id='one'").get() as { value: string }).value).toBe("keep");

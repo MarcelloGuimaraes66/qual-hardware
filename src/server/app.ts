@@ -1,15 +1,19 @@
-import { randomUUID } from "node:crypto";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { z } from "zod";
 import { buildRecommendations, CapacityError } from "../engine/capacity.js";
 import { buildCapacityPredictions, createCalibrationPlan, type CalibrationPredictionCompatibility } from "../engine/calibration.js";
 import { buildHistoricalComponentBuilds, deriveComponentCatalog, validateBuildCompatibility } from "../engine/componentCatalog.js";
-import { calibrationPolicyHash } from "../engine/calibrationProfile.js";
+import { calibrationPolicyHash, canonicalSha256 } from "../engine/calibrationProfile.js";
+import {
+  buildCalibrationDiagnosticReport,
+  buildFailedCalibrationDiagnosticReport,
+} from "../engine/calibrationDiagnostic.js";
 import { buildProcurementGate, componentStages, isPublicObservationEligible } from "../engine/evidence.js";
 import { withProcurementSpecifications } from "../engine/procurementSpecifications.js";
 import { specificationCoverage, withTechnicalSpecification } from "../engine/technicalSpecifications.js";
@@ -20,11 +24,11 @@ import {
   scenarioCreateSchema,
   scenarioUpdateSchema,
 } from "../shared/schemas.js";
-import type { CapacityRecommendation, CalibrationCheckpoint, CalibrationDeviceIdentity, CalibrationHardwarePreflight, CalibrationImportBatch, CalibrationImportItem, CalibrationResumeStatus, CalibrationSessionRecord, ComponentBuild, LocalCalibrationRun, QhcalPackage, RecommendationAlternative } from "../shared/types.js";
+import type { CapacityRecommendation, CalibrationCheckpoint, CalibrationDeviceIdentity, CalibrationDiagnosticReportModel, CalibrationHardwarePreflight, CalibrationImportBatch, CalibrationImportItem, CalibrationResumeStatus, CalibrationSessionRecord, ComponentBuild, ExecutionEnvironment, LocalCalibrationRun, QhcalPackage, RecommendationAlternative } from "../shared/types.js";
 import type { HardwareNodeTemplate } from "../shared/types.js";
 import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT } from "../shared/types.js";
 import { CatalogUpdateService } from "./catalogUpdates.js";
-import { jsonReport, pdfReport, xlsxReport } from "./reports.js";
+import { jsonReport, pdfReport, textReport, xlsxReport } from "./reports.js";
 import { procurementAnnexDocx, procurementAnnexJson, procurementAnnexPdf } from "./procurementAnnex.js";
 import { technicalCadernoPdf } from "./technicalCadernoPdf.js";
 import { technicalCadernoDocx } from "./technicalCadernoDocx.js";
@@ -42,8 +46,15 @@ import {
   type DesktopCalibrationBridge,
 } from "./calibrationSessions.js";
 import { CalibrationKernelService, type CalibrationKernelPort } from "./calibrationKernelService.js";
-import type { CalibrationRuntimePackageManager } from "./calibrationRuntimePackage.js";
+import type { CalibrationKernelDiagnosticPayload } from "./calibrationKernelProtocol.js";
+import {
+  calibrationDiagnosticText,
+  renderCalibrationDiagnosticReport,
+  type CalibrationDiagnosticReportFormat,
+} from "./calibrationDiagnosticReport.js";
 import { calibrationHardwareDigest, calibrationHardwareMatchesTemplate, detectCalibrationHardware } from "./calibrationHardware.js";
+import { dependencyDownloadLink, detectExecutionEnvironment } from "./executionEnvironment.js";
+import type { QwenVisionSelectionPreference } from "./qwenVisionModelSelection.js";
 import {
   CalibrationExchangeService,
   exchangeDigest,
@@ -57,6 +68,19 @@ const compareRequestSchema = z.object({ scenarioIds: z.array(z.string().uuid()).
 const catalogConfigurationSchema = z.object({
   remoteUrl: z.string().max(2_048).nullable(),
   publicKeyPem: z.string().min(1).max(16_384),
+});
+const qwenSelectionRequestSchema = z.object({
+  mode: z.enum(["automatic", "manual"]),
+  coreModelId: z.string().length(24).nullable().optional(),
+  coreMaxModelId: z.string().length(24).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.mode === "manual" && (!value.coreModelId || !value.coreMaxModelId)) {
+    context.addIssue({
+      code: "custom",
+      path: ["coreModelId"],
+      message: "Manual Qwen selection requires both Core and Core Max model ids.",
+    });
+  }
 });
 const reportPolicies = ["minimum", "recommended", "n_plus_one"] as const;
 
@@ -158,12 +182,12 @@ function reportRecommendationSet(
 }
 
 export interface ApplicationOptions {
-  desktopBridge?: Pick<DesktopCalibrationBridge, "openPath">;
+  desktopBridge?: Pick<DesktopCalibrationBridge, "openPath" | "openExternalUrl" | "selectEnvironmentComponent">;
   documentsDirectory?: string;
   fetchImpl?: typeof fetch;
   calibrationKernel?: CalibrationKernelPort;
   calibrationHardwareDetector?: () => Promise<CalibrationHardwarePreflight>;
-  calibrationRuntimePackages?: CalibrationRuntimePackageManager;
+  executionEnvironmentDetector?: () => Promise<ExecutionEnvironment>;
   calibrationTemporaryRoot?: string;
   calibrationEvidenceDirectory?: string;
   calibrationIdentityDirectory?: string;
@@ -187,6 +211,32 @@ export function createApp(
   const resourceRoot = options.resourceRoot ?? process.env.QUAL_HARDWARE_RESOURCE_ROOT ?? process.cwd();
   const applicationVersion = options.appVersion ?? "0.1.0";
   const calibrationHardwareDetector = options.calibrationHardwareDetector ?? detectCalibrationHardware;
+  const selectedEnvironmentPaths: Partial<Record<ExecutionEnvironment["components"][number]["id"], string>> = {};
+  let qwenSelectionPreference: QwenVisionSelectionPreference = { mode: "automatic" };
+  const executionEnvironmentDetector = options.executionEnvironmentDetector ?? (async () =>
+    detectExecutionEnvironment({
+      hardware: await calibrationHardwareDetector(),
+      appVersion: applicationVersion,
+      nativeBenchmarkPath: join(resourceRoot, "resources", "native", `${process.platform}-${process.arch}`,
+        process.platform === "win32" ? "qual-hardware-native-bench.exe" : "qual-hardware-native-bench"),
+      selectedPaths: selectedEnvironmentPaths,
+      qwenSelection: qwenSelectionPreference,
+    }));
+  let executionEnvironmentPromise: Promise<ExecutionEnvironment> | null = null;
+  const executionEnvironment = (refresh = false): Promise<ExecutionEnvironment> => {
+    if (refresh || !executionEnvironmentPromise) {
+      executionEnvironmentPromise = executionEnvironmentDetector()
+        .then(async (detected) => {
+          await store.saveExecutionEnvironment(detected);
+          return detected;
+        })
+        .catch((error) => {
+          executionEnvironmentPromise = null;
+          throw error;
+        });
+    }
+    return executionEnvironmentPromise;
+  };
   const calibrationFeatures = {
     resume: options.calibrationFeatures?.resume ?? process.env.QUAL_HARDWARE_CALIBRATION_RESUME !== "0",
     exchange: options.calibrationFeatures?.exchange ?? process.env.QUAL_HARDWARE_CALIBRATION_EXCHANGE !== "0",
@@ -205,6 +255,7 @@ export function createApp(
     resourceRoot,
     appVersion: applicationVersion,
   });
+  calibrationKernel.configureExecutionEnvironmentProvider?.(() => executionEnvironment());
   const calibrationExchange = new CalibrationExchangeService({
     identityDirectory: options.calibrationIdentityDirectory ??
       join(options.documentsDirectory ?? process.cwd(), "Qual Hardware", "Identidade"),
@@ -232,6 +283,100 @@ export function createApp(
     }, calibrationFeatures.evidencePolicy);
   }
 
+  const writeReportExclusive = async (path: string, data: string | Uint8Array): Promise<void> => {
+    await writeFile(path, data, { flag: "wx", mode: 0o600 }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "EEXIST") throw error;
+    });
+  };
+
+  function fallbackFailureDiagnosticPayload(
+    session: CalibrationSessionRecord,
+  ): CalibrationKernelDiagnosticPayload {
+    const status = session.state === "cancelled"
+      ? "cancelled"
+      : session.state === "interrupted" ? "interrupted" : "failed";
+    return {
+      schemaVersion: "qual-hardware-calibration-diagnostic/1.0.0",
+      sessionId: session.id,
+      runId: session.id,
+      planId: session.planId,
+      createdAt: session.createdAt,
+      completedAt: session.completedAt ?? new Date().toISOString(),
+      status,
+      error: session.error ?? (status === "cancelled"
+        ? "calibration_cancelled_by_operator_diagnostic_artifact_unavailable"
+        : "calibration_diagnostic_artifact_unavailable"),
+      kernelVersion: session.plan.kernelVersion,
+      runtimeManifestHash: "unavailable",
+      workloadProfileId: session.plan.workloadProfile.id,
+      workloadProfileSignature: session.plan.workloadProfile.signature,
+      compatiblePerceptrumCommit: PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
+      lastProgress: session.progress,
+      fingerprint: null,
+      runtimeSummary: null,
+      tierResults: [],
+      repetitions: [],
+      measurements: [],
+    };
+  }
+
+  async function failureDiagnosticPayload(session: CalibrationSessionRecord): Promise<CalibrationKernelDiagnosticPayload> {
+    const artifact = session.diagnostic;
+    if (!artifact) throw new Error("calibration_session_diagnostic_not_found");
+    if (basename(artifact.fileName) !== artifact.fileName) throw new Error("calibration_diagnostic_file_name_invalid");
+    const stored = await readFile(join(calibrationEvidenceDirectory, artifact.fileName))
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+    if (!stored) return fallbackFailureDiagnosticPayload(session);
+    const decoded = artifact.fileName.endsWith(".gz") ? gunzipSync(stored) : stored;
+    const envelope = JSON.parse(decoded.toString("utf8")) as {
+      schemaVersion?: string;
+      diagnostic?: CalibrationKernelDiagnosticPayload;
+      payloadSha256?: string;
+    };
+    if (envelope.schemaVersion !== "qual-hardware-calibration-diagnostic-envelope/1.0.0" ||
+        !envelope.diagnostic || envelope.diagnostic.sessionId !== session.id ||
+        envelope.diagnostic.planId !== session.planId) {
+      throw new Error("calibration_session_diagnostic_invalid");
+    }
+    const digest = canonicalSha256(envelope.diagnostic);
+    if (digest !== envelope.payloadSha256 || digest !== artifact.payloadSha256) {
+      throw new Error("calibration_session_diagnostic_checksum_mismatch");
+    }
+    return envelope.diagnostic;
+  }
+
+  async function failedCalibrationReportModel(
+    session: CalibrationSessionRecord,
+  ): Promise<CalibrationDiagnosticReportModel> {
+    return buildFailedCalibrationDiagnosticReport(
+      await failureDiagnosticPayload(session),
+      session.plan,
+    );
+  }
+
+  async function ensureFailedCalibrationReport(session: CalibrationSessionRecord): Promise<void> {
+    if (!session.diagnostic || !["failed", "interrupted", "cancelled"].includes(session.state)) return;
+    const diagnostic = await failureDiagnosticPayload(session);
+    const model = buildFailedCalibrationDiagnosticReport(diagnostic, session.plan);
+    const prefix = join(calibrationEvidenceDirectory, `${diagnostic.runId}-inconclusivo`);
+    const [pdf, xlsx, json] = await Promise.all([
+      renderCalibrationDiagnosticReport(model, "pdf"),
+      renderCalibrationDiagnosticReport(model, "xlsx"),
+      renderCalibrationDiagnosticReport(model, "json"),
+    ]);
+    const text = calibrationDiagnosticText(model);
+    await mkdir(calibrationEvidenceDirectory, { recursive: true });
+    await Promise.all([
+      writeReportExclusive(`${prefix}.txt`, text),
+      writeReportExclusive(`${prefix}.pdf`, pdf),
+      writeReportExclusive(`${prefix}.xlsx`, xlsx),
+      writeReportExclusive(`${prefix}.json`, json),
+    ]);
+  }
+
   async function ensurePortableCalibrationResult(
     run: LocalCalibrationRun,
     workloadProfile: CalibrationSessionRecord["plan"]["workloadProfile"],
@@ -250,30 +395,39 @@ export function createApp(
         sizeBytes: exported.bytes.byteLength, createdAt: new Date().toISOString(),
       });
     }
+    const model = buildCalibrationDiagnosticReport(run, workloadProfile);
     const summaryPath = join(calibrationEvidenceDirectory, `${run.id}-resumo.txt`);
-    const safeCameras = run.capacityRecommendation?.safeCameraCount ?? run.overallSafeCameraCapacity;
-    const summary = [
-      "QUAL HARDWARE — RESUMO DA VALIDAÇÃO",
-      `Execução: ${run.id}`,
-      `Concluída em: ${run.completedAt}`,
-      `Sistema: ${run.fingerprint.operatingSystem} ${run.fingerprint.operatingSystemVersion}`,
-      `CPU: ${run.fingerprint.cpuModel}`,
-      `GPU: ${run.fingerprint.gpuModel}`,
-      `Saúde da execução: ${run.executionHealth?.status ?? "não informada"}`,
-      `Quantidade técnica segura: ${safeCameras ?? "não determinada"} câmeras`,
-      `Maior nível testado: ${run.capacityRecommendation?.maximumTestedCameraCount ?? run.maxTestedTier ?? "não informado"} câmeras`,
-      `Gargalo: ${run.bottleneck}`,
-      `Subsistemas limitantes: ${run.limitingSubsystems?.join(", ") || "nenhum erro limitante observado"}`,
-      `Sensores indisponíveis: ${run.sensorCoverage?.unavailable.join(", ") || "nenhum"}`,
-      `Runtime: ${run.runtimeTrust?.classification ?? "não informado"} (aprovação comercial: ${run.runtimeTrust?.commercialQualificationAllowed === true ? "sim" : "não"})`,
-      `Erros de infraestrutura: ${run.executionHealth?.infrastructureErrors.join("; ") || "nenhum"}`,
-      `Pacote assinado: ${join(calibrationEvidenceDirectory, exported.fileName)}`,
-      `Evidência compacta: ${join(calibrationEvidenceDirectory, run.artifact?.fileName ?? `${run.id}.qhcal.json.gz`)}`,
-      "",
-    ].join("\n");
+    const pdfPath = join(calibrationEvidenceDirectory, `${run.id}-diagnostico.pdf`);
+    const xlsxPath = join(calibrationEvidenceDirectory, `${run.id}-diagnostico.xlsx`);
+    const jsonPath = join(calibrationEvidenceDirectory, `${run.id}-diagnostico.json`);
+    const [pdf, xlsx, json] = await Promise.all([
+      renderCalibrationDiagnosticReport(model, "pdf"),
+      renderCalibrationDiagnosticReport(model, "xlsx"),
+      renderCalibrationDiagnosticReport(model, "json"),
+    ]);
+    const text = calibrationDiagnosticText(model);
     await mkdir(calibrationEvidenceDirectory, { recursive: true });
-    await writeFile(summaryPath, summary, { flag: "wx", mode: 0o600 }).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "EEXIST") throw error;
+    await Promise.all([
+      writeReportExclusive(summaryPath, text),
+      writeReportExclusive(pdfPath, pdf),
+      writeReportExclusive(xlsxPath, xlsx),
+      writeReportExclusive(jsonPath, json),
+    ]);
+    const reportFiles = [
+      { format: "txt" as const, fileName: summaryPath, bytes: Buffer.from(text, "utf8") },
+      { format: "pdf" as const, fileName: pdfPath, bytes: Buffer.from(pdf) },
+      { format: "xlsx" as const, fileName: xlsxPath, bytes: Buffer.from(xlsx) },
+      { format: "json" as const, fileName: jsonPath, bytes: Buffer.from(json) },
+    ];
+    await store.saveCalibrationDiagnosticReport({
+      runId: run.id,
+      model,
+      files: reportFiles.map(({ format, fileName, bytes }) => ({
+        format,
+        fileName,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        sizeBytes: bytes.byteLength,
+      })),
     });
   }
 
@@ -285,6 +439,13 @@ export function createApp(
       const profile = profiles.get(run.planId);
       if (!profile) continue;
       await ensurePortableCalibrationResult(run, profile);
+    }
+  }
+
+  async function recoverFailedCalibrationReports(): Promise<void> {
+    for (const session of await store.listCalibrationSessions()) {
+      if (!session.diagnostic || !["failed", "interrupted", "cancelled"].includes(session.state)) continue;
+      await ensureFailedCalibrationReport(session);
     }
   }
   app.use("*", async (context, next) => {
@@ -364,7 +525,7 @@ export function createApp(
     const terminalCleanupPending = session.tokenHash === "internal" && !calibrationKernel.isActive(session.id) &&
       ["pending", "cleaning", "failed"].includes(session.cleanup?.state ?? "not_started");
     if (terminalCleanupPending && ["completed", "cancelled", "failed", "interrupted"].includes(session.state)) {
-      const cleanup = await calibrationKernel.retryCleanup(session.id, session.state === "interrupted",
+      const cleanup = await calibrationKernel.retryCleanup(session.id, true,
         session.cleanup?.bytesRemoved ?? session.progress?.bytesRemoved ?? 0);
       const recovered: CalibrationSessionRecord = {
         ...session,
@@ -404,6 +565,8 @@ export function createApp(
         error: "calibration_session_interrupted",
       };
       await store.saveCalibrationSession(interrupted);
+      await ensureFailedCalibrationReport(interrupted)
+        .catch((error: unknown) => console.error("calibration_interrupted_report_failed", safeError(error)));
       return interrupted;
     }
     if (session.tokenHash === "internal") return session;
@@ -429,6 +592,8 @@ export function createApp(
     .catch((error: unknown) => console.error("calibration_cleanup_recovery_failed", safeError(error)));
   void recoverPortableCalibrationResults()
     .catch((error: unknown) => console.error("calibration_portable_result_recovery_failed", safeError(error)));
+  void recoverFailedCalibrationReports()
+    .catch((error: unknown) => console.error("calibration_failed_report_recovery_failed", safeError(error)));
 
   async function startCalibrationKernelSession(
     launching: CalibrationSessionRecord,
@@ -507,36 +672,48 @@ export function createApp(
       onCancelled: async (cleanup, diagnostic) => {
         const current = await store.getCalibrationSession(launching.id);
         if (!current) return;
-        await store.saveCalibrationSession({
+        const measuredPercent = Math.min(99,
+          current.progress?.overallPercent ?? current.progress?.percent ?? 0);
+        const cancelled: CalibrationSessionRecord = {
           ...current, state: "cancelled", completedAt: new Date().toISOString(), cleanup,
           ...(diagnostic ? { diagnostic } : {}),
           progress: normalizeCalibrationProgress({
             ...(current.progress ?? {}), stage: "cancelled", phase: "cancelled",
-            percent: cleanup.state === "completed" ? 100 : 99,
-            phasePercent: cleanup.state === "completed" ? 100 : 99,
+            percent: measuredPercent, overallPercent: measuredPercent, phasePercent: measuredPercent,
             bytesTemporary: cleanup.bytesTemporary, bytesRemoved: cleanup.bytesRemoved,
             estimatedRemainingSeconds: 0, estimatedCompletionAt: null,
-            message: cleanup.state === "completed" ? "Teste cancelado e temporários removidos." : "Teste cancelado; limpeza temporária pendente.",
+            message: cleanup.state === "completed"
+              ? "Teste cancelado; diagnóstico preservado e temporários removidos."
+              : "Teste cancelado; diagnóstico preservado e limpeza temporária pendente.",
           }),
           error: cleanup.error,
-        });
+        };
+        await store.saveCalibrationSession(cancelled);
+        await ensureFailedCalibrationReport(cancelled)
+          .catch((error: unknown) => console.error("calibration_cancelled_report_failed", safeError(error)));
       },
       onFailed: async (error, cleanup, diagnostic) => {
         const current = await store.getCalibrationSession(launching.id);
         if (!current) return;
-        await store.saveCalibrationSession({
+        const measuredPercent = Math.min(99,
+          current.progress?.overallPercent ?? current.progress?.percent ?? 0);
+        const failed: CalibrationSessionRecord = {
           ...current, state: "failed", completedAt: new Date().toISOString(), cleanup,
           ...(diagnostic ? { diagnostic } : {}),
           progress: normalizeCalibrationProgress({
             ...(current.progress ?? {}), stage: "failed", phase: "failed",
-            percent: cleanup.state === "completed" ? 100 : 99,
-            phasePercent: cleanup.state === "completed" ? 100 : 99,
+            percent: measuredPercent, overallPercent: measuredPercent, phasePercent: measuredPercent,
             bytesTemporary: cleanup.bytesTemporary, bytesRemoved: cleanup.bytesRemoved,
             estimatedRemainingSeconds: 0, estimatedCompletionAt: null,
-            message: cleanup.state === "completed" ? "Teste encerrado com erro; temporários removidos." : "Teste encerrado com erro; limpeza temporária pendente.",
+            message: cleanup.state === "completed"
+              ? "Resultado inconclusivo; diagnóstico preservado e temporários removidos."
+              : "Resultado inconclusivo; diagnóstico preservado e limpeza temporária pendente.",
           }),
           error,
-        });
+        };
+        await store.saveCalibrationSession(failed);
+        await ensureFailedCalibrationReport(failed)
+          .catch((reportError: unknown) => console.error("calibration_failed_report_failed", safeError(reportError)));
       },
     });
   }
@@ -602,16 +779,16 @@ export function createApp(
     architecture: process.arch,
     processId: process.pid,
     storage: store.storageKind,
-    sqliteSchemaVersion: 10,
+    sqliteSchemaVersion: 12,
     databasePath: options.diagnostics?.databasePath ?? null,
     logDirectory: options.diagnostics?.logDirectory ?? null,
     catalog: catalogUpdates.status,
     calibrationRuntime: await effectiveCalibrationRuntimeStatus(),
-    runtimePackage: await options.calibrationRuntimePackages?.status() ?? null,
+    runtimePackage: null,
   }));
   app.get("/api/calibrations/features", (context) => context.json(calibrationFeatures));
   app.get("/api/contract", async (context) => {
-    const file = applicationResourcePath("contracts", "perceptrum-workload-v2.json");
+    const file = applicationResourcePath("contracts", "perceptrum-workload-v4.json");
     return context.json(JSON.parse(await readFile(file, "utf8")) as unknown);
   });
   app.get("/api/scenarios", async (context) => context.json(await store.listScenarios()));
@@ -652,7 +829,8 @@ export function createApp(
       scenario.id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
       catalogUpdates.status.catalogVersion, await refreshCompatiblePredictions()), await store.listComponentBuilds());
     // Legacy benchmark rows remain readable for database compatibility, but
-    // only autonomous local calibration v4 can provide purchase-grade evidence.
+    // Only the current autonomous local calibration contract can provide
+    // purchase-grade evidence; historical contracts remain diagnostic.
     const withProcurement = withProcurementSpecifications(scenario.scenario, recommendations, await store.listCatalogComponents(), await store.listBenchmarkObservations());
     await store.saveRecommendations(withProcurement);
     return context.json(withProcurement, 201);
@@ -718,6 +896,32 @@ export function createApp(
   });
 
   app.get("/api/calibrations", async (context) => context.json(await store.listCalibrationRuns()));
+  app.get("/api/calibrations/:id/reports/model", async (context) => {
+    const run = (await store.listCalibrationRuns()).find((item) => item.id === context.req.param("id"));
+    if (!run) return context.json({ error: "calibration_run_not_found" }, 404);
+    const sourceSession = (await store.listCalibrationSessions()).find((session) => session.planId === run.planId);
+    return context.json(buildCalibrationDiagnosticReport(run, sourceSession?.plan.workloadProfile ?? null));
+  });
+  app.get("/api/calibrations/:id/reports/:format", async (context) => {
+    const format = context.req.param("format");
+    if (!["pdf", "txt", "xlsx", "json"].includes(format)) {
+      return context.json({ error: "calibration_report_format_invalid" }, 422);
+    }
+    const run = (await store.listCalibrationRuns()).find((item) => item.id === context.req.param("id"));
+    if (!run) return context.json({ error: "calibration_run_not_found" }, 404);
+    const sourceSession = (await store.listCalibrationSessions()).find((session) => session.planId === run.planId);
+    const model = buildCalibrationDiagnosticReport(run, sourceSession?.plan.workloadProfile ?? null);
+    const bytes = await renderCalibrationDiagnosticReport(model, format as CalibrationDiagnosticReportFormat);
+    const contentTypes: Record<CalibrationDiagnosticReportFormat, string> = {
+      pdf: "application/pdf",
+      txt: "text/plain; charset=utf-8",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      json: "application/json; charset=utf-8",
+    };
+    context.header("Content-Type", contentTypes[format as CalibrationDiagnosticReportFormat]);
+    context.header("Content-Disposition", `attachment; filename="${run.id}-diagnostico.${format}"`);
+    return context.body(new Uint8Array(bytes));
+  });
   app.get("/api/calibrations/:id/export", async (context) => {
     if (!calibrationFeatures.exchange) return context.json({ error: "calibration_exchange_feature_disabled" }, 503);
     const run = (await store.listCalibrationRuns()).find((item) => item.id === context.req.param("id"));
@@ -953,34 +1157,68 @@ export function createApp(
     directory: await resolveCalibrationDirectory(calibrationDirectoryOptions),
   }));
   app.get("/api/calibrations/runtime-status", async (context) => context.json(await effectiveCalibrationRuntimeStatus()));
-  app.get("/api/calibration-runtime/status", async (context) => {
-    if (!options.calibrationRuntimePackages) return context.json({ error: "runtime_package_manager_unavailable" }, 503);
-    return context.json(await options.calibrationRuntimePackages.status());
+  app.get("/api/calibrations/environment", async (context) => context.json(await executionEnvironment()));
+  app.post("/api/calibrations/environment/refresh", async (context) => {
+    if (calibrationKernel.hasActiveSession()) return context.json({ error: "environment_refresh_blocked_during_calibration" }, 409);
+    const refreshed = await executionEnvironment(true);
+    calibrationKernel.invalidateRuntimeStatus?.();
+    return context.json(refreshed);
   });
-  app.post("/api/calibration-runtime/install", async (context) => {
-    if (!options.calibrationRuntimePackages) return context.json({ error: "runtime_package_manager_unavailable" }, 503);
-    if (calibrationKernel.hasActiveSession()) return context.json({ error: "runtime_change_blocked_during_calibration" }, 409);
-    try {
-      const installationId = options.calibrationRuntimePackages.requestInstall();
-      return context.json({ installationId }, 202);
-    } catch (error) {
-      return context.json({ error: safeError(error) }, 409);
+  app.post("/api/calibrations/environment/qwen-selection", async (context) => {
+    if (calibrationKernel.hasActiveSession()) {
+      return context.json({ error: "environment_change_blocked_during_calibration" }, 409);
     }
-  });
-  app.get("/api/calibration-runtime/installations/:id", async (context) => {
-    if (!options.calibrationRuntimePackages) return context.json({ error: "runtime_package_manager_unavailable" }, 503);
-    const installation = options.calibrationRuntimePackages.installation(context.req.param("id"));
-    return installation ? context.json(installation) : context.json({ error: "runtime_installation_not_found" }, 404);
-  });
-  app.post("/api/calibration-runtime/rollback", async (context) => {
-    if (!options.calibrationRuntimePackages) return context.json({ error: "runtime_package_manager_unavailable" }, 503);
-    if (calibrationKernel.hasActiveSession()) return context.json({ error: "runtime_change_blocked_during_calibration" }, 409);
-    try {
-      return context.json(await options.calibrationRuntimePackages.rollback());
-    } catch (error) {
-      return context.json({ error: safeError(error) }, 409);
+    const request = qwenSelectionRequestSchema.parse(await context.req.json());
+    if (request.mode === "manual") {
+      const current = await executionEnvironment();
+      const candidates = new Map(current.qwenModelSelection?.candidates.map((candidate) => [candidate.id, candidate]) ?? []);
+      const core = candidates.get(request.coreModelId!);
+      const coreMax = candidates.get(request.coreMaxModelId!);
+      if (!core?.compatible || !coreMax?.compatible) {
+        return context.json({ error: "qwen_model_selection_incompatible_or_missing" }, 422);
+      }
     }
+    qwenSelectionPreference = request.mode === "automatic"
+      ? { mode: "automatic" }
+      : {
+          mode: "manual",
+          coreModelId: request.coreModelId!,
+          coreMaxModelId: request.coreMaxModelId!,
+        };
+    const refreshed = await executionEnvironment(true);
+    calibrationKernel.invalidateRuntimeStatus?.();
+    return context.json(refreshed);
   });
+  app.post("/api/calibrations/environment/open-link/:id", async (context) => {
+    if (calibrationKernel.hasActiveSession()) return context.json({ error: "external_link_blocked_during_calibration" }, 409);
+    const link = dependencyDownloadLink(context.req.param("id"));
+    if (!link) return context.json({ error: "dependency_link_not_allowed" }, 404);
+    if (!options.desktopBridge?.openExternalUrl) return context.json({ error: "external_link_bridge_unavailable" }, 503);
+    await options.desktopBridge.openExternalUrl(link.url);
+    return context.json({ opened: true, linkId: link.id });
+  });
+  app.post("/api/calibrations/environment/locate/:id", async (context) => {
+    if (calibrationKernel.hasActiveSession()) return context.json({ error: "environment_change_blocked_during_calibration" }, 409);
+    const id = context.req.param("id") as ExecutionEnvironment["components"][number]["id"];
+    const selectableIds = new Set<ExecutionEnvironment["components"][number]["id"]>([
+      "ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj",
+      "qwen-vl-4b", "qwen-vl-4b-mmproj", "perceptrum",
+    ]);
+    if (!selectableIds.has(id)) return context.json({ error: "environment_component_not_selectable" }, 422);
+    if (!options.desktopBridge?.selectEnvironmentComponent) {
+      return context.json({ error: "environment_component_picker_unavailable" }, 503);
+    }
+    const selected = await options.desktopBridge.selectEnvironmentComponent(id);
+    if (!selected) return context.json({ error: "selection_cancelled" }, 409);
+    selectedEnvironmentPaths[id] = selected;
+    const refreshed = await executionEnvironment(true);
+    calibrationKernel.invalidateRuntimeStatus?.();
+    return context.json(refreshed);
+  });
+  app.get("/api/calibration-runtime/status", (context) => context.json({ error: "runtime_packages_retired" }, 410));
+  app.post("/api/calibration-runtime/install", (context) => context.json({ error: "runtime_packages_retired" }, 410));
+  app.get("/api/calibration-runtime/installations/:id", (context) => context.json({ error: "runtime_packages_retired" }, 410));
+  app.post("/api/calibration-runtime/rollback", (context) => context.json({ error: "runtime_packages_retired" }, 410));
   app.get("/api/calibrations/hardware-status", async (context) => context.json(await calibrationHardwareDetector()));
   app.get("/api/capacity-assessments", async (context) => {
     const hardwareTemplateId = context.req.query("hardwareTemplateId");
@@ -1050,6 +1288,32 @@ export function createApp(
     const session = await store.getCalibrationSession(context.req.param("id"));
     if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
     return context.json(publicCalibrationSession(await reconcileCalibrationSession(session)));
+  });
+  app.get("/api/calibration-sessions/:id/reports/model", async (context) => {
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    if (!session.diagnostic) return context.json({ error: "calibration_session_diagnostic_not_found" }, 404);
+    return context.json(await failedCalibrationReportModel(session));
+  });
+  app.get("/api/calibration-sessions/:id/reports/:format", async (context) => {
+    const format = context.req.param("format");
+    if (!["pdf", "txt", "xlsx", "json"].includes(format)) {
+      return context.json({ error: "calibration_report_format_invalid" }, 422);
+    }
+    const session = await store.getCalibrationSession(context.req.param("id"));
+    if (!session) return context.json({ error: "calibration_session_not_found" }, 404);
+    if (!session.diagnostic) return context.json({ error: "calibration_session_diagnostic_not_found" }, 404);
+    const model = await failedCalibrationReportModel(session);
+    const bytes = await renderCalibrationDiagnosticReport(model, format as CalibrationDiagnosticReportFormat);
+    const contentTypes: Record<CalibrationDiagnosticReportFormat, string> = {
+      pdf: "application/pdf",
+      txt: "text/plain; charset=utf-8",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      json: "application/json; charset=utf-8",
+    };
+    context.header("Content-Type", contentTypes[format as CalibrationDiagnosticReportFormat]);
+    context.header("Content-Disposition", `attachment; filename="${model.runId}-inconclusivo.${format}"`);
+    return context.body(new Uint8Array(bytes));
   });
   app.get("/api/calibration-sessions/:id/resume-status", async (context) => {
     const session = await store.getCalibrationSession(context.req.param("id"));
@@ -1123,7 +1387,7 @@ export function createApp(
     if (session.cleanup?.state !== "failed" && session.state !== "finalizing" && session.state !== "interrupted") {
       return context.json({ error: "calibration_cleanup_not_pending" }, 409);
     }
-    const cleanup = await calibrationKernel.retryCleanup(session.id, session.state === "interrupted",
+    const cleanup = await calibrationKernel.retryCleanup(session.id, true,
       session.cleanup?.bytesRemoved ?? session.progress?.bytesRemoved ?? 0);
     const cleaned = cleanup.state === "completed";
     const updated: CalibrationSessionRecord = {
@@ -1208,6 +1472,7 @@ export function createApp(
     let contentType: string;
     let filename: string;
     if (format === "json") { body = jsonReport(reportContext); contentType = "application/json; charset=utf-8"; filename = "qual-hardware-relatorio-comercial-e-neutro.json"; }
+    else if (format === "txt") { body = textReport(reportContext); contentType = "text/plain; charset=utf-8"; filename = "qual-hardware-recomendacoes.txt"; }
     else if (format === "xlsx") { body = await xlsxReport(reportContext); contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; filename = "qual-hardware-relatorio-comercial-e-neutro.xlsx"; }
     else if (format === "pdf") { body = await pdfReport(reportContext); contentType = "application/pdf"; filename = "qual-hardware-recomendacoes.pdf"; }
     else if (format === "technical-pdf") { body = await technicalCadernoPdf(reportContext); contentType = "application/pdf"; filename = "qual-hardware-caderno-tecnico-detalhado.pdf"; }

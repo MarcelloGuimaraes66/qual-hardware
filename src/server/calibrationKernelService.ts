@@ -11,14 +11,17 @@ import type {
   CalibrationDiagnosticArtifact,
   CalibrationPlan,
   CalibrationRuntimeStatus,
+  ExecutionEnvironment,
   CalibrationSessionProgress,
   HardwareNodeTemplate,
   LocalCalibrationRun,
 } from "../shared/types.js";
 import { CalibrationProgressTracker } from "./calibrationProgress.js";
 import { inspectCalibrationRuntime } from "./calibrationRuntime.js";
+import { runtimeStatusFromExecutionEnvironment } from "./executionEnvironment.js";
 import {
   calibrationWorkspaceBytes,
+  cleanupAbandonedCalibrationWorkspace,
   cleanupCalibrationWorkspace,
   refreshRegisteredCalibrationTemporaryFiles,
   remainingCalibrationWorkspaceBytes,
@@ -72,6 +75,8 @@ export interface CalibrationKernelPort {
   retryCleanup(sessionId: string, interruptedRecovery?: boolean, previouslyRemovedBytes?: number): Promise<CalibrationCleanupStatus>;
   isActive(sessionId: string): boolean;
   hasActiveSession(): boolean;
+  configureExecutionEnvironmentProvider?(provider: () => Promise<ExecutionEnvironment>): void;
+  invalidateRuntimeStatus?(): void;
   close(): Promise<void>;
 }
 
@@ -112,10 +117,11 @@ export class CalibrationKernelService implements CalibrationKernelPort {
   private readonly closingSessions = new Set<string>();
   private readonly cancellationRequested = new Set<string>();
   private readonly cancelEscalationBySession = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly childProcessesBySession = new Map<string, Map<number, "ffmpeg" | "ffprobe" | "mediamtx" | "llama-server">>();
+  private readonly childProcessesBySession = new Map<string, Map<number, "ffmpeg" | "ffprobe" | "mediamtx" | "llama-server" | "native-benchmark" | "perceptrum-worker">>();
   private readonly fallbackDiagnosticBySession = new Map<string, (status: "failed" | "interrupted" | "cancelled", error: string) => CalibrationKernelDiagnosticPayload>();
   private readonly lastProgressBySession = new Map<string, CalibrationSessionProgress>();
   private statusPromise: Promise<CalibrationRuntimeStatus> | null = null;
+  private executionEnvironmentProvider: (() => Promise<ExecutionEnvironment>) | null = null;
 
   constructor(private readonly options: {
     temporaryRoot: string;
@@ -138,8 +144,17 @@ export class CalibrationKernelService implements CalibrationKernelPort {
         resourceRoot: runtime.resourceRoot,
         ...(runtime.installed ? { featureMode: "full" as const, manifestApproved: runtime.manifestApproved }
           : this.options.featureMode ? { featureMode: this.options.featureMode } : {}),
-      }));
+      }))
+      .then(async (status) => this.executionEnvironmentProvider
+        ? runtimeStatusFromExecutionEnvironment(await this.executionEnvironmentProvider(), status)
+        : status);
     return this.statusPromise;
+  }
+
+  configureExecutionEnvironmentProvider(provider: () => Promise<ExecutionEnvironment>): void {
+    if (this.hasActiveSession()) throw new Error("calibration_environment_change_blocked_during_session");
+    this.executionEnvironmentProvider = provider;
+    this.statusPromise = null;
   }
 
   invalidateRuntimeStatus(): void {
@@ -558,6 +573,20 @@ export class CalibrationKernelService implements CalibrationKernelPort {
           }
         }
         if (attempt < 3) await wait([100, 500, 1_000][attempt - 1] ?? 1_000);
+      }
+    }
+    if (interruptedRecovery && lastError && /Unexpected end of JSON input/i.test(lastError)) {
+      try {
+        const { bytesRemoved } = await cleanupAbandonedCalibrationWorkspace(this.options.temporaryRoot, sessionId);
+        return cleanupStatus({
+          state: "completed",
+          bytesTemporary,
+          bytesRemoved: previouslyRemoved + bytesRemoved,
+          attempts: 4,
+          remainingBytes: 0,
+        });
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
       }
     }
     const remainingBytes = await remainingCalibrationWorkspaceBytes(this.options.temporaryRoot, sessionId);

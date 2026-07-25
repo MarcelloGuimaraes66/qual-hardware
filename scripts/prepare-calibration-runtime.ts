@@ -14,19 +14,26 @@ const intakePath = valueAfter("--intake");
 if (!intakePath) throw new Error("Usage: npm run calibration:runtime:prepare -- --intake /absolute/intake.json [--apply]");
 const intake = JSON.parse(await readFile(resolve(intakePath), "utf8"));
 const repositoryRoot = process.cwd();
-const result = argumentsList.includes("--apply")
-  ? await applyCalibrationRuntimeProvisioning({ repositoryRoot, intake })
-  : await planCalibrationRuntimeProvisioning({ repositoryRoot, intake });
-console.log(JSON.stringify({
-  mode: argumentsList.includes("--apply") ? "applied" : "dry-run",
-  target: result.target,
-  manifestSha256: result.manifestSha256,
-  fileCount: result.files.length,
-  stagingBytes: result.stagingBytes,
-  ...("disk" in result ? { disk: result.disk } : {}),
-  ...("backupPath" in result ? {
+if (argumentsList.includes("--apply")) {
+  const result = await applyCalibrationRuntimeProvisioning({ repositoryRoot, intake });
+  console.log(JSON.stringify({
+    mode: "applied",
+    target: result.target,
+    manifestSha256: result.manifestSha256,
+    fileCount: result.files.length,
+    stagingBytes: result.stagingBytes,
+    disk: result.disk,
     backupPath: result.backupPath,
     targetRoot: result.targetRoot,
     targetBackupPath: result.targetBackupPath,
-  } : {}),
-}, null, 2));
+  }, null, 2));
+} else {
+  const result = await planCalibrationRuntimeProvisioning({ repositoryRoot, intake });
+  console.log(JSON.stringify({
+    mode: "dry-run",
+    target: result.target,
+    manifestSha256: result.manifestSha256,
+    fileCount: result.files.length,
+    stagingBytes: result.stagingBytes,
+  }, null, 2));
+}

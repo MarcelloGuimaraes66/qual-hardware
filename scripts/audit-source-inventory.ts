@@ -35,13 +35,17 @@ async function verifyContract(contract: { relativePath: string; sha256: string }
   const bytes = await readFile(path);
   const digest = sha256(canonicalText(bytes));
   if (digest !== contract.sha256) throw new Error(`Calibration contract hash mismatch: ${contract.relativePath}`);
-  const parsed = JSON.parse(bytes.toString("utf8")) as { authority?: { commit?: string }; commit?: string };
-  const declaredCommit = parsed.authority?.commit ?? parsed.commit;
+  const parsed = JSON.parse(bytes.toString("utf8")) as {
+    authority?: { commit?: string };
+    commit?: string;
+    legacyCompatibleCommit?: string;
+  };
+  const declaredCommit = parsed.authority?.commit ?? parsed.commit ?? parsed.legacyCompatibleCommit;
   if (declaredCommit !== authorityCommit) throw new Error(`Calibration contract authority mismatch: ${contract.relativePath}`);
   return { relativePath: contract.relativePath, bytes: bytes.byteLength, sha256: digest };
 }
 
-if (manifest.authorityCommit !== authorityCommit || manifest.pipelineImplementation !== "perceptrum-equivalent-v2-multi-device") {
+if (manifest.authorityCommit !== authorityCommit || manifest.pipelineImplementation !== "perceptrum-equivalent-v3-mixed-workload") {
   throw new Error("Calibration runtime manifest does not match the immutable local authority contract.");
 }
 

@@ -1,5 +1,6 @@
 export const REPORT_DOWNLOAD_FILENAMES = Object.freeze({
   pdf: "qual-hardware-recomendacoes.pdf",
+  txt: "qual-hardware-recomendacoes.txt",
   xlsx: "qual-hardware-relatorio-comercial-e-neutro.xlsx",
   json: "qual-hardware-relatorio-comercial-e-neutro.json",
   "technical-pdf": "qual-hardware-caderno-tecnico-detalhado.pdf",

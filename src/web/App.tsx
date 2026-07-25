@@ -3,29 +3,36 @@ import { createDefaultAgent, createDefaultScenario } from "../shared/schemas.js"
 import { defaultCurrencyForSelection, marketSelectionForScenario, marketsForSelection, primaryMarketForSelection, type MarketSelection } from "../shared/markets.js";
 import type {
   AgentLoad, CameraGroup, CapacityRecommendation, CapacityScenario, CatalogPublication, CatalogSource, CatalogStatus, Currency, InfrastructureKind,
-  CalibrationCollectionStatus, CalibrationDeviceIdentity, CalibrationHardwarePreflight, CalibrationMode, CalibrationPlan, CalibrationResumeStatus, CalibrationRuntimeInstallation, CalibrationRuntimePackageStatus, CalibrationRuntimeStatus, CalibrationSession, CapacityPrediction, HardwareNodeTemplate, LocalCalibrationRun, OperatingSystemFamily,
+  CalibrationCollectionStatus, CalibrationDeviceIdentity, CalibrationDiagnosticReportModel, CalibrationHardwarePreflight, CalibrationMode, CalibrationPlan, CalibrationResumeStatus, CalibrationRuntimeStatus, CalibrationSession, CapacityPrediction, ExecutionEnvironment, HardwareNodeTemplate, LocalCalibrationRun, OperatingSystemFamily,
   HardwareComponent, RecommendationAlternative, RecommendationPolicy, ScenarioRecord,
 } from "../shared/types.js";
-import { WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
 import { CalibrationResultPanel } from "./CalibrationResultPanel.js";
 import { REPORT_DOWNLOAD_FILENAMES, REPORT_EXPORT_COPY, isNeutralAnnexFormat, type ExportFormat } from "./reportExports.js";
+import { withCameraGroupCount, withCameraTotal as rebalanceCameraTotal } from "./cameraAllocation.js";
+import { visibleText } from "./visibleText.js";
 
 type Language = "pt" | "en";
+type QwenSelectionRequest = {
+  mode: "automatic" | "manual";
+  coreModelId?: string | null;
+  coreMaxModelId?: string | null;
+};
 const steps = ["project", "cameras", "agents", "additional", "storage", "result"] as const;
 type Step = typeof steps[number];
 const presets = [4, 8, 16, 32, 65, 128, 256];
+const QWEN_SELECTION_STORAGE_KEY = "qual-hardware-qwen-selection-v1";
 
 const text = {
   pt: {
     project: "Projeto e mercado", cameras: "Câmeras", agents: "Perfis de operação", additional: "Cargas adicionais",
     storage: "Rede e arquivos temporários", result: "Resultado", next: "Continuar", back: "Voltar", calculate: "Dimensionar infraestrutura",
-    title: "Qual Hardware", subtitle: "Aplicativo desktop para dimensionar computadores e servidores do Perceptrum",
+    title: "Qual Hardware", subtitle: "Dimensionamento e qualificação de computadores e servidores para vídeo e IA",
     estimated: "Estimada", validated: "Validada", quote: "Cotação necessária", save: "Salvar projeto",
   },
   en: {
     project: "Project & market", cameras: "Cameras", agents: "Operating profiles", additional: "Additional loads",
     storage: "Network & temporary files", result: "Results", next: "Continue", back: "Back", calculate: "Size infrastructure",
-    title: "Qual Hardware", subtitle: "Desktop application for sizing Perceptrum computers and servers",
+    title: "Qual Hardware", subtitle: "Sizing and qualification of computers and servers for video and AI",
     estimated: "Estimated", validated: "Validated", quote: "Quote required", save: "Save project",
   },
 } as const;
@@ -33,8 +40,30 @@ const text = {
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...options, headers: { "content-type": "application/json", ...options?.headers } });
   const body = await response.json() as T & { error?: string; message?: string };
-  if (!response.ok) throw new Error(body.message ?? body.error ?? `HTTP ${response.status}`);
+  if (!response.ok) throw new Error(visibleText(body.message ?? body.error ?? `HTTP ${response.status}`));
   return body;
+}
+
+async function executionEnvironmentWithRetry(): Promise<ExecutionEnvironment> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await api<ExecutionEnvironment>("/api/calibrations/environment");
+    } catch (error) {
+      if (!(error instanceof TypeError) || attempt >= 3) throw error;
+      await new Promise((resolveWait) => window.setTimeout(resolveWait, attempt * 300));
+    }
+  }
+}
+
+function savedQwenSelection(): QwenSelectionRequest | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(QWEN_SELECTION_STORAGE_KEY) ?? "null") as QwenSelectionRequest | null;
+    if (parsed?.mode !== "manual" || typeof parsed.coreModelId !== "string" ||
+        typeof parsed.coreMaxModelId !== "string") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 function downloadJson(filename: string, value: unknown): void {
@@ -57,19 +86,8 @@ async function downloadBinaryResponse(response: Response, fallbackName: string):
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-function normalizedCameraCount(value: number): number {
-  return Math.min(1_000_000, Math.max(1, Math.trunc(Number.isFinite(value) ? value : 1)));
-}
-
 function withCameraTotal(scenario: CapacityScenario, value: number): CapacityScenario {
-  const totalCameras = normalizedCameraCount(value);
-  const [first, ...remaining] = scenario.cameraGroups;
-  if (!first) return { ...scenario, totalCameras, cameraGroups: [newGroup(totalCameras)] };
-  const remainingTotal = remaining.reduce((sum, group) => sum + group.count, 0);
-  const cameraGroups = totalCameras > remainingTotal
-    ? [{ ...first, count: totalCameras - remainingTotal }, ...remaining]
-    : [{ ...first, count: totalCameras }];
-  return { ...scenario, totalCameras, cameraGroups };
+  return rebalanceCameraTotal(scenario, value, newGroup);
 }
 
 function createInitialScenario(): CapacityScenario {
@@ -85,7 +103,7 @@ function splitCameraGroup(scenario: CapacityScenario): CapacityScenario {
   cameraGroups.push({
     ...donor,
     id: crypto.randomUUID(),
-    name: `Camera profile ${cameraGroups.length + 1}`,
+    name: `Perfil de câmeras ${cameraGroups.length + 1}`,
     count: 1,
     source: { ...donor.source },
     storage: { ...donor.storage },
@@ -109,6 +127,7 @@ async function checkedReportBlob(response: Response, format: ExportFormat): Prom
   }
   const expectedContentType: Record<ExportFormat, string> = {
     pdf: "application/pdf",
+    txt: "text/plain",
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     json: "application/json",
     "technical-pdf": "application/pdf",
@@ -194,7 +213,7 @@ function ProjectStep({ scenario, update, lang, cameraCountConfirmed, onCameraCou
       }}><option value="BR">{lang === "pt" ? "Brasil" : "Brazil"}</option><option value="US">{lang === "pt" ? "Estados Unidos" : "United States"}</option><option value="DE">{lang === "pt" ? "União Europeia" : "European Union"}</option><option value="BR_US">{lang === "pt" ? "Brasil e Estados Unidos" : "Brazil and United States"}</option><option value="BR_DE">{lang === "pt" ? "Brasil e União Europeia" : "Brazil and European Union"}</option><option value="ALL">{lang === "pt" ? "Todo o mundo — Brasil, EUA e UE" : "Worldwide — Brazil, US and EU"}</option></select></Field>
       <Field label={lang === "pt" ? "Moeda" : "Currency"}><select value={scenario.currency} onChange={(e) => update({ ...scenario, currency: e.target.value as Currency })}><option>BRL</option><option>USD</option><option>EUR</option></select></Field>
       <Field label={lang === "pt" ? "Formato" : "Form factor"}><select value={scenario.constraints.infrastructureKind} onChange={(e) => update({ ...scenario, constraints: { ...scenario.constraints, infrastructureKind: e.target.value as InfrastructureKind, requiredHardwareTemplateId: null } })}><option value="either">{lang === "pt" ? "Melhor opção (inclui opções econômicas)" : "Best fit (includes lower-cost computers)"}</option><option value="laptop">Notebook / laptop</option><option value="mini_pc">Mini PC / Mac mini</option><option value="workstation">Workstation</option><option value="rack">Rack server</option></select></Field>
-      <Field label={lang === "pt" ? "Sistema operacional alvo" : "Target operating system"} hint={lang === "pt" ? "Apple/macOS é opt-in porque exige um build correspondente do Perceptrum." : "Apple/macOS is opt-in because it requires a matching Perceptrum build."}><select value={scenario.constraints.operatingSystem ?? "auto"} onChange={(e) => update({ ...scenario, constraints: { ...scenario.constraints, operatingSystem: e.target.value as "auto" | OperatingSystemFamily, requiredHardwareTemplateId: null } })}><option value="auto">{lang === "pt" ? "Automático — Windows/Ubuntu" : "Automatic — Windows/Ubuntu"}</option><option value="windows">Windows</option><option value="ubuntu">Ubuntu Linux</option><option value="macos">macOS / Apple Silicon</option></select></Field>
+      <Field label={lang === "pt" ? "Sistema operacional alvo" : "Target operating system"} hint={lang === "pt" ? "Apple/macOS é opcional e precisa de evidência física comparável para aumentar a validade da recomendação." : "Apple/macOS is optional and needs comparable physical evidence to increase recommendation validity."}><select value={scenario.constraints.operatingSystem ?? "auto"} onChange={(e) => update({ ...scenario, constraints: { ...scenario.constraints, operatingSystem: e.target.value as "auto" | OperatingSystemFamily, requiredHardwareTemplateId: null } })}><option value="auto">{lang === "pt" ? "Automático — Windows/Ubuntu" : "Automatic — Windows/Ubuntu"}</option><option value="windows">Windows</option><option value="ubuntu">Ubuntu Linux</option><option value="macos">macOS / Apple Silicon</option></select></Field>
       <Field label={lang === "pt" ? "Avaliar equipamento existente (opcional)" : "Evaluate existing hardware (optional)"} hint={lang === "pt" ? "Força o cálculo a usar exatamente esta máquina. Em GPU integrada, o decode muda para CPU." : "Forces sizing to use this exact machine. Integrated-GPU selections switch decode to CPU."}><select value={scenario.constraints.requiredHardwareTemplateId ?? ""} onChange={(event) => {
         const selected = hardwareCatalog.find((hardware) => hardware.id === event.target.value);
         if (!selected) {
@@ -213,9 +232,8 @@ function ProjectStep({ scenario, update, lang, cameraCountConfirmed, onCameraCou
         });
       }}><option value="">{lang === "pt" ? "Usar todo o catálogo" : "Use full catalog"}</option>{hardwareCatalog.map((hardware) => <option key={hardware.id} value={hardware.id}>{hardware.name} · {hardware.cpuModel} · {hardware.ramGb} GB</option>)}</select></Field>
       <Field label={lang === "pt" ? "Orçamento opcional" : "Optional budget"}><input type="number" min="0" placeholder={scenario.currency} value={scenario.constraints.budget ?? ""} onChange={(e) => update({ ...scenario, constraints: { ...scenario.constraints, budget: e.target.value ? Number(e.target.value) : null } })} /></Field>
-      <Field label="Perceptrum build hash" hint={lang === "pt" ? "O selo de validação é vinculado a este build." : "Validation is bound to this build."}><input value={scenario.perceptrumBuildHash} onChange={(e) => update({ ...scenario, perceptrumBuildHash: e.target.value })} /></Field>
       <div className="field toggles"><span>{lang === "pt" ? "Requisitos" : "Requirements"}</span><Toggle checked={scenario.constraints.requireEcc} onChange={(requireEcc) => update({ ...scenario, constraints: { ...scenario.constraints, requireEcc } })} label="ECC" /></div>
-    </div>{scenario.constraints.operatingSystem === "macos" && <div className="info-box">{lang === "pt" ? "Apple Silicon usa o Perceptrum macOS e o AiQ/Qwen local. Memória unificada e decode RTSP por CPU são dimensionados conservadoramente até existir calibração física comparável." : "Apple Silicon uses Perceptrum macOS and local AiQ/Qwen. Unified memory and CPU RTSP decode are sized conservatively until comparable physical calibration exists."}</div>}
+    </div>{scenario.constraints.operatingSystem === "macos" && <div className="info-box">{lang === "pt" ? "Apple Silicon usa memória unificada e aceleração local. A recepção RTSP e o processamento são dimensionados conservadoramente até existir calibração física comparável." : "Apple Silicon uses unified memory and local acceleration. RTSP ingest and processing are sized conservatively until comparable physical calibration exists."}</div>}
   </section>;
 }
 
@@ -252,7 +270,7 @@ function CameraStep({ scenario, update, lang }: { scenario: CapacityScenario; up
       <div className="group-title"><b>{lang === "pt" ? "Grupo" : "Group"} {index + 1}</b>{scenario.cameraGroups.length > 1 && <button className="icon-button" onClick={() => update(removeCameraGroup(scenario, group.id))}>×</button>}</div>
       <div className="compact-grid">
         <Field label={lang === "pt" ? "Nome" : "Name"}><input value={group.name} onChange={(e) => changeGroup(group.id, { name: e.target.value })} /></Field>
-        <Field label={lang === "pt" ? "Quantidade" : "Count"}><input type="number" min="1" value={group.count} onChange={(e) => changeGroup(group.id, { count: Number(e.target.value) })} /></Field>
+        <Field label={lang === "pt" ? "Quantidade" : "Count"}><input type="number" min="1" value={group.count} onChange={(e) => update(withCameraGroupCount(scenario, group.id, Number(e.target.value)))} /></Field>
         <Field label="Codec"><select value={group.source.codec} onChange={(e) => changeGroup(group.id, { source: { ...group.source, codec: e.target.value as "h264" | "h265" } })}><option value="h264">H.264</option><option value="h265">H.265</option></select></Field>
         <Field label={lang === "pt" ? "Resolução" : "Resolution"}><select value={`${group.source.width}x${group.source.height}`} onChange={(e) => { const [width, height] = e.target.value.split("x").map(Number); changeGroup(group.id, { source: { ...group.source, width: width!, height: height! } }); }}><option value="1280x720">720p</option><option value="1920x1080">1080p</option><option value="3840x2160">4K</option></select></Field>
         <Field label={lang === "pt" ? "FPS de leitura RTSP" : "RTSP read FPS"} hint={lang === "pt" ? "Quadros recebidos e decodificados por câmera. Não é o FPS enviado ao AiQ." : "Frames received and decoded per camera. This is not the AiQ inference FPS."}><input type="number" min="1" max="120" value={group.source.sourceFps} onChange={(e) => changeGroup(group.id, { source: { ...group.source, sourceFps: Number(e.target.value) } })} /></Field>
@@ -266,25 +284,26 @@ function CameraStep({ scenario, update, lang }: { scenario: CapacityScenario; up
 
 function AgentsStep({ scenario, update, lang }: { scenario: CapacityScenario; update: (next: CapacityScenario) => void; lang: Language }): ReactElement {
   const changeGroupAgents = (groupId: string, agents: AgentLoad[]): void => update({ ...scenario, cameraGroups: scenario.cameraGroups.map((group) => group.id === groupId ? { ...group, agents } : group) });
-  const changeGroupCount = (groupId: string, count: number): void => update({ ...scenario, cameraGroups: scenario.cameraGroups.map((group) => group.id === groupId ? { ...group, count: normalizedCameraCount(count) } : group) });
+  const changeGroupCount = (groupId: string, count: number): void => update(withCameraGroupCount(scenario, groupId, count));
   const assignedCameras = scenario.cameraGroups.reduce((sum, group) => sum + group.count, 0);
   return <section className="panel step-panel"><div className="section-heading"><p>03</p><div><h2>{lang === "pt" ? "Tipo de leitura e perfis de Agents" : "Reading type and Agent profiles"}</h2><span>{lang === "pt" ? "Informe como cada grupo será lido. Uma câmera pode executar múltiplas análises." : "Describe how each group will be read. A camera can run multiple analyses."}</span></div></div>
-    <div className="agent-load-guide"><b>{lang === "pt" ? "Esta etapa define o peso real" : "This step defines the real load"}</b><span>{lang === "pt" ? "VÍDEO FULL considera a janela de vídeo, 1–5 FPS de inferência, preparação dos frames e inferência. FRAME considera uma imagem por execução. RTSP continua sendo decodificado continuamente nos dois casos." : "FULL VIDEO includes the video window, 1–5 inference FPS, frame preparation, and inference. FRAME uses one image per run. RTSP is still decoded continuously in both cases."}</span></div>
+    <div className="agent-load-guide"><b>{lang === "pt" ? "Esta etapa define o peso real" : "This step defines the real load"}</b><span>{lang === "pt" ? "VÍDEO FULL e FRAME mantêm a sessão RTSP e a decodificação de base. VÍDEO FULL cria o clipe e envia de 1 a 10 FPS ao modelo; FRAME usa uma imagem por execução e não cria clipe quando não há gravação ou outro Agent de vídeo." : "FULL VIDEO and FRAME keep the RTSP session and base decoding active. FULL VIDEO creates the clip and sends 1–10 FPS to the model; FRAME uses one image per run and creates no clip unless recording or another video Agent requires it."}</span></div>
     <div className={`total-check ${assignedCameras === scenario.totalCameras ? "ok" : "error"}`}>{assignedCameras} / {scenario.totalCameras} {lang === "pt" ? "câmeras distribuídas entre os perfis" : "cameras allocated among profiles"}</div>
     {scenario.cameraGroups.map((group) => <div className="agent-group" key={group.id}><div className="profile-camera-count"><h3>{group.name}</h3><Field label={lang === "pt" ? "Quantas câmeras usarão este perfil?" : "How many cameras will use this profile?"}><input type="number" min="1" max="1000000" value={group.count} onChange={(e) => changeGroupCount(group.id, Number(e.target.value))} /></Field></div>{group.agents.map((agent, index) => {
       const change = (patch: Partial<AgentLoad>): void => changeGroupAgents(group.id, group.agents.map((item) => item.id === agent.id ? { ...item, ...patch } : item));
       const aiq = agent.model === "aiq-3.7" || agent.model === "aiq-3.7-max";
       const portalCounter = agent.model === "opencv-portal-counter";
-      const adjustableFps = agent.model !== "gpt-5-mini" && !portalCounter && !aiq;
+      const adjustableFps = !portalCounter;
       return <article className="agent-card" key={agent.id}><div className="group-title"><div><b>Agent {index + 1}</b><span className="reading-badge">{readingTypeLabel(agent, lang)}</span></div>{group.agents.length > 1 && <button className="icon-button" onClick={() => changeGroupAgents(group.id, group.agents.filter((item) => item.id !== agent.id))}>×</button>}</div>
         <div className="compact-grid"><Field label={lang === "pt" ? "Nome" : "Name"}><input value={agent.name} onChange={(e) => change({ name: e.target.value })} /></Field>
           <Field label={lang === "pt" ? "Modelo de inferência (Agents)" : "Inference model (Agents)"}><select value={agent.model} onChange={(e) => change({ model: e.target.value as AgentLoad["model"] })}><option value="gpt-5.4">GPT-5.4 / Ultra Plus</option><option value="gpt-5">GPT-5 / Ultra</option><option value="gpt-5.4-mini">GPT-5.4 mini / Light</option><option value="gpt-5-mini">GPT-5 mini / Legacy</option><option value="aiq-3.7">AiQ-3.7 / Core local</option><option value="aiq-3.7-max">AiQ-3.7-Max / Core Max local</option><option value="opencv-portal-counter">Portal Counter OpenCV</option></select></Field>
           <Field label={lang === "pt" ? "Tipo de leitura da câmera (Agents)" : "Camera reading type (Agents)"} hint={lang === "pt" ? "VÍDEO FULL usa uma sequência; FRAME usa uma imagem." : "FULL VIDEO uses a sequence; FRAME uses one image."}><select value={agent.inputType} onChange={(e) => change({ inputType: e.target.value as "video" | "image" })} disabled={portalCounter}><option value="video">{lang === "pt" ? "VÍDEO FULL — sequência de frames" : "FULL VIDEO — frame sequence"}</option><option value="image">{lang === "pt" ? "FRAME — uma imagem por execução" : "FRAME — one image per run"}</option></select></Field>
           {agent.inputType === "video" && <Field label={lang === "pt" ? "Qualidade do vídeo (Agents)" : "Video quality (Agents)"}><select value={agent.packaging} onChange={(e) => change({ packaging: e.target.value as AgentLoad["packaging"] })} disabled={portalCounter}><option value="frame_sequence">{lang === "pt" ? "Alta resolução — sequência de frames" : "High resolution — frame sequence"}</option><option value="mosaic_2x2">{lang === "pt" ? "Resolução padrão — mosaico 2×2" : "Standard resolution — 2×2 mosaic"}</option></select></Field>}
-          {agent.inputType === "video" && adjustableFps && <Field label={lang === "pt" ? "FPS efetivos enviados ao AiQ" : "Effective FPS sent to AiQ"} hint={lang === "pt" ? "Quadros extraídos para a inferência local. O Perceptrum executa de 1 a 5 FPS; valores antigos maiores que 5 são limitados a 5." : "Frames extracted for local inference. Perceptrum executes 1–5 FPS; legacy values above 5 are capped at 5."}><select value={Math.min(5, agent.modelFps)} onChange={(e) => change({ modelFps: Number(e.target.value) })}>{[1,2,3,4,5].map((fps) => <option key={fps} value={fps}>{fps} FPS</option>)}</select></Field>}
-          <Field label={lang === "pt" ? "Janela / executar a cada (Agents)" : "Window / run every (Agents)"}><select value={agent.runEverySeconds <= 10 ? 10 : 60} onChange={(e) => change({ runEverySeconds: Number(e.target.value) as AgentLoad["runEverySeconds"] })} disabled={aiq || portalCounter}><option value="10">{agent.inputType === "video" ? (lang === "pt" ? "Janela de 10 s / inferir a cada 10 s" : "10 s window / infer every 10 s") : (lang === "pt" ? "1 frame a cada 10 s" : "1 frame every 10 s")}</option><option value="60">{agent.inputType === "video" ? (lang === "pt" ? "Janela de 60 s / inferir a cada 60 s" : "60 s window / infer every 60 s") : (lang === "pt" ? "1 frame a cada 60 s" : "1 frame every 60 s")}</option></select></Field>
+          {agent.inputType === "video" && adjustableFps && <Field label={lang === "pt" ? "FPS efetivos enviados ao AiQ" : "Effective FPS sent to AiQ"} hint={lang === "pt" ? "Quadros extraídos para a inferência local. O perfil de VÍDEO FULL permite de 1 a 10 FPS." : "Frames extracted for local inference. The FULL VIDEO profile supports 1–10 FPS."}><select value={Math.min(10, agent.modelFps)} onChange={(e) => change({ modelFps: Number(e.target.value) })}>{[1,2,3,4,5,6,7,8,9,10].map((fps) => <option key={fps} value={fps}>{fps} FPS</option>)}</select></Field>}
+          <Field label={lang === "pt" ? "Escopo da execução" : "Execution scope"} hint={lang === "pt" ? "Individual executa um Agent por câmera. Grupo cria uma inferência para o conjunto de câmeras." : "Individual runs one Agent per camera. Group creates one inference for the camera set."}><select value={agent.executionScope ?? (agent.runEverySeconds >= 300 ? "inference_group" : "camera_agent")} onChange={(e) => change({ executionScope: e.target.value as AgentLoad["executionScope"], ...(e.target.value === "camera_agent" && agent.runEverySeconds > 60 ? { runEverySeconds: 60 as const } : {}) })} disabled={portalCounter}><option value="camera_agent">{lang === "pt" ? "Individual — por câmera" : "Individual — per camera"}</option><option value="inference_group">{lang === "pt" ? "Grupo — conjunto de câmeras" : "Group — camera set"}</option></select></Field>
+          <Field label={lang === "pt" ? "Janela / executar a cada (Agents)" : "Window / run every (Agents)"}><select value={agent.runEverySeconds} onChange={(e) => change({ runEverySeconds: Number(e.target.value) as AgentLoad["runEverySeconds"] })} disabled={portalCounter}><option value="10">{agent.inputType === "video" ? (lang === "pt" ? "Janela de 10 s / inferir a cada 10 s" : "10 s window / infer every 10 s") : (lang === "pt" ? "1 frame a cada 10 s" : "1 frame every 10 s")}</option><option value="60">{agent.inputType === "video" ? (lang === "pt" ? "Janela de 60 s / inferir a cada 60 s" : "60 s window / infer every 60 s") : (lang === "pt" ? "1 frame a cada 60 s" : "1 frame every 60 s")}</option>{(agent.executionScope === "inference_group" || agent.runEverySeconds >= 300) && <><option value="300">{lang === "pt" ? "Grupo a cada 5 minutos" : "Group every 5 minutes"}</option><option value="600">{lang === "pt" ? "Grupo a cada 10 minutos" : "Group every 10 minutes"}</option></>}</select></Field>
         </div>
-        {aiq && <div className="normalization">{lang === "pt" ? "Regra efetiva verificada no código atual: AiQ/Qwen Core recebe 1 FPS de inferência e executa em ciclos de 60 segundos. O RTSP continua sendo recebido e decodificado no FPS configurado da câmera." : "Effective rule verified in the current code: AiQ/Qwen Core receives 1 inference FPS and runs in 60-second cycles. RTSP is still received and decoded at the camera FPS."}</div>}
+        {aiq && <div className="normalization">{lang === "pt" ? "A análise local seguirá a cadência e o escopo definidos acima. VÍDEO FULL usa uma sequência contínua; FRAME usa uma imagem por execução." : "Local analysis follows the cadence and scope above. FULL VIDEO uses a continuous sequence; FRAME uses one image per run."}</div>}
         {portalCounter && <div className="normalization">{lang === "pt" ? "Portal Counter usa vídeo, sequência de frames, 1 FPS e execução de 60 segundos; esses valores são aplicados automaticamente." : "Portal Counter uses video, frame sequence, 1 FPS, and a 60-second run; these values are applied automatically."}</div>}
         <div className="advanced-load-title">{lang === "pt" ? "Opções avançadas que também alteram a carga" : "Advanced options that also change the load"}</div>
         <div className="feature-row"><Toggle checked={agent.features.onlyCaptureOnMotion} onChange={(value) => change({ features: { ...agent.features, onlyCaptureOnMotion: value } })} label={lang === "pt" ? "Só capturar com movimento" : "Capture on motion only"} /><Toggle checked={agent.features.temporal} onChange={(value) => change({ features: { ...agent.features, temporal: value } })} label={lang === "pt" ? "Contexto temporal" : "Temporal context"} /><Toggle checked={agent.features.croppedFrame} onChange={(value) => change({ features: { ...agent.features, croppedFrame: value } })} label={lang === "pt" ? "Recorte do frame" : "Frame crop"} /></div>
@@ -309,7 +328,7 @@ function NetworkStep({ scenario, lang }: { scenario: CapacityScenario; lang: Lan
     <div className="info-box">{lang === "pt" ? "O dimensionamento considera throughput de escrita/leitura e pelo menos um dia de clipes temporários. Retenção e RAID configurados aumentam a capacidade exigida." : "Sizing includes write/read throughput and at least one day of rolling clips. Configured retention and RAID increase required capacity."}</div></section>;
 }
 
-const policyLabels: Record<RecommendationPolicy, { pt: string; en: string }> = { minimum: { pt: "Mínimo técnico", en: "Technical minimum" }, recommended: { pt: "Recomendado", en: "Recommended" }, n_plus_one: { pt: "N+1 resiliente", en: "Resilient N+1" } };
+const policyLabels: Record<RecommendationPolicy, { pt: string; en: string }> = { minimum: { pt: "Opção econômica", en: "Economical option" }, recommended: { pt: "Recomendado", en: "Recommended" }, n_plus_one: { pt: "N+1 resiliente", en: "Resilient N+1" } };
 
 function confidenceText(prediction: CapacityPrediction | undefined, lang: Language): string {
   if (!prediction) return lang === "pt" ? "Somente referência" : "Reference only";
@@ -330,24 +349,24 @@ function DesignDetail({ design, lang, scenarioCameras }: { design: Recommendatio
     ? (lang === "pt" ? "APTO PARA AQUISIÇÃO" : "ELIGIBLE FOR PURCHASE")
     : design.procurementEligibility === "planning_only"
       ? (lang === "pt" ? "SOMENTE PLANEJAMENTO" : "PLANNING ONLY")
-      : (lang === "pt" ? "COMPRA BLOQUEADA" : "PURCHASE BLOCKED");
-  return <div className="design-detail"><div className={`procurement-banner ${design.procurementEligibility}`}><b>{eligibilityLabel}</b><span>{eligible ? (lang === "pt" ? "Todos os estágios críticos possuem evidência comparável e margem conservadora." : "Every critical stage has comparable evidence and conservative reserve.") : (lang === "pt" ? "Esta configuração não possui prova completa para todos os estágios. Use-a somente para planejar testes; não compre com base neste resultado." : "This configuration lacks complete evidence across every stage. Use it only to plan tests; do not purchase from this result.")}</span></div><div className="spec-hero"><div><span>{lang === "pt" ? "Nós" : "Nodes"}</span><strong>{design.nodeCount}</strong><small>{design.activeNodeCount} {lang === "pt" ? "ativos" : "active"}</small></div><div><span>{lang === "pt" ? "Folga" : "Headroom"}</span><strong>{design.headroomPercent}%</strong><small>target</small></div><div><span>{eligible ? (lang === "pt" ? "Capacidade segura" : "Safe capacity") : (lang === "pt" ? "Capacidade comprovada" : "Proven capacity")}</span><strong>{eligible ? estimatedCapacity : "—"}</strong><small>{eligible ? (lang === "pt" ? `câmeras neste perfil (+${design.maximumAdditionalCameras})` : `cameras in this profile (+${design.maximumAdditionalCameras})`) : (lang === "pt" ? "indisponível até completar evidências" : "unavailable until evidence is complete")}</small></div></div>
-    <div className="hardware-title"><div><span>{design.hardware.kind} · {hardwareOperatingSystem(design.hardware)} · {design.hardware.generation}</span><h3>{design.hardware.name}</h3></div><div className="price-summary"><b>{design.price.median === null ? text[lang].quote : money(design.price.median, design.price.currency)}</b><small>{design.price.basis === "reference_estimate" ? (lang === "pt" ? "estimativa do projeto · cotação de compra necessária" : "project estimate · purchase quote required") : design.price.basis === "market_quotes" ? (lang === "pt" ? "preço de mercado do projeto" : "market project price") : text[lang].quote}</small></div></div>
-    <div className="spec-grid"><div><span>CPU</span><b>{design.hardware.cpuModel}</b><small>{design.hardware.physicalCores} cores · {Math.round((design.hardware.sustainedComputeFactor ?? 1) * 100)}% {lang === "pt" ? "fator sustentado" : "sustained factor"}</small></div><div><span>RAM</span><b>{design.hardware.ramGb} GB {design.hardware.ecc ? "ECC" : ""}</b><small>{design.hardware.memoryArchitecture === "unified" ? (lang === "pt" ? "unificada CPU/GPU" : "unified CPU/GPU") : (lang === "pt" ? "por nó" : "per node")}</small></div><div><span>GPU</span><b>{design.hardware.gpuCount}× {design.hardware.gpuModel}</b><small>{gpuMemoryLabel(design.hardware, lang)}</small></div><div><span>{lang === "pt" ? "NVMe operacional" : "Operational NVMe"}</span><b>{design.hardware.storageModel}</b><small>{lang === "pt" ? "clipes + leitura + retenção dimensionam nós" : "clips + reads + retention constrain nodes"}</small></div><div><span>Network</span><b>{design.hardware.nicGbps} GbE</b><small>{design.hardware.chassis}</small></div><div><span>{lang === "pt" ? "Gargalo" : "Bottleneck"}</span><b>{design.bottleneck}</b><small>{design.hardware.windowsEdition}</small></div></div>
+      : (lang === "pt" ? "ESTIMATIVA TÉCNICA — COMPRA REQUER EVIDÊNCIA" : "TECHNICAL ESTIMATE — PURCHASE REQUIRES EVIDENCE");
+  return <div className="design-detail"><div className={`procurement-banner ${design.procurementEligibility}`}><b>{eligibilityLabel}</b><span>{eligible ? (lang === "pt" ? "Todos os estágios críticos possuem evidência comparável e margem conservadora." : "Every critical stage has comparable evidence and conservative reserve.") : (lang === "pt" ? "O cálculo usa especificações, benchmarks disponíveis e margens conservadoras. Ele serve para planejamento mesmo sem calibração, mas a compra deve considerar a incerteza declarada." : "The calculation uses specifications, available benchmarks, and conservative margins. It supports planning without calibration, but procurement must account for the stated uncertainty.")}</span></div><div className="spec-hero"><div><span>{lang === "pt" ? "Servidores" : "Nodes"}</span><strong>{design.nodeCount}</strong><small>{design.activeNodeCount} {lang === "pt" ? "ativos" : "active"}</small></div><div><span>{lang === "pt" ? "Folga" : "Headroom"}</span><strong>{design.headroomPercent}%</strong><small>{eligible ? (lang === "pt" ? "homologada" : "qualified") : (lang === "pt" ? "aplicada à estimativa" : "applied to estimate")}</small></div><div><span>{eligible ? (lang === "pt" ? "Capacidade segura" : "Safe capacity") : (lang === "pt" ? "Capacidade estimada" : "Estimated capacity")}</span><strong>{estimatedCapacity}</strong><small>{eligible ? (lang === "pt" ? `câmeras neste perfil (+${design.maximumAdditionalCameras})` : `cameras in this profile (+${design.maximumAdditionalCameras})`) : (lang === "pt" ? `câmeras para planejamento (+${design.maximumAdditionalCameras} além da carga informada)` : `planning cameras (+${design.maximumAdditionalCameras} beyond the requested load)`)}</small></div></div>
+    <div className="hardware-title"><div><span>{visibleText(design.hardware.kind)} · {hardwareOperatingSystem(design.hardware)} · {visibleText(design.hardware.generation)}</span><h3>{visibleText(design.hardware.name)}</h3></div><div className="price-summary"><b>{design.price.median === null ? text[lang].quote : money(design.price.median, design.price.currency)}</b><small>{design.price.basis === "reference_estimate" ? (lang === "pt" ? "estimativa do projeto · cotação de compra necessária" : "project estimate · purchase quote required") : design.price.basis === "market_quotes" ? (lang === "pt" ? "preço de mercado do projeto" : "market project price") : text[lang].quote}</small></div></div>
+    <div className="spec-grid"><div><span>CPU</span><b>{design.hardware.cpuModel}</b><small>{design.hardware.physicalCores} {lang === "pt" ? "núcleos" : "cores"} · {Math.round((design.hardware.sustainedComputeFactor ?? 1) * 100)}% {lang === "pt" ? "fator sustentado" : "sustained factor"}</small></div><div><span>RAM</span><b>{design.hardware.ramGb} GB {design.hardware.ecc ? "ECC" : ""}</b><small>{design.hardware.memoryArchitecture === "unified" ? (lang === "pt" ? "unificada CPU/GPU" : "unified CPU/GPU") : (lang === "pt" ? "por servidor" : "per server")}</small></div><div><span>GPU</span><b>{design.hardware.gpuCount}× {design.hardware.gpuModel}</b><small>{gpuMemoryLabel(design.hardware, lang)}</small></div><div><span>{lang === "pt" ? "NVMe operacional" : "Operational NVMe"}</span><b>{design.hardware.storageModel}</b><small>{lang === "pt" ? "clipes + leitura + retenção dimensionam servidores" : "clips + reads + retention constrain servers"}</small></div><div><span>{lang === "pt" ? "Rede" : "Network"}</span><b>{design.hardware.nicGbps} GbE</b><small>{design.hardware.chassis}</small></div><div><span>{lang === "pt" ? "Gargalo" : "Bottleneck"}</span><b>{visibleText(design.bottleneck)}</b><small>{visibleText(design.hardware.windowsEdition)}</small></div></div>
     {design.fleetPlan && <><h4>{lang === "pt" ? "Plano completo da frota" : "Complete fleet plan"}</h4><div className="spec-grid fleet-plan-grid">
-      <div><span>{lang === "pt" ? "Servidores" : "Servers"}</span><b>{design.fleetPlan.activeServers} + {design.fleetPlan.reserveServers}</b><small>{design.fleetPlan.activeServers} {lang === "pt" ? "ativos" : "active"} · {design.fleetPlan.reserveServers} {lang === "pt" ? "reserva" : "reserve"} · {design.fleetPlan.redundancyPolicy}</small></div>
-      <div><span>{lang === "pt" ? "Capacidade por servidor" : "Capacity per server"}</span><b>{design.fleetPlan.safeCamerasPerServer} {lang === "pt" ? "câmeras" : "cameras"}</b><small>{lang === "pt" ? "já inclui a margem operacional" : "already includes operational headroom"}</small></div>
+      <div><span>{lang === "pt" ? "Servidores" : "Servers"}</span><b>{design.fleetPlan.activeServers} + {design.fleetPlan.reserveServers}</b><small>{design.fleetPlan.activeServers} {lang === "pt" ? "ativos" : "active"} · {design.fleetPlan.reserveServers} {lang === "pt" ? "reserva" : "reserve"} · {visibleText(design.fleetPlan.redundancyPolicy)}</small></div>
+      <div><span>{eligible ? (lang === "pt" ? "Capacidade segura por servidor" : "Safe capacity per server") : (lang === "pt" ? "Capacidade estimada por servidor" : "Estimated capacity per server")}</span><b>{design.fleetPlan.safeCamerasPerServer} {lang === "pt" ? "câmeras" : "cameras"}</b><small>{lang === "pt" ? "já inclui a margem operacional indicada" : "already includes the stated operational headroom"}</small></div>
       <div><span>{lang === "pt" ? "CPU por servidor" : "CPU per server"}</span><b>{design.fleetPlan.perServer.cpuSockets} CPU / {design.fleetPlan.perServer.physicalCores}C</b><small>{design.fleetPlan.perServer.logicalCores} threads · {design.fleetPlan.totals.cpuSockets} CPU {lang === "pt" ? "na frota" : "fleet total"}</small></div>
       <div><span>{lang === "pt" ? "GPU por servidor" : "GPU per server"}</span><b>{design.fleetPlan.perServer.gpuCount} GPU</b><small>{design.fleetPlan.totals.gpuCount} GPU {lang === "pt" ? "na frota completa" : "in the complete fleet"}</small></div>
       <div><span>{lang === "pt" ? "RAM total" : "Total RAM"}</span><b>{Math.ceil(design.fleetPlan.totals.ramBytes / 1024 ** 3)} GB</b><small>{Math.ceil(design.fleetPlan.perServer.ramBytes / 1024 ** 3)} GB {lang === "pt" ? "por servidor" : "per server"}</small></div>
-      <div><span>{lang === "pt" ? "Rede total" : "Total network"}</span><b>{design.fleetPlan.totals.networkGbps.toFixed(1)} Gbps</b><small>{design.fleetPlan.perServer.networkGbps} Gbps {lang === "pt" ? "por servidor" : "per server"} · {design.fleetPlan.status}</small></div>
-    </div><div className={`info-box ${design.fleetPlan.status === "single_node_validated" ? "success" : "warning"}`}><b>{lang === "pt" ? "Validação do plano" : "Plan validation"}: {design.fleetPlan.status}</b><span>{design.fleetPlan.status === "planning_only" ? (lang === "pt" ? "Antes da compra, o cluster precisa comprovar balanceamento, falha de nó, rede, armazenamento e recuperação." : "Before purchase, the cluster must prove balancing, node failure, network, storage, and recovery.") : (lang === "pt" ? "Dimensionamento por nó sustentado por evidência local compatível." : "Per-node sizing is supported by compatible local evidence.")}</span></div></>}
-    <div className={`calibration-evidence ${design.calibration?.status ?? "reference_only"}`}><div><span>{lang === "pt" ? "Evidência" : "Evidence"}</span><b>{confidenceText(design.calibration, lang)}</b></div><div><span>{lang === "pt" ? "Confiança" : "Confidence"}</span><b>{design.calibration?.confidenceClass ?? "—"}</b></div><div><span>{lang === "pt" ? "Faixa segura" : "Safe range"}</span><b>{eligible ? `${design.calibration?.safeCameraMinimum ?? "—"}–${design.calibration?.safeCameraMaximum ?? "—"}` : "—"} {lang === "pt" ? "câmeras" : "cameras"}</b></div><div><span>{lang === "pt" ? "Margem" : "Reserve"}</span><b>{design.calibration?.reservePercent ?? 40}%</b></div><small>{design.calibration?.reasons.join(" ") ?? (lang === "pt" ? "Importe calibrações físicas e a base pública assinada para habilitar extrapolação." : "Import physical calibrations and the signed public evidence catalog to enable extrapolation.")}</small></div>
-    {design.bom && <><h4>{lang === "pt" ? "BOM auditável e cobertura" : "Auditable BOM and coverage"}</h4><div className="evidence-summary"><div><span>{lang === "pt" ? "Componentes" : "Components"}</span><b>{design.bom.items.length}</b><small>{design.bom.kind}</small></div><div><span>{lang === "pt" ? "Estágios cobertos" : "Covered stages"}</span><b>{design.bom.coverage.coveredStageCount}/{design.bom.coverage.requiredStageCount}</b><small>{design.bom.coverage.percent}%</small></div><div><span>{lang === "pt" ? "Âncoras físicas" : "Physical anchors"}</span><b>{design.bom.coverage.physicalAnchorCount}/3</b><small>{design.bom.procurementGate.status}</small></div></div><details className="bom-audit"><summary>{lang === "pt" ? "Ver componentes, benchmarks e bloqueios" : "View components, benchmarks and gates"}</summary><div className="bom-component-list">{design.bom.items.map((item) => <div key={`${item.role}:${item.componentId}`}><b>{item.role}</b><span>{item.quantity}× {item.componentId}</span><small>{item.kind}</small></div>)}</div><div className="stage-coverage-list">{design.bom.coverage.stages.map((stage) => <div className={stage.covered ? "covered" : "blocked"} key={stage.stage}><b>{stage.stage}</b><span>{stage.covered ? (lang === "pt" ? "coberto" : "covered") : (lang === "pt" ? "bloqueado" : "blocked")}</span><small>{stage.eligibleObservationIds.length} benchmarks · {stage.physicalAnchorRunIds.length} {lang === "pt" ? "âncoras" : "anchors"}{stage.reasons.length ? ` · ${stage.reasons.join(" ")}` : ""}</small></div>)}</div></details></>}
-    {design.procurementNeutralSpecification && <><h4>{lang === "pt" ? "Especificação técnica não comercial" : "Brand-neutral technical specification"}</h4><div className={`neutral-specification ${design.procurementNeutralSpecification.status}`}><div className="neutral-status"><b>{design.procurementNeutralSpecification.status === "apt" ? (lang === "pt" ? "APTA PARA REVISÃO DO TR" : "READY FOR TR REVIEW") : design.procurementNeutralSpecification.status === "review_required" ? (lang === "pt" ? "REVISÃO OBRIGATÓRIA" : "REVIEW REQUIRED") : (lang === "pt" ? "NÃO UTILIZAR PARA AQUISIÇÃO" : "DO NOT USE FOR PROCUREMENT")}</b><span>{lang === "pt" ? `Concorrência: ${design.procurementNeutralSpecification.marketCompetitionAssessment.status} · ${design.procurementNeutralSpecification.marketCompetitionAssessment.matchingProductCount} produtos · ${design.procurementNeutralSpecification.marketCompetitionAssessment.distinctManufacturerCount} fabricantes` : `Competition: ${design.procurementNeutralSpecification.marketCompetitionAssessment.status} · ${design.procurementNeutralSpecification.marketCompetitionAssessment.matchingProductCount} products · ${design.procurementNeutralSpecification.marketCompetitionAssessment.distinctManufacturerCount} manufacturers`}</span></div><details><summary>{lang === "pt" ? `Ver ${design.procurementNeutralSpecification.requirements.length} requisitos funcionais` : `View ${design.procurementNeutralSpecification.requirements.length} functional requirements`}</summary><div className="neutral-requirements">{design.procurementNeutralSpecification.requirements.map((item) => <article key={item.id}><div><b>{item.componentRole}</b><span>{item.characteristic}</span></div><strong>{item.comparator} {String(item.value)} {item.unit ?? ""}</strong><small>{item.rationale}</small><small>{lang === "pt" ? "Aceite" : "Acceptance"}: {item.acceptanceCriterion}</small></article>)}</div></details>{design.procurementNeutralSpecification.disclaimers.map((item) => <small key={item}>{item}</small>)}</div></>}
-    {(design.price.componentEstimates?.length ?? 0) > 0 && <><h4>{lang === "pt" ? "Custo estimado por componente" : "Estimated component cost"}</h4><div className="cost-list">{design.price.componentEstimates.map((component) => <div key={component.componentId}><span>{component.component}</span><small>{lang === "pt" ? "por nó" : "per node"}: {money(component.perNodeAmount, design.price.currency)}</small><b>{money(component.projectAmount, design.price.currency)}</b></div>)}<div className="cost-total"><span>{lang === "pt" ? `TOTAL · ${design.nodeCount} nó(s)` : `TOTAL · ${design.nodeCount} node(s)`}</span><small>{lang === "pt" ? "estimativa do projeto" : "project estimate"}</small><b>{money(design.price.median, design.price.currency)}</b></div></div></>}
-    <h4>{lang === "pt" ? "Distribuição e utilização" : "Distribution & utilization"}</h4><div className="node-list">{design.allocations.map((node) => <div className="node-row" key={node.nodeIndex}><div><b>Node {node.nodeIndex}{(node.representedNodeCount ?? 1) > 1 ? ` × ${node.representedNodeCount}` : ""}</b><span>{node.role}</span></div><div className="node-cameras">{node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(" · ") || "Standby"}</div><div className="meters"><span>CPU {percent(node.utilization.cpuCores)}</span><span>RAM {percent(node.utilization.ramGb)}</span><span>VRAM {percent(node.utilization.gpuVramGb)}</span><span>NVDEC {percent(node.utilization.gpuDecode1080p30Streams)}</span><span>LAN {percent(node.utilization.lanGbps)}</span></div></div>)}</div>
-    <div className="sources">{design.hardware.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">↗ {source.title}</a>)}</div>{design.warnings.length > 0 && <div className="warning-list">{design.warnings.map((warning) => <span key={warning}>{warning.replaceAll("_", " ")}</span>)}</div>}
+      <div><span>{lang === "pt" ? "Rede total" : "Total network"}</span><b>{design.fleetPlan.totals.networkGbps.toFixed(1)} Gbps</b><small>{design.fleetPlan.perServer.networkGbps} Gbps {lang === "pt" ? "por servidor" : "per server"} · {visibleText(design.fleetPlan.status)}</small></div>
+    </div><div className={`info-box ${design.fleetPlan.status === "single_node_validated" ? "success" : "warning"}`}><b>{lang === "pt" ? "Validação do plano" : "Plan validation"}: {visibleText(design.fleetPlan.status)}</b><span>{design.fleetPlan.status === "planning_only" ? (lang === "pt" ? "Antes da compra, o conjunto precisa comprovar balanceamento, falha de servidor, rede, armazenamento e recuperação." : "Before purchase, the cluster must prove balancing, node failure, network, storage, and recovery.") : (lang === "pt" ? "Dimensionamento por servidor sustentado por evidência local compatível." : "Per-server sizing is supported by compatible local evidence.")}</span></div></>}
+    <div className={`calibration-evidence ${design.calibration?.status ?? "reference_only"}`}><div><span>{lang === "pt" ? "Evidência" : "Evidence"}</span><b>{confidenceText(design.calibration, lang)}</b></div><div><span>{lang === "pt" ? "Confiança" : "Confidence"}</span><b>{visibleText(design.calibration?.confidenceClass ?? "—")}</b></div><div><span>{lang === "pt" ? "Faixa segura" : "Safe range"}</span><b>{eligible ? `${design.calibration?.safeCameraMinimum ?? "—"}–${design.calibration?.safeCameraMaximum ?? "—"}` : "—"} {lang === "pt" ? "câmeras" : "cameras"}</b></div><div><span>{lang === "pt" ? "Margem" : "Reserve"}</span><b>{design.calibration?.reservePercent ?? 40}%</b></div><small>{visibleText(design.calibration?.reasons.join(" ") ?? (lang === "pt" ? "Importe calibrações físicas e a base pública assinada para habilitar extrapolação." : "Import physical calibrations and the signed public evidence catalog to enable extrapolation."))}</small></div>
+    {design.bom && <><h4>{lang === "pt" ? "Lista de componentes e cobertura" : "Auditable BOM and coverage"}</h4><div className="evidence-summary"><div><span>{lang === "pt" ? "Componentes" : "Components"}</span><b>{design.bom.items.length}</b><small>{visibleText(design.bom.kind)}</small></div><div><span>{lang === "pt" ? "Estágios cobertos" : "Covered stages"}</span><b>{design.bom.coverage.coveredStageCount}/{design.bom.coverage.requiredStageCount}</b><small>{design.bom.coverage.percent}%</small></div><div><span>{lang === "pt" ? "Âncoras físicas" : "Physical anchors"}</span><b>{design.bom.coverage.physicalAnchorCount}/3</b><small>{visibleText(design.bom.procurementGate.status)}</small></div></div><details className="bom-audit"><summary>{lang === "pt" ? "Ver componentes, benchmarks e bloqueios" : "View components, benchmarks and gates"}</summary><div className="bom-component-list">{design.bom.items.map((item) => <div key={`${item.role}:${item.componentId}`}><b>{visibleText(item.role)}</b><span>{item.quantity}× {item.componentId}</span><small>{visibleText(item.kind)}</small></div>)}</div><div className="stage-coverage-list">{design.bom.coverage.stages.map((stage) => <div className={stage.covered ? "covered" : "blocked"} key={stage.stage}><b>{visibleText(stage.stage)}</b><span>{stage.covered ? (lang === "pt" ? "coberto" : "covered") : (lang === "pt" ? "bloqueado" : "blocked")}</span><small>{stage.eligibleObservationIds.length} benchmarks · {stage.physicalAnchorRunIds.length} {lang === "pt" ? "âncoras" : "anchors"}{stage.reasons.length ? ` · ${visibleText(stage.reasons.join(" "))}` : ""}</small></div>)}</div></details></>}
+    {design.procurementNeutralSpecification && <><h4>{lang === "pt" ? "Especificação técnica não comercial" : "Brand-neutral technical specification"}</h4><div className={`neutral-specification ${design.procurementNeutralSpecification.status}`}><div className="neutral-status"><b>{design.procurementNeutralSpecification.status === "apt" ? (lang === "pt" ? "APTA PARA REVISÃO DO TR" : "READY FOR TR REVIEW") : design.procurementNeutralSpecification.status === "review_required" ? (lang === "pt" ? "REVISÃO OBRIGATÓRIA" : "REVIEW REQUIRED") : (lang === "pt" ? "NÃO UTILIZAR PARA AQUISIÇÃO" : "DO NOT USE FOR PROCUREMENT")}</b><span>{lang === "pt" ? `Concorrência: ${visibleText(design.procurementNeutralSpecification.marketCompetitionAssessment.status)} · ${design.procurementNeutralSpecification.marketCompetitionAssessment.matchingProductCount} produtos · ${design.procurementNeutralSpecification.marketCompetitionAssessment.distinctManufacturerCount} fabricantes` : `Competition: ${visibleText(design.procurementNeutralSpecification.marketCompetitionAssessment.status)} · ${design.procurementNeutralSpecification.marketCompetitionAssessment.matchingProductCount} products · ${design.procurementNeutralSpecification.marketCompetitionAssessment.distinctManufacturerCount} manufacturers`}</span></div><details><summary>{lang === "pt" ? `Ver ${design.procurementNeutralSpecification.requirements.length} requisitos funcionais` : `View ${design.procurementNeutralSpecification.requirements.length} functional requirements`}</summary><div className="neutral-requirements">{design.procurementNeutralSpecification.requirements.map((item) => <article key={item.id}><div><b>{item.componentRole}</b><span>{item.characteristic}</span></div><strong>{item.comparator} {String(item.value)} {item.unit ?? ""}</strong><small>{item.rationale}</small><small>{lang === "pt" ? "Aceite" : "Acceptance"}: {item.acceptanceCriterion}</small></article>)}</div></details>{design.procurementNeutralSpecification.disclaimers.map((item) => <small key={item}>{item}</small>)}</div></>}
+    {(design.price.componentEstimates?.length ?? 0) > 0 && <><h4>{lang === "pt" ? "Custo estimado por componente" : "Estimated component cost"}</h4><div className="cost-list">{design.price.componentEstimates.map((component) => <div key={component.componentId}><span>{component.component}</span><small>{lang === "pt" ? "por servidor" : "per server"}: {money(component.perNodeAmount, design.price.currency)}</small><b>{money(component.projectAmount, design.price.currency)}</b></div>)}<div className="cost-total"><span>{lang === "pt" ? `TOTAL · ${design.nodeCount} ${design.nodeCount === 1 ? "servidor" : "servidores"}` : `TOTAL · ${design.nodeCount} node(s)`}</span><small>{lang === "pt" ? "estimativa do projeto" : "project estimate"}</small><b>{money(design.price.median, design.price.currency)}</b></div></div></>}
+    <h4>{lang === "pt" ? "Distribuição e utilização" : "Distribution & utilization"}</h4><div className="node-list">{design.allocations.map((node) => <div className="node-row" key={node.nodeIndex}><div><b>{lang === "pt" ? "Servidor" : "Node"} {node.nodeIndex}{(node.representedNodeCount ?? 1) > 1 ? ` × ${node.representedNodeCount}` : ""}</b><span>{visibleText(node.role)}</span></div><div className="node-cameras">{node.cameraGroups.map((group) => `${group.groupName}: ${group.cameras}`).join(" · ") || (lang === "pt" ? "Reserva" : "Standby")}</div><div className="meters"><span>CPU {percent(node.utilization.cpuCores)}</span><span>RAM {percent(node.utilization.ramGb)}</span><span>VRAM {percent(node.utilization.gpuVramGb)}</span><span>NVDEC {percent(node.utilization.gpuDecode1080p30Streams)}</span><span>LAN {percent(node.utilization.lanGbps)}</span></div></div>)}</div>
+    <div className="sources">{design.hardware.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">↗ {visibleText(source.title)}</a>)}</div>{design.warnings.length > 0 && <details className="warning-list"><summary>{lang === "pt" ? `Ver ${design.warnings.length} avisos técnicos e pendências` : `View ${design.warnings.length} technical warnings and pending items`}</summary>{design.warnings.map((warning) => <span key={warning}>{visibleText(warning)}</span>)}</details>}
   </div>;
 }
 
@@ -357,14 +376,14 @@ function ResultsStep({ scenario, recommendations, lang, onCalibration, onDownloa
   if (!rec) return <section className="panel empty-result"><h2>{lang === "pt" ? "Pronto para calcular" : "Ready to calculate"}</h2><p>{lang === "pt" ? "Revise o cenário e selecione Dimensionar infraestrutura." : "Review the scenario and select Size infrastructure."}</p></section>;
   const designs = [rec.primary, ...rec.alternatives]; const design = designs[Math.min(variant, designs.length - 1)]!;
   return <section className="panel result-panel"><div className="result-heading"><div><span className={`confidence ${rec.confidence}`}>{confidenceText(rec.primary.calibration, lang)}</span><h2>{lang === "pt" ? "Projeto de infraestrutura" : "Infrastructure design"}</h2><p>{lang === "pt" ? "As opções não testadas são extrapoladas por estágio e nunca aparecem como fisicamente validadas." : "Untested options are extrapolated per stage and never shown as physically validated."}</p></div><button className="secondary" onClick={() => onCalibration(rec)}>Calibração de capacidade</button></div>
-    <div className="policy-tabs">{recommendations.map((item) => <button key={item.policy} className={selectedPolicy === item.policy ? "active" : ""} onClick={() => { setSelectedPolicy(item.policy); setVariant(0); }}><span>{policyLabels[item.policy][lang]}</span><b>{item.primary.nodeCount} nodes</b></button>)}</div>
-    <div className="variant-tabs">{designs.map((item, index) => <button key={item.id} className={variant === index ? "active" : ""} onClick={() => setVariant(index)}>{index + 1}. {item.hardware.name} · {item.procurementEligibility === "eligible" ? (lang === "pt" ? "apta" : "eligible") : (lang === "pt" ? "referência" : "reference")}</button>)}</div>
+    <div className="policy-tabs">{recommendations.map((item) => <button key={item.policy} className={selectedPolicy === item.policy ? "active" : ""} onClick={() => { setSelectedPolicy(item.policy); setVariant(0); }}><span>{policyLabels[item.policy][lang]}</span><b>{lang === "pt" ? `${item.primary.nodeCount} ${item.primary.nodeCount === 1 ? "servidor" : "servidores"}` : `${item.primary.nodeCount} nodes`}</b></button>)}</div>
+    <div className="variant-tabs">{designs.map((item, index) => <button key={item.id} className={variant === index ? "active" : ""} onClick={() => setVariant(index)}>{index + 1}. {visibleText(item.hardware.name)} · {item.procurementEligibility === "eligible" ? (lang === "pt" ? "apta" : "eligible") : (lang === "pt" ? "referência" : "reference")}</button>)}</div>
     <div className="workload-summary"><h4>{lang === "pt" ? "Carga usada neste cálculo" : "Workload used for this calculation"}</h4>{scenario.cameraGroups.map((group) => <div className="workload-group" key={group.id}><b>{group.count}× {group.name}</b><span>{group.source.codec.toUpperCase()} · {group.source.width}×{group.source.height} · {group.source.sourceFps} FPS RTSP · {group.source.bitrateMbps} Mbps · decode {group.decodeMode.toUpperCase()}</span>{group.agents.map((agent) => <small key={agent.id}>{readingTypeLabel(agent, lang)} · {agent.model} · {agent.inputType === "video" ? `${agent.modelFps} FPS · ` : ""}{agent.runEverySeconds <= 10 ? 10 : 60} s</small>)}</div>)}</div>
     <DesignDetail design={design} lang={lang} scenarioCameras={scenario.totalCameras} />
     <div className="export-row">
       <section className="main-report-export" aria-label={REPORT_EXPORT_COPY[lang].mainTitle}>
         <div><strong>{REPORT_EXPORT_COPY[lang].mainTitle}</strong><span>{REPORT_EXPORT_COPY[lang].mainDescription}</span></div>
-        <div className="export-actions"><button type="button" className="primary report-pdf-button" onClick={() => onDownload(rec, "pdf")}>{REPORT_EXPORT_COPY[lang].mainPdfButton}</button><span>{REPORT_EXPORT_COPY[lang].auditDescription}</span><button type="button" className="secondary small" onClick={() => onDownload(rec, "xlsx")}>XLSX</button><button type="button" className="secondary small" onClick={() => onDownload(rec, "json")}>JSON</button></div>
+        <div className="export-actions"><button type="button" className="primary report-pdf-button" onClick={() => onDownload(rec, "pdf")}>{REPORT_EXPORT_COPY[lang].mainPdfButton}</button><span>{REPORT_EXPORT_COPY[lang].auditDescription}</span><button type="button" className="secondary small" onClick={() => onDownload(rec, "txt")}>TXT</button><button type="button" className="secondary small" onClick={() => onDownload(rec, "xlsx")}>XLSX</button><button type="button" className="secondary small" onClick={() => onDownload(rec, "json")}>JSON</button></div>
       </section>
       <section className="main-report-export technical-caderno-export" aria-label={REPORT_EXPORT_COPY[lang].technicalTitle}>
         <div><strong>{REPORT_EXPORT_COPY[lang].technicalTitle}</strong><span>{REPORT_EXPORT_COPY[lang].technicalDescription}</span></div>
@@ -485,7 +504,6 @@ interface PendingCalibrationImport {
 }
 
 function calibrationPlanEstimate(plan: CalibrationPlan): { durationSeconds: number; worstCaseDurationSeconds: number; temporaryBytes: number } {
-  const computeModeCount = 2;
   const perCameraMbps = plan.scenario.cameraGroups.reduce((sum, group) => sum + group.count * group.source.bitrateMbps, 0) /
     Math.max(1, plan.scenario.totalCameras);
   const targetTier = plan.discovery.seedCameraCount ?? plan.scenario.totalCameras;
@@ -493,17 +511,21 @@ function calibrationPlanEstimate(plan: CalibrationPlan): { durationSeconds: numb
   const discoveryProbeEstimate = Math.max(4, Math.ceil(Math.log2(Math.max(2, generatorLimit))) + 2 +
     (plan.discovery.confirmationRuns ?? 1) * 2);
   const discoverySeconds = discoveryProbeEstimate *
-    (plan.discovery.stabilizationSeconds + plan.discovery.sampleSeconds) * computeModeCount;
-  const qualificationSeconds = plan.qualification.repetitions * computeModeCount *
+    (plan.discovery.stabilizationSeconds + plan.discovery.sampleSeconds);
+  const qualificationSeconds = plan.qualification.repetitions *
     plan.phases.reduce((sum, phase) => sum + phase.durationSeconds, 0) +
-    (plan.qualification.repetitions - 1) * plan.qualification.cooldownSeconds;
+    (plan.qualification.repetitions - 1) * plan.qualification.cooldownSeconds +
+    Math.min(30, plan.discovery.sampleSeconds);
   const worstCaseQualificationSeconds = qualificationSeconds;
   const peakTier = targetTier;
   const boundedRingSecondsAcrossCpuAndGpu = 4;
   const encodedAndIntermediateFactor = 2.5;
+  const estimatedDurationSeconds = plan.mode === "quick"
+    ? 600
+    : discoverySeconds + qualificationSeconds;
   return {
-    durationSeconds: discoverySeconds + qualificationSeconds,
-    worstCaseDurationSeconds: discoverySeconds + worstCaseQualificationSeconds,
+    durationSeconds: estimatedDurationSeconds,
+    worstCaseDurationSeconds: plan.mode === "quick" ? 600 : discoverySeconds + worstCaseQualificationSeconds,
     temporaryBytes: Math.ceil(peakTier * boundedRingSecondsAcrossCpuAndGpu * perCameraMbps * 1_000_000 / 8 *
       encodedAndIntermediateFactor + 512 * 1024 ** 2),
   };
@@ -552,16 +574,20 @@ function CalibrationCenter({
   const [status, setStatus] = useState<CalibrationStatusSummary | null>(null);
   const [working, setWorking] = useState(false);
   const [detail, setDetail] = useState("");
+  const advancedTelemetry = true;
   const [targetHardwareTemplateId, setTargetHardwareTemplateId] = useState(initialHardwareTemplateId ?? "");
-  const [advancedTelemetry, setAdvancedTelemetry] = useState(true);
   const [session, setSession] = useState<CalibrationSession | null>(null);
   const [result, setResult] = useState<LocalCalibrationRun | null>(null);
+  const [diagnostic, setDiagnostic] = useState<CalibrationDiagnosticReportModel | null>(null);
+  const [terminalDiagnostic, setTerminalDiagnostic] = useState<CalibrationDiagnosticReportModel | null>(null);
+  const [resumeStatus, setResumeStatus] = useState<CalibrationResumeStatus | null>(null);
   const [history, setHistory] = useState<LocalCalibrationRun[]>([]);
+  const [sessionHistory, setSessionHistory] = useState<CalibrationSession[]>([]);
   const [directory, setDirectory] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState<CalibrationRuntimeStatus | null>(null);
-  const [runtimePackageStatus, setRuntimePackageStatus] = useState<CalibrationRuntimePackageStatus | null>(null);
   const [detectedHardware, setDetectedHardware] = useState<CalibrationHardwarePreflight | null>(null);
   const [planPreviews, setPlanPreviews] = useState<Record<CalibrationMode, CalibrationPlan> | null>(null);
+  const [planPreviewError, setPlanPreviewError] = useState("");
   const [clockMs, setClockMs] = useState(Date.now());
   const [devices, setDevices] = useState<CalibrationDeviceIdentity[]>([]);
   const [collectionStatus, setCollectionStatus] = useState<CalibrationCollectionStatus | null>(null);
@@ -570,9 +596,9 @@ function CalibrationCenter({
   const refreshStatus = (): void => {
     void api<CalibrationStatusSummary>("/api/calibrations/status").then(setStatus).catch(() => setStatus(null));
     void api<LocalCalibrationRun[]>("/api/calibrations").then((runs) => { setHistory(runs); if (!result && runs[0]) setResult(runs[0]); }).catch(() => setHistory([]));
+    void api<CalibrationSession[]>("/api/calibration-sessions").then(setSessionHistory).catch(() => setSessionHistory([]));
     void api<{ directory: string }>("/api/calibration-sessions/directory").then((value) => setDirectory(value.directory)).catch(() => setDirectory(""));
     void api<CalibrationRuntimeStatus>("/api/calibrations/runtime-status").then(setRuntimeStatus).catch(() => setRuntimeStatus(null));
-    void api<CalibrationRuntimePackageStatus>("/api/calibration-runtime/status").then(setRuntimePackageStatus).catch(() => setRuntimePackageStatus(null));
     void api<CalibrationHardwarePreflight>("/api/calibrations/hardware-status").then(setDetectedHardware).catch(() => setDetectedHardware(null));
     void api<CalibrationDeviceIdentity[]>("/api/calibration-devices").then(setDevices).catch(() => setDevices([]));
     void api<CalibrationCollectionStatus>("/api/calibration-collection/status").then(setCollectionStatus).catch(() => setCollectionStatus(null));
@@ -580,6 +606,35 @@ function CalibrationCenter({
   useEffect(refreshStatus, []);
   useEffect(() => {
     let active = true;
+    if (!result) { setDiagnostic(null); return () => { active = false; }; }
+    void api<CalibrationDiagnosticReportModel>(`/api/calibrations/${result.id}/reports/model`)
+      .then((value) => { if (active) setDiagnostic(value); })
+      .catch(() => { if (active) setDiagnostic(null); });
+    return () => { active = false; };
+  }, [result?.id]);
+  useEffect(() => {
+    let active = true;
+    const terminal = session && ["cancelled", "failed", "interrupted"].includes(session.state);
+    if (!terminal || !session?.diagnostic) {
+      setTerminalDiagnostic(null);
+      setResumeStatus(null);
+      return () => { active = false; };
+    }
+    void Promise.all([
+      api<CalibrationDiagnosticReportModel>(`/api/calibration-sessions/${session.id}/reports/model`),
+      api<CalibrationResumeStatus>(`/api/calibration-sessions/${session.id}/resume-status`),
+    ]).then(([report, status]) => {
+      if (!active) return;
+      setTerminalDiagnostic(report);
+      setResumeStatus(status);
+    }).catch((error: unknown) => {
+      if (active) setDetail(error instanceof Error ? error.message : "calibration_diagnostic_report_failed");
+    });
+    return () => { active = false; };
+  }, [session?.id, session?.state, session?.diagnostic?.payloadSha256]);
+  useEffect(() => {
+    let active = true;
+    setPlanPreviewError("");
     if (!recommendation) { setPlanPreviews(null); return () => { active = false; }; }
     const preview = async (mode: CalibrationMode): Promise<CalibrationPlan> => api<CalibrationPlan>("/api/calibrations/plans", {
       method: "POST",
@@ -587,7 +642,11 @@ function CalibrationCenter({
     });
     void Promise.all([preview("quick"), preview("validation"), preview("qualification")]).then(([quick, validation, qualification]) => {
       if (active) setPlanPreviews({ quick, validation, qualification });
-    }).catch(() => { if (active) setPlanPreviews(null); });
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setPlanPreviews(null);
+      setPlanPreviewError(error instanceof Error ? error.message : "calibration_plan_preview_failed");
+    });
     return () => { active = false; };
   }, [recommendation?.id, targetHardwareTemplateId]);
   useEffect(() => {
@@ -610,7 +669,7 @@ function CalibrationCenter({
 
   const startCalibration = async (mode: CalibrationMode): Promise<void> => {
     if (!recommendation) {
-      setDetail(lang === "pt" ? "Dimensione primeiro um projeto para definir a carga exata do núcleo interno." : "Size a project first to define the exact internal-kernel workload.");
+      setDetail(lang === "pt" ? "Dimensione primeiro um projeto para definir a quantidade e o tipo de câmeras que serão testados." : "Size a project first to define the camera count and workload to be tested.");
       return;
     }
     if (mode === "qualification" && runtimeStatus?.manifestApproved === true && !targetHardwareTemplateId) {
@@ -619,7 +678,7 @@ function CalibrationCenter({
         : "Select this computer's exact profile before the three repetitions. A physical mismatch will be rejected during preflight.");
       return;
     }
-    setWorking(true); setDetail(lang === "pt" ? "Criando uma sessão protegida no núcleo interno…" : "Creating a protected internal-kernel session…");
+    setWorking(true); setDetail(lang === "pt" ? "Preparando o teste desta máquina…" : "Preparing this machine test…");
     try {
       const started = await api<{ session: CalibrationSession; delivery: string }>("/api/calibration-sessions", {
         method: "POST",
@@ -627,14 +686,11 @@ function CalibrationCenter({
       });
       setSession(started.session);
       setResult(null);
-      const candidateRuntime = mode === "qualification" && runtimeStatus?.manifestApproved !== true;
-      setDetail(candidateRuntime
-        ? (lang === "pt"
-          ? "Validação física do pacote candidato iniciada. CPU, GPU e carga combinada serão medidas nas três repetições, mas este resultado ficará diagnóstico até o hash do runtime ser aprovado."
-          : "Candidate package validation started. CPU, GPU and combined load will be measured in all three repetitions, but the result remains diagnostic until the runtime hash is approved.")
-        : (lang === "pt"
-          ? `Qual Hardware Calibration Kernel iniciado. O ${mode === "quick" ? "diagnóstico de 10 minutos" : mode === "validation" ? "teste de engenharia de 60 minutos" : "teste adaptativo com três repetições"} é totalmente local; o resultado será confirmado antes da limpeza automática.`
-          : "Qual Hardware Calibration Kernel started. Results are committed before automatic temporary-file cleanup."));
+      setTerminalDiagnostic(null);
+      setResumeStatus(null);
+      setDetail(lang === "pt"
+        ? `${mode === "quick" ? "Diagnóstico de 10 minutos" : mode === "validation" ? "Validação de engenharia com 60 minutos de carga, além da descoberta dinâmica" : "Teste adaptativo com três repetições"} iniciado. O resultado será salvo antes da limpeza automática dos arquivos temporários.`
+        : `${mode === "quick" ? "10-minute diagnostic" : mode === "validation" ? "60-minute engineering test" : "Adaptive three-repetition test"} started. Results are saved before temporary files are removed.`);
     } catch (error) { setDetail(error instanceof Error ? error.message : "calibration_launch_failed"); }
     finally { setWorking(false); }
   };
@@ -669,43 +725,6 @@ function CalibrationCenter({
     }
   };
 
-  const installRuntime = async (): Promise<void> => {
-    setWorking(true);
-    try {
-      const started = await api<{ installationId: string }>("/api/calibration-runtime/install", { method: "POST" });
-      setDetail(lang === "pt" ? "Validando assinatura, inventário, espaço e hashes do runtime…" : "Validating runtime signature, inventory, disk space and hashes…");
-      for (;;) {
-        const installation = await api<CalibrationRuntimeInstallation>(`/api/calibration-runtime/installations/${started.installationId}`);
-        if (installation.state === "completed") {
-          setDetail(lang === "pt" ? "Runtime instalado e ativado com sucesso." : "Runtime installed and activated.");
-          refreshStatus();
-          break;
-        }
-        if (installation.state === "cancelled") { setDetail(lang === "pt" ? "Instalação cancelada." : "Installation cancelled."); break; }
-        if (installation.state === "failed") throw new Error(installation.error ?? "runtime_installation_failed");
-        await new Promise((resolveWait) => window.setTimeout(resolveWait, 750));
-      }
-    } catch (error) {
-      setDetail(error instanceof Error ? error.message : "runtime_installation_failed");
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const rollbackRuntime = async (): Promise<void> => {
-    setWorking(true);
-    try {
-      const status = await api<CalibrationRuntimePackageStatus>("/api/calibration-runtime/rollback", { method: "POST" });
-      setRuntimePackageStatus(status);
-      refreshStatus();
-      setDetail(lang === "pt" ? "Runtime anterior reativado." : "Previous runtime reactivated.");
-    } catch (error) {
-      setDetail(error instanceof Error ? error.message : "runtime_rollback_failed");
-    } finally {
-      setWorking(false);
-    }
-  };
-
   const retryCleanup = async (): Promise<void> => {
     if (!session) return;
     setWorking(true);
@@ -727,6 +746,8 @@ function CalibrationCenter({
       const resumed = await api<{ session: CalibrationSession }>(`/api/calibration-sessions/${session.id}/resume`, { method: "POST" });
       setSession(resumed.session);
       setResult(null);
+      setTerminalDiagnostic(null);
+      setResumeStatus(null);
       setDetail(lang === "pt"
         ? "Teste retomado do checkpoint compatível. A descoberta concluída foi reaproveitada; as três repetições comerciais recomeçarão na repetição 1."
         : "Test resumed from a compatible checkpoint. Completed discovery was reused; all three commercial repetitions restart at repetition 1.");
@@ -800,13 +821,40 @@ function CalibrationCenter({
     }
   };
 
-  const exportCalibration = async (run: LocalCalibrationRun): Promise<void> => {
+  const exportCalibration = async (
+    run: LocalCalibrationRun,
+    format: "pdf" | "txt" | "xlsx" | "json" | "qhcal" = "qhcal",
+  ): Promise<void> => {
     setWorking(true);
     try {
-      await downloadBinaryResponse(await fetch(`/api/calibrations/${run.id}/export`), `${run.id}.qhcal`);
-      setDetail(lang === "pt" ? "Pacote .qhcal assinado exportado." : "Signed .qhcal package exported.");
+      const path = format === "qhcal"
+        ? `/api/calibrations/${run.id}/export`
+        : `/api/calibrations/${run.id}/reports/${format}`;
+      const fallback = format === "qhcal" ? `${run.id}.qhcal` : `${run.id}-diagnostico.${format}`;
+      await downloadBinaryResponse(await fetch(path), fallback);
+      setDetail(format === "qhcal"
+        ? (lang === "pt" ? "Pacote .qhcal assinado exportado." : "Signed .qhcal package exported.")
+        : `Relatório ${format.toUpperCase()} exportado com sucesso.`);
     } catch (error) { setDetail(error instanceof Error ? error.message : "calibration_export_failed"); }
     finally { setWorking(false); }
+  };
+
+  const exportTerminalDiagnostic = async (
+    format: "pdf" | "txt" | "xlsx" | "json",
+  ): Promise<void> => {
+    if (!session) return;
+    setWorking(true);
+    try {
+      await downloadBinaryResponse(
+        await fetch(`/api/calibration-sessions/${session.id}/reports/${format}`),
+        `${terminalDiagnostic?.runId ?? session.id}-inconclusivo.${format}`,
+      );
+      setDetail(`Relatório ${format.toUpperCase()} do resultado inconclusivo exportado com sucesso.`);
+    } catch (error) {
+      setDetail(error instanceof Error ? error.message : "calibration_diagnostic_export_failed");
+    } finally {
+      setWorking(false);
+    }
   };
 
   const exportCollection = async (): Promise<void> => {
@@ -859,17 +907,42 @@ function CalibrationCenter({
   const quickEstimate = planPreviews ? calibrationPlanEstimate(planPreviews.quick) : null;
   const validationEstimate = planPreviews ? calibrationPlanEstimate(planPreviews.validation) : null;
   const qualificationEstimate = planPreviews ? calibrationPlanEstimate(planPreviews.qualification) : null;
+  const quickTestBlockReason = !recommendation
+    ? (lang === "pt"
+      ? "Primeiro dimensione a infraestrutura para vincular o teste à quantidade e à composição VÍDEO FULL/FRAME informadas."
+      : "First size the infrastructure to bind the test to the requested camera count and FULL VIDEO/FRAME composition.")
+    : runtimeStatus === null
+      ? (lang === "pt" ? "Verificando os recursos locais para o diagnóstico…" : "Checking local diagnostic resources…")
+      : runtimeStatus.readyForQuickTest === false
+        ? (lang === "pt"
+          ? "O diagnóstico rápido não está disponível neste sistema. Volte à Verificação do ambiente para consultar o motivo."
+          : "Quick diagnostics are unavailable on this system. Return to Environment verification for the reason.")
+        : planPreviewError
+          ? (lang === "pt"
+            ? `Não foi possível preparar o plano de teste: ${planPreviewError}`
+            : `The test plan could not be prepared: ${planPreviewError}`)
+          : !planPreviews
+            ? (lang === "pt" ? "Preparando o plano local de teste…" : "Preparing the local test plan…")
+            : "";
   const sessionIsActive = Boolean(session && !["completed", "cancelled", "failed", "interrupted", "expired"].includes(session.state));
   const progressAgeSeconds = session?.progress?.updatedAt && sessionIsActive
     ? Math.max(0, (clockMs - Date.parse(session.progress.updatedAt)) / 1_000) : 0;
   const displayedElapsedSeconds = (session?.progress?.elapsedSeconds ?? 0) + progressAgeSeconds;
   const displayedRemainingSeconds = session?.progress?.estimatedRemainingSeconds === null || session?.progress?.estimatedRemainingSeconds === undefined
     ? null : Math.max(0, session.progress.estimatedRemainingSeconds - progressAgeSeconds);
+  const displayedProgressPercent = Math.round(session?.progress?.overallPercent ?? session?.progress?.percent ?? 0);
+  const sessionStateLabel = session?.state === "completed"
+    ? (lang === "pt" ? "Concluído" : "Completed")
+    : session?.state === "failed" || session?.state === "interrupted"
+      ? (lang === "pt" ? "Inconclusivo" : "Inconclusive")
+      : session?.state === "cancelled"
+        ? (lang === "pt" ? "Cancelado" : "Cancelled")
+        : session?.state ?? "";
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="catalog-modal calibration-modal" role="dialog" aria-modal="true" aria-labelledby="calibration-title">
-      <div className="modal-heading"><div><span>QUAL HARDWARE / KERNEL INTERNO</span><h2 id="calibration-title">{lang === "pt" ? "Calibração de capacidade" : "Capacity calibration"}</h2></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
-      <div className="offline-banner"><b>Qual Hardware Calibration Kernel</b><span>{lang === "pt" ? "O Perceptrum não é aberto ou alterado. Nenhuma chamada OpenAI ou API externa é permitida." : "Perceptrum is not opened or changed. No OpenAI or external API call is allowed."}</span></div>
+      <div className="modal-heading"><div><span>QUAL HARDWARE / TESTE DA MÁQUINA</span><h2 id="calibration-title">{lang === "pt" ? "Calibração de capacidade" : "Capacity calibration"}</h2></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
+      <div className="offline-banner"><b>{lang === "pt" ? "Antes de iniciar" : "Before starting"}</b><span>{lang === "pt" ? "Conecte a máquina à energia, feche tarefas pesadas e mantenha a ventilação desobstruída durante todo o teste." : "Connect the machine to power, close heavy tasks, and keep ventilation unobstructed throughout the test."}</span></div>
       <div className="calibration-import-entry">
         <div><b>{lang === "pt" ? "Trazer calibração de outro computador" : "Bring calibration from another computer"}</b><span>{lang === "pt" ? "Importe um resultado .qhcal ou uma coleção .qhcalset gerada no Windows, Ubuntu ou macOS." : "Import a .qhcal result or .qhcalset collection generated on Windows, Ubuntu, or macOS."}</span></div>
         <label className={`primary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar calibração de outro computador" : "Import calibration from another computer"}<input aria-label={lang === "pt" ? "Importar calibração de outro computador" : "Import calibration from another computer"} hidden type="file" accept=".qhcal,.qhcalset,application/gzip" disabled={working} onChange={importCalibration} /></label>
@@ -890,34 +963,274 @@ function CalibrationCenter({
       {calibrationImportFeedback && <div className={`calibration-import-feedback ${calibrationImportFeedback.kind}`} role="alert" aria-live="assertive"><b>{calibrationImportFeedback.kind === "success" ? (lang === "pt" ? "Importação concluída" : "Import completed") : (lang === "pt" ? "A importação não foi concluída" : "Import was not completed")}</b><span>{calibrationImportFeedback.message}</span></div>}
       {runtimeStatus && <div className={`runtime-readiness ${runtimeStatus.readyForFullQualification ? "ready" : "diagnostic"}`}><b>{runtimeStatus.readyForFullQualification
         ? runtimeStatus.manifestApproved
-          ? (lang === "pt" ? "Runtime comercial aprovado" : "Commercial runtime approved")
-          : (lang === "pt" ? "Runtime completo disponível para validação física" : "Full runtime available for physical validation")
-        : (lang === "pt" ? "Somente diagnóstico rápido disponível" : "Quick diagnostics only")}</b><span>{runtimeStatus.readyForFullQualification
+          ? (lang === "pt" ? "Pronto para qualificação" : "Ready for qualification")
+          : (lang === "pt" ? "Pronto para validação física" : "Ready for physical validation")
+        : (lang === "pt" ? "Pronto para diagnóstico" : "Ready for diagnostics")}</b><span>{runtimeStatus.readyForFullQualification
           ? runtimeStatus.manifestApproved
-            ? runtimeStatus.kernelVersion
-            : (lang === "pt" ? "CPU, GPU e pipeline serão medidos, mas o resultado permanecerá diagnóstico até a aprovação do manifesto desta plataforma." : "CPU, GPU and pipeline will be measured, but the result remains diagnostic until this platform manifest is approved.")
-          : runtimeStatus.reasons.join(" · ")}</span></div>}
-      <div className="catalog-actions"><button type="button" className="secondary" disabled={working || sessionIsActive || runtimePackageStatus?.installationInProgress} onClick={() => void installRuntime()}>{lang === "pt" ? "Instalar runtime de arquivo" : "Install runtime from file"}</button><button type="button" className="secondary" disabled={working || sessionIsActive || !runtimePackageStatus?.previous} onClick={() => void rollbackRuntime()}>{lang === "pt" ? "Restaurar runtime anterior" : "Restore previous runtime"}</button>{runtimePackageStatus?.active && <small>{runtimePackageStatus.active.version} · {runtimePackageStatus.active.classification} · {runtimePackageStatus.active.manifestHash.slice(0, 12)}…</small>}</div>
-      <div className="catalog-summary"><div><span>{lang === "pt" ? "Máquinas testadas" : "Tested machines"}</span><b>{status?.calibrationRuns ?? 0}</b><small>.qhcal.json</small></div><div><span>{lang === "pt" ? "Métricas públicas" : "Public metrics"}</span><b>{status?.publicObservations ?? 0}</b><small>{catalogStatus?.verificationKeyConfigured ? "ED25519" : (lang === "pt" ? "chave pendente" : "key pending")}</small></div><div><span>{lang === "pt" ? "Previsões" : "Predictions"}</span><b>{status?.predictions ?? 0}</b><small>{lang === "pt" ? "por gargalo" : "per bottleneck"}</small></div></div>
-      <div className="calibration-flow"><article><b>1. {lang === "pt" ? "Calibrar este computador" : "Calibrate this computer"}</b><span>{lang === "pt" ? "O hardware é detectado automaticamente. A seleção abaixo apenas vincula o resultado se CPU, GPU e formato físico realmente coincidirem." : "Hardware is detected automatically. The selection is linked only when CPU, GPU and form factor really match."}</span>{detectedHardware && <div className="calibration-detected"><b>{detectedHardware.cpuModel}</b><span>{detectedHardware.physicalCores}C/{detectedHardware.logicalCores}T · {byteLabel(detectedHardware.ramBytes)} RAM · {detectedHardware.operatingSystem} {detectedHardware.operatingSystemVersion}</span><small>{detectedHardware.gpuModel} · {detectedHardware.networkLinks.map((link) => `${link.name}${link.speedMbps ? ` ${link.speedMbps} Mbps ${link.duplex}` : " velocidade não verificada"}`).join(" · ") || (lang === "pt" ? "rede física não detectada" : "physical network not detected")}</small></div>}<Field label={lang === "pt" ? "Computador físico em teste" : "Physical computer under test"}><select value={targetHardwareTemplateId} onChange={(event) => setTargetHardwareTemplateId(event.target.value)}><option value="">{lang === "pt" ? "Detectar hardware — sem perfil exato" : "Detect hardware — no exact profile"}</option>{[...hardwareCatalog].sort((left, right) => left.name.localeCompare(right.name)).map((hardware) => <option key={hardware.id} value={hardware.id}>{hardware.name} · {hardware.cpuModel} · {hardware.gpuModel}</option>)}</select></Field>{planPreviews && quickEstimate && validationEstimate && qualificationEstimate && <div className="calibration-preflight"><div><span>{lang === "pt" ? "Perfil exato" : "Exact profile"}</span><b>{planPreviews.quick.workloadProfile.signature.slice(0, 12)}…</b><small>{planPreviews.quick.scenario.totalCameras} {lang === "pt" ? "câmeras solicitadas" : "requested cameras"}</small></div><div><span>{lang === "pt" ? "Diagnóstico" : "Diagnostic"}</span><b>{durationLabel(quickEstimate.durationSeconds, lang)}</b><small>{lang === "pt" ? "10 min · não comercial" : "10 min · non-commercial"}</small></div><div><span>{lang === "pt" ? "Validação" : "Validation"}</span><b>{durationLabel(validationEstimate.durationSeconds, lang)}</b><small>{lang === "pt" ? "60 min · uma repetição · não comercial" : "60 min · one repetition · non-commercial"}</small></div><div><span>{lang === "pt" ? "Qualificação — mínimo/pior caso" : "Qualification — minimum/worst case"}</span><b>{durationLabel(qualificationEstimate.durationSeconds, lang)} – {durationLabel(qualificationEstimate.worstCaseDurationSeconds, lang)}</b><small>{lang === "pt" ? `até ${byteLabel(qualificationEstimate.temporaryBytes)} temporários no pior caso` : `up to ${byteLabel(qualificationEstimate.temporaryBytes)} temporary in the worst case`}</small></div><div><span>{lang === "pt" ? "Ativos" : "Assets"}</span><b>{runtimeStatus?.assets.filter((asset) => asset.status === "verified").length ?? 0}/{runtimeStatus?.assets.length ?? 0}</b><small>{runtimeStatus?.contracts.every((contract) => contract.status === "verified") ? (lang === "pt" ? "contratos verificados" : "contracts verified") : (lang === "pt" ? "contrato pendente" : "contract pending")}</small></div></div>}<div className="info-box">{lang === "pt" ? "Conecte a máquina à energia, desative economia de energia e garanta ventilação contínua. O valor de espaço é um limite conservador; tudo que for criado pela sessão será removido depois da persistência." : "Connect the machine to power, disable power saving and ensure continuous ventilation. Space is a conservative bound; every session-owned file is removed after persistence."}</div><label className="advanced-telemetry"><input type="checkbox" checked={advancedTelemetry} onChange={(event) => setAdvancedTelemetry(event.target.checked)} /><span><b>{lang === "pt" ? "Medição avançada de CPU/GPU" : "Advanced CPU/GPU measurement"}</b><small>{lang === "pt" ? "Sensores indisponíveis são declarados; nunca são convertidos em medições inventadas." : "Unavailable sensors are declared and never converted into invented measurements."}</small></span></label><div className="catalog-actions"><button className="primary" disabled={working || !recommendation || !planPreviews || runtimeStatus?.readyForQuickTest === false} onClick={() => void startCalibration("quick")}>{lang === "pt" ? "Diagnóstico — 10 minutos" : "Diagnostic — 10 minutes"}</button><button className="primary" disabled={working || !recommendation || !planPreviews || runtimeStatus?.readyForQuickTest === false} onClick={() => void startCalibration("validation")}>{lang === "pt" ? "Validação — 60 minutos" : "Validation — 60 minutes"}</button><button className="primary" disabled={working || !recommendation || !planPreviews || !runtimeStatus?.readyForFullQualification} onClick={() => void startCalibration("qualification")}>{runtimeStatus?.manifestApproved
+            ? (lang === "pt" ? "CPU, GPU, vídeo e estabilidade serão medidos automaticamente." : "CPU, GPU, video, and stability are measured automatically.")
+            : (lang === "pt" ? "O teste medirá CPU, GPU e vídeo; o relatório informará as limitações encontradas." : "The test measures CPU, GPU, and video; the report lists any limitations.")
+          : (lang === "pt" ? "A aplicação usará os recursos encontrados e identificará claramente quando o resultado for uma estimativa." : "The application uses detected resources and clearly identifies estimated results.")}</span></div>}
+      <div className="catalog-summary"><div><span>{lang === "pt" ? "Máquinas testadas" : "Tested machines"}</span><b>{status?.calibrationRuns ?? 0}</b><small>{lang === "pt" ? "resultados disponíveis" : "available results"}</small></div><div><span>{lang === "pt" ? "Medições reunidas" : "Combined measurements"}</span><b>{status?.publicObservations ?? 0}</b><small>{lang === "pt" ? "base de comparação" : "comparison base"}</small></div><div><span>{lang === "pt" ? "Previsões" : "Predictions"}</span><b>{status?.predictions ?? 0}</b><small>{lang === "pt" ? "por gargalo" : "per bottleneck"}</small></div></div>
+      <div className="calibration-flow"><article><b>1. {lang === "pt" ? "Calibrar este computador" : "Calibrate this computer"}</b><span>{lang === "pt" ? "O hardware é detectado automaticamente. A seleção abaixo só é necessária quando você deseja vincular o resultado a um modelo de máquina específico." : "Hardware is detected automatically. The selection below is only needed when you want to link the result to a specific machine model."}</span>{detectedHardware && <div className="calibration-detected"><b>{detectedHardware.cpuModel}</b><span>{detectedHardware.physicalCores}C/{detectedHardware.logicalCores}T · {byteLabel(detectedHardware.ramBytes)} RAM · {detectedHardware.operatingSystem} {detectedHardware.operatingSystemVersion}</span><small>{detectedHardware.gpuModel} · {detectedHardware.networkLinks.map((link) => `${link.name}${link.speedMbps ? ` ${link.speedMbps} Mbps ${link.duplex}` : " velocidade não verificada"}`).join(" · ") || (lang === "pt" ? "rede física não detectada" : "physical network not detected")}</small></div>}<Field label={lang === "pt" ? "Computador físico em teste" : "Physical computer under test"}><select value={targetHardwareTemplateId} onChange={(event) => setTargetHardwareTemplateId(event.target.value)}><option value="">{lang === "pt" ? "Detectar hardware automaticamente" : "Detect hardware automatically"}</option>{[...hardwareCatalog].sort((left, right) => left.name.localeCompare(right.name)).map((hardware) => <option key={hardware.id} value={hardware.id}>{hardware.name} · {hardware.cpuModel} · {hardware.gpuModel}</option>)}</select></Field>{planPreviews && quickEstimate && validationEstimate && qualificationEstimate && <div className="calibration-preflight"><div><span>{lang === "pt" ? "Carga configurada" : "Configured workload"}</span><b>{planPreviews.quick.scenario.totalCameras} {lang === "pt" ? "câmeras" : "cameras"}</b><small>{lang === "pt" ? "VÍDEO FULL e FRAME conforme o projeto" : "FULL VIDEO and FRAME as configured"}</small></div><div><span>{lang === "pt" ? "Diagnóstico" : "Diagnostic"}</span><b>{durationLabel(quickEstimate.durationSeconds, lang)}</b><small>{lang === "pt" ? "resultado preliminar" : "preliminary result"}</small></div><div><span>{lang === "pt" ? "Validação" : "Validation"}</span><b>{durationLabel(validationEstimate.durationSeconds, lang)}</b><small>{lang === "pt" ? "uma repetição sustentada" : "one sustained repetition"}</small></div><div><span>{lang === "pt" ? "Qualificação - mínimo/pior caso" : "Qualification - minimum/worst case"}</span><b>{durationLabel(qualificationEstimate.durationSeconds, lang)} - {durationLabel(qualificationEstimate.worstCaseDurationSeconds, lang)}</b><small>{lang === "pt" ? `até ${byteLabel(qualificationEstimate.temporaryBytes)} de arquivos temporários` : `up to ${byteLabel(qualificationEstimate.temporaryBytes)} of temporary files`}</small></div><div><span>{lang === "pt" ? "Telemetria" : "Telemetry"}</span><b>{lang === "pt" ? "automática" : "automatic"}</b><small>{lang === "pt" ? "sensores disponíveis serão usados" : "available sensors will be used"}</small></div></div>}<div className="info-box">{lang === "pt" ? "Conecte a máquina à energia, feche tarefas pesadas e garanta ventilação contínua. Os sensores disponíveis serão usados automaticamente." : "Connect the machine to power, close heavy tasks, and ensure continuous ventilation. Available sensors are used automatically."}</div><div className="catalog-actions"><button className="primary" disabled={working || Boolean(quickTestBlockReason)} onClick={() => void startCalibration("quick")}>{lang === "pt" ? "Diagnóstico - 10 minutos" : "Diagnostic - 10 minutes"}</button><button className="primary" disabled={working || Boolean(quickTestBlockReason)} onClick={() => void startCalibration("validation")}>{lang === "pt" ? "Validação - 60 minutos" : "Validation - 60 minutes"}</button><button className="primary" disabled={working || !recommendation || !planPreviews || !runtimeStatus?.readyForFullQualification} onClick={() => void startCalibration("qualification")}>{runtimeStatus?.manifestApproved
         ? (lang === "pt" ? "Qualificação comercial — 3 repetições" : "Commercial qualification — 3 repetitions")
-        : (lang === "pt" ? "Qualificação física — diagnóstico" : "Physical qualification — diagnostic")}</button></div>{!recommendation && <small>{lang === "pt" ? "Dimensione um projeto para habilitar os testes com a carga real de câmeras selecionada." : "Size a project to enable tests with its selected camera workload."}</small>}</article>
-        {session && <article className="calibration-live"><b>2. {lang === "pt" ? "Progresso em tempo real" : "Live progress"}</b><div className="calibration-progress"><div><i style={{ width: `${session.progress?.overallPercent ?? session.progress?.percent ?? 0}%` }} /></div><b>{Math.round(session.progress?.overallPercent ?? session.progress?.percent ?? 0)}%</b></div><span>{session.progress?.message ?? detail}</span><div className="calibration-time-grid"><div><span>{lang === "pt" ? "Tempo decorrido" : "Elapsed"}</span><b>{clockLabel(displayedElapsedSeconds)}</b></div><div><span>{lang === "pt" ? "Tempo estimado restante" : "Estimated remaining"}</span><b>{displayedRemainingSeconds === null ? "—" : clockLabel(displayedRemainingSeconds)}</b></div><div><span>{lang === "pt" ? "Término estimado" : "Estimated finish"}</span><b>{displayedRemainingSeconds === null ? "—" : new Date(clockMs + displayedRemainingSeconds * 1_000).toLocaleTimeString()}</b></div><div><span>{lang === "pt" ? "Confiança da estimativa" : "Estimate confidence"}</span><b>{session.progress?.estimateConfidence ?? "—"}{session.progress?.estimateAdjusted ? (lang === "pt" ? " · ajustada" : " · adjusted") : ""}</b></div></div><small>{session.state}{session.progress?.tier ? ` · ${session.progress.tier} câmeras` : ""}{session.progress?.repetition ? ` · repetição ${session.progress.repetition}/${session.mode === "qualification" ? 3 : 1}` : ""} · {session.advancedTelemetry ? (lang === "pt" ? "telemetria avançada" : "advanced telemetry") : (lang === "pt" ? "telemetria padrão" : "standard telemetry")}</small>{session.progress && <small>{lang === "pt" ? "Disco" : "Disk"}: {byteLabel(session.progress.bytesTemporary ?? 0)} {lang === "pt" ? "em uso" : "in use"} · {byteLabel(session.progress.bytesRemoved ?? 0)} {lang === "pt" ? "removidos" : "removed"} · {byteLabel(session.progress.diskReserveBytes ?? 0)} {lang === "pt" ? "reservados" : "reserved"}</small>}{session.cleanup && <small>{lang === "pt" ? "Limpeza" : "Cleanup"}: {session.cleanup.state} · {session.cleanup.bytesRemoved}/{session.cleanup.bytesTemporary} bytes</small>}{session.diagnostic && <small>{lang === "pt" ? "Diagnóstico compacto preservado" : "Compact diagnostic preserved"}: {session.diagnostic.fileName} · {session.diagnostic.completedMeasurementCount} {lang === "pt" ? "fases agregadas" : "aggregate phases"}</small>}{["preflight", "discovering", "validating", "qualifying"].includes(session.state) && <div className="catalog-actions"><button type="button" className="secondary" disabled={working || session.progress?.stage === "cancelling"} onClick={() => void cancelCalibration()}>{session.progress?.stage === "cancelling" ? (lang === "pt" ? "Salvando agregados e limpando…" : "Saving aggregates and cleaning…") : (lang === "pt" ? "Interromper e limpar temporários" : "Stop and clean temporary files")}</button></div>}{["cancelled", "failed", "interrupted"].includes(session.state) && <button type="button" className="primary" disabled={working} onClick={() => void resumeCalibration()}>{lang === "pt" ? "Retomar de checkpoint compatível" : "Resume from compatible checkpoint"}</button>}{session.cleanup?.state === "failed" && <button type="button" className="secondary" disabled={working} onClick={() => void retryCleanup()}>{lang === "pt" ? "Tentar limpeza novamente" : "Retry cleanup"}</button>}</article>}
-        <article><b>{session ? "3" : "2"}. {lang === "pt" ? "Reunir resultados de várias máquinas" : "Combine results from multiple machines"}</b><span>{lang === "pt" ? "Importe pacotes .qhcal do Windows, Ubuntu ou macOS. A identidade da máquina é confirmada no primeiro uso; resultados válidos entram no banco consolidado sem mesclar arquivos SQLite." : "Import .qhcal packages from Windows, Ubuntu, or macOS. Device identity is confirmed on first use and valid results enter the consolidated database without merging SQLite files."}</span><div className="catalog-summary"><div><span>{lang === "pt" ? "Resultados" : "Results"}</span><b>{collectionStatus?.runs ?? 0}</b></div><div><span>{lang === "pt" ? "Máquinas testadas" : "Tested machines"}</span><b>{collectionStatus?.measuredSystems ?? 0}</b><small>{collectionStatus?.distinctConfigurations ?? 0} {lang === "pt" ? "configurações distintas" : "distinct configurations"}</small></div><div><span>{lang === "pt" ? "Identidades confiáveis" : "Trusted identities"}</span><b>{collectionStatus?.trustedDevices ?? 0}</b><small>{collectionStatus?.pendingDevices ?? 0} {lang === "pt" ? "pendentes" : "pending"}</small></div></div><div className="catalog-actions"><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar .qhcal ou .qhcalset" : "Import .qhcal or .qhcalset"}<input hidden type="file" accept=".qhcal,.qhcalset,application/gzip" disabled={working} onChange={importCalibration} /></label><button className="secondary" disabled={working || (collectionStatus?.runs ?? 0) === 0} onClick={() => void exportCollection()}>{lang === "pt" ? "Exportar coleção consolidada" : "Export consolidated collection"}</button><button className="secondary" disabled={working || !recommendation} onClick={() => void createPlan("quick")}>{lang === "pt" ? "Exportar plano para auditoria" : "Export plan for audit"}</button><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar base pública assinada" : "Import signed public evidence"}<input hidden type="file" accept=".json" disabled={working} onChange={importEvidence} /></label></div>{devices.filter((identity) => identity.trust !== "trusted").map((identity) => <small key={identity.id}>{identity.shortCode} · {identity.trust}</small>)}</article></div>
+        : (lang === "pt" ? "Qualificação física — diagnóstico" : "Physical qualification — diagnostic")}</button></div>{quickTestBlockReason && <small className="calibration-block-reason" role="status">{quickTestBlockReason}</small>}</article>
+        {session && <article className="calibration-live"><b>2. {lang === "pt" ? "Progresso em tempo real" : "Live progress"}</b><div className={`calibration-progress ${sessionIsActive ? "" : session.state}`}><div><i style={{ width: `${displayedProgressPercent}%` }} /></div><b>{sessionIsActive ? `${displayedProgressPercent}%` : sessionStateLabel}</b></div><span>{session.progress?.message ?? detail}</span><div className="calibration-time-grid"><div><span>{lang === "pt" ? "Tempo decorrido" : "Elapsed"}</span><b>{clockLabel(displayedElapsedSeconds)}</b></div><div><span>{lang === "pt" ? "Tempo estimado restante" : "Estimated remaining"}</span><b>{displayedRemainingSeconds === null ? "—" : clockLabel(displayedRemainingSeconds)}</b></div><div><span>{lang === "pt" ? "Término estimado" : "Estimated finish"}</span><b>{displayedRemainingSeconds === null ? "—" : new Date(clockMs + displayedRemainingSeconds * 1_000).toLocaleTimeString()}</b></div><div><span>{lang === "pt" ? "Confiança da estimativa" : "Estimate confidence"}</span><b>{session.progress?.estimateConfidence ?? "—"}{session.progress?.estimateAdjusted ? (lang === "pt" ? " · ajustada" : " · adjusted") : ""}</b></div></div><small>{sessionStateLabel}{session.progress?.tier ? ` · ${session.progress.tier} câmeras` : ""}{session.progress?.repetition ? ` · repetição ${session.progress.repetition}/${session.mode === "qualification" ? 3 : 1}` : ""} · {lang === "pt" ? "telemetria automática" : "automatic telemetry"}</small>{session.progress && <small>{lang === "pt" ? "Disco" : "Disk"}: {byteLabel(session.progress.bytesTemporary ?? 0)} {lang === "pt" ? "em uso" : "in use"} · {byteLabel(session.progress.bytesRemoved ?? 0)} {lang === "pt" ? "removidos" : "removed"} · {byteLabel(session.progress.diskReserveBytes ?? 0)} {lang === "pt" ? "reservados" : "reserved"}</small>}{session.cleanup && <small>{lang === "pt" ? "Limpeza" : "Cleanup"}: {session.cleanup.state} · {session.cleanup.bytesRemoved}/{session.cleanup.bytesTemporary} bytes</small>}{session.diagnostic && <small>{lang === "pt" ? "Diagnóstico preservado" : "Diagnostic preserved"}: {session.diagnostic.completedMeasurementCount} {lang === "pt" ? "fase(s) concluída(s)" : "completed phase(s)"}</small>}{["preflight", "discovering", "validating", "qualifying"].includes(session.state) && <div className="catalog-actions"><button type="button" className="secondary" disabled={working || session.progress?.stage === "cancelling"} onClick={() => void cancelCalibration()}>{session.progress?.stage === "cancelling" ? (lang === "pt" ? "Salvando diagnóstico e limpando…" : "Saving diagnostic and cleaning…") : (lang === "pt" ? "Interromper e limpar temporários" : "Stop and clean temporary files")}</button></div>}{["cancelled", "failed", "interrupted"].includes(session.state) && resumeStatus?.resumable && <button type="button" className="primary" disabled={working} onClick={() => void resumeCalibration()}>{lang === "pt" ? "Retomar do ponto salvo" : "Resume from saved point"}</button>}{["cancelled", "failed", "interrupted"].includes(session.state) && resumeStatus && !resumeStatus.resumable && <small className="calibration-block-reason">{lang === "pt" ? "Esta execução não pode ser retomada. Corrija a causa indicada e inicie um novo diagnóstico." : "This run cannot be resumed. Resolve the reported cause and start a new diagnostic."}</small>}{session.cleanup?.state === "failed" && <button type="button" className="secondary" disabled={working} onClick={() => void retryCleanup()}>{lang === "pt" ? "Tentar limpeza novamente" : "Retry cleanup"}</button>}</article>}
+        <article><b>{session ? "3" : "2"}. {lang === "pt" ? "Reunir resultados de várias máquinas" : "Combine results from multiple machines"}</b><span>{lang === "pt" ? "Importe resultados gerados no Windows, Ubuntu ou macOS. A identidade da máquina é confirmada antes de incluir as medições na base de comparação." : "Import results generated on Windows, Ubuntu, or macOS. Machine identity is confirmed before measurements are added to the comparison base."}</span><div className="catalog-summary"><div><span>{lang === "pt" ? "Resultados" : "Results"}</span><b>{collectionStatus?.runs ?? 0}</b></div><div><span>{lang === "pt" ? "Máquinas testadas" : "Tested machines"}</span><b>{collectionStatus?.measuredSystems ?? 0}</b><small>{collectionStatus?.distinctConfigurations ?? 0} {lang === "pt" ? "configurações distintas" : "distinct configurations"}</small></div><div><span>{lang === "pt" ? "Identidades confiáveis" : "Trusted identities"}</span><b>{collectionStatus?.trustedDevices ?? 0}</b><small>{collectionStatus?.pendingDevices ?? 0} {lang === "pt" ? "pendentes" : "pending"}</small></div></div><div className="catalog-actions"><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar resultado ou coleção" : "Import result or collection"}<input hidden type="file" accept=".qhcal,.qhcalset,application/gzip" disabled={working} onChange={importCalibration} /></label><button className="secondary" disabled={working || (collectionStatus?.runs ?? 0) === 0} onClick={() => void exportCollection()}>{lang === "pt" ? "Exportar coleção consolidada" : "Export consolidated collection"}</button><button className="secondary" disabled={working || !recommendation} onClick={() => void createPlan("quick")}>{lang === "pt" ? "Exportar plano para auditoria" : "Export plan for audit"}</button><label className={`secondary file-action ${working ? "disabled" : ""}`}>{lang === "pt" ? "Importar base de medições" : "Import measurement base"}<input hidden type="file" accept=".json" disabled={working} onChange={importEvidence} /></label></div>{devices.filter((identity) => identity.trust !== "trusted").map((identity) => <small key={identity.id}>{identity.shortCode} · {identity.trust}</small>)}</article></div>
       {detail && <div className="catalog-message">{detail}</div>}
-      {result && <CalibrationResultPanel result={result} directory={directory} lang={lang} onOpenDirectory={() => void openDirectory()} onExport={() => void exportCalibration(result)} onRecalculate={() => void recalculate()} />}
-      {history.length > 0 && <section className="calibration-history"><div><span>HISTORY</span><h3>{lang === "pt" ? "Calibrações anteriores" : "Previous calibrations"}</h3></div>{history.map((run) => <button type="button" key={run.id} className={result?.id === run.id ? "active" : ""} onClick={() => setResult(run)}><b>{new Date(run.completedAt).toLocaleString()}</b><span>{run.fingerprint.cpuModel} · {run.fingerprint.gpuModel}</span><small>{run.overallSafeCameraCapacity === null ? (lang === "pt" ? "capacidade não validada" : "capacity not validated") : `${Math.floor(run.overallSafeCameraCapacity)} ${lang === "pt" ? "câmeras" : "cameras"}`} · {run.qualityGate?.validationStatus ?? (run.qualityGate?.eligibleForCapacityExtrapolation ? "anchor_approved" : "diagnostic")}</small></button>)}</section>}
-      <p className="catalog-privacy">{lang === "pt" ? "Os resultados contêm somente métricas agregadas e hashes. Mídia, RTSP, credenciais, nome do computador e dados pessoais são recusados." : "Results contain aggregate metrics and hashes only. Media, RTSP credentials, computer name and personal data are rejected."}</p>
+      {terminalDiagnostic && !result && <section className="calibration-result terminal-diagnostic" aria-labelledby="terminal-diagnostic-title">
+        <div className="calibration-result-heading"><div><span>RESULTADO DO TESTE</span><h3 id="terminal-diagnostic-title">Diagnóstico inconclusivo</h3></div><b className="calibration-verdict invalid">INCONCLUSIVO</b></div>
+        <p className="calibration-natural-verdict">A execução terminou antes de produzir evidência suficiente. Este evento não define a capacidade máxima da máquina.</p>
+        <div className="operator-answer-grid">
+          <div><span>Carga solicitada</span><b>{terminalDiagnostic.requested.cameras}</b><small>câmeras</small></div>
+          <div><span>Capacidade segura</span><b>—</b><small>não determinada</small></div>
+          <div><span>Maior carga aprovada</span><b>—</b><small>não determinada</small></div>
+          <div><span>Primeira carga reprovada</span><b>—</b><small>não determinada</small></div>
+        </div>
+        {terminalDiagnostic.findings.map((finding) => <article className={`terminal-finding ${finding.severity}`} key={finding.code}><b>{finding.titlePt}</b><p>{finding.consequencePt}</p><span>{finding.actionPt}</span></article>)}
+        <div className="diagnostic-export-actions">
+          <button className="primary" type="button" disabled={working} onClick={() => void exportTerminalDiagnostic("pdf")}>Baixar relatório PDF</button>
+          <button className="secondary" type="button" disabled={working} onClick={() => void exportTerminalDiagnostic("txt")}>Baixar TXT</button>
+          <button className="secondary" type="button" disabled={working} onClick={() => void exportTerminalDiagnostic("xlsx")}>Baixar XLSX</button>
+          <button className="secondary" type="button" disabled={working} onClick={() => void exportTerminalDiagnostic("json")}>Baixar JSON</button>
+          <button className="secondary" type="button" disabled={working} onClick={() => void openDirectory()}>Abrir pasta dos resultados</button>
+        </div>
+      </section>}
+      {result && <CalibrationResultPanel result={result} diagnostic={diagnostic} directory={directory} lang={lang} onOpenDirectory={() => void openDirectory()} onExport={(format) => void exportCalibration(result, format)} onRecalculate={() => void recalculate()} />}
+      {sessionHistory.some((item) => item.diagnostic && ["failed", "interrupted", "cancelled"].includes(item.state)) && <section className="calibration-history"><div><span>DIAGNÓSTICOS</span><h3>{lang === "pt" ? "Execuções inconclusivas ou canceladas" : "Inconclusive or cancelled runs"}</h3></div>{sessionHistory.filter((item) => item.diagnostic && ["failed", "interrupted", "cancelled"].includes(item.state)).map((item) => <button type="button" key={item.id} className={session?.id === item.id ? "active" : ""} onClick={() => { setResult(null); setSession(item); }}><b>{new Date(item.completedAt ?? item.createdAt).toLocaleString()}</b><span>{item.state === "cancelled" ? (lang === "pt" ? "Cancelada pelo operador" : "Cancelled by operator") : (lang === "pt" ? "Resultado inconclusivo" : "Inconclusive result")}</span><small>{item.progress?.tier ?? item.planId.slice(0, 8)} {item.progress?.tier ? (lang === "pt" ? "câmeras na última tentativa" : "cameras in the last attempt") : ""}</small></button>)}</section>}
+      {history.length > 0 && <section className="calibration-history"><div><span>{lang === "pt" ? "HISTÓRICO" : "HISTORY"}</span><h3>{lang === "pt" ? "Calibrações anteriores" : "Previous calibrations"}</h3></div>{history.map((run) => <button type="button" key={run.id} className={result?.id === run.id ? "active" : ""} onClick={() => { setSession(null); setResult(run); }}><b>{new Date(run.completedAt).toLocaleString()}</b><span>{run.fingerprint.cpuModel} · {run.fingerprint.gpuModel}</span><small>{run.overallSafeCameraCapacity === null ? (lang === "pt" ? "capacidade não validada" : "capacity not validated") : `${Math.floor(run.overallSafeCameraCapacity)} ${lang === "pt" ? "câmeras" : "cameras"}`} · {lang === "pt" ? (run.qualityGate?.eligibleForCapacityExtrapolation ? "evidência aprovada" : "resultado diagnóstico") : (run.qualityGate?.eligibleForCapacityExtrapolation ? "approved evidence" : "diagnostic result")}</small></button>)}</section>}
+      <p className="catalog-privacy">{lang === "pt" ? "Use a capacidade segura indicada no relatório. O maior valor aprovado é apenas evidência técnica e não inclui a margem operacional." : "Use the safe capacity shown in the report. The highest passing value is technical evidence and does not include operational headroom."}</p>
     </section>
   </div>;
 }
 
 function CalibrationEntryCard({ lang, enabled, onOpen }: { lang: Language; enabled: boolean; onOpen: () => void }): ReactElement {
-  return <section className="calibration-entry-card"><div><span>QUAL HARDWARE / CPU + GPU + PIPELINE</span><h2>{lang === "pt" ? "Calibração de capacidade" : "Capacity calibration"}</h2><p>{lang === "pt" ? "Teste o hardware inteiramente nesta plataforma, sem abrir ou alterar o Perceptrum. Temporários são removidos automaticamente depois da confirmação do resultado." : "Test hardware entirely on this platform without opening or changing Perceptrum. Temporary files are removed after result confirmation."}</p></div><div><button type="button" className="primary" onClick={onOpen}>{enabled ? (lang === "pt" ? "Calibrar este computador" : "Calibrate this computer") : (lang === "pt" ? "Ver calibrações e instruções" : "View calibrations and instructions")}</button><small>{enabled ? (lang === "pt" ? "Teste rápido ou completo com 3 repetições" : "Quick test or full 3-repetition qualification") : (lang === "pt" ? "Os botões de teste serão habilitados após dimensionar um projeto." : "Test buttons are enabled after sizing a project.")}</small></div></section>;
+  return <section className="calibration-entry-card"><div><span>QUAL HARDWARE / AÇÃO OPCIONAL</span><h2>{lang === "pt" ? "Calibração de capacidade" : "Capacity calibration"}</h2><p>{lang === "pt" ? "O dimensionamento funciona sem calibração. Use esta área depois para medir este computador, consultar históricos ou importar resultados de outras máquinas." : "Sizing works without calibration. Use this area later to measure this computer, review history, or import results from other machines."}</p></div><div><button type="button" className="secondary" onClick={onOpen}>{enabled ? (lang === "pt" ? "Calibrar este computador" : "Calibrate this computer") : (lang === "pt" ? "Histórico e importação" : "History and import")}</button><small>{enabled ? (lang === "pt" ? "Teste opcional rápido ou completo" : "Optional quick or complete test") : (lang === "pt" ? "Não é necessário calibrar para dimensionar" : "Calibration is not required for sizing")}</small></div></section>;
+}
+
+function EnvironmentVerification({
+  environment,
+  lang,
+  busy,
+  error,
+  onRefresh,
+  onLocate,
+  onQwenSelection,
+  onContinue,
+}: {
+  environment: ExecutionEnvironment | null;
+  lang: Language;
+  busy: boolean;
+  error: string;
+  onRefresh: () => void;
+  onLocate: (componentId: string) => void;
+  onQwenSelection: (selection: QwenSelectionRequest) => void;
+  onContinue: () => void;
+}): ReactElement {
+  if (!environment) {
+    return <div className="environment-screen"><section className="environment-panel environment-loading" role="status">
+      <div className="environment-spinner" />
+      <span>QUAL HARDWARE / INÍCIO</span>
+      <h1>{lang === "pt" ? "Verificação do ambiente" : "Environment verification"}</h1>
+      <p>{error || (lang === "pt"
+        ? "Identificando o sistema, as GPUs, os programas e os modelos disponíveis. Esta etapa normalmente leva menos de 15 segundos."
+        : "Detecting the system, GPUs, programs, and available models. This normally takes less than 15 seconds.")}</p>
+      {error && <button type="button" className="primary" disabled={busy} onClick={onRefresh}>{lang === "pt" ? "Tentar novamente" : "Try again"}</button>}
+    </section></div>;
+  }
+  const groups: Array<{ title: string; ids: ExecutionEnvironment["components"][number]["id"][] }> = [
+    {
+      title: lang === "pt" ? "Requisitos internos da aplicação" : "Built-in application requirements",
+      ids: ["application", "native-benchmark"],
+    },
+    {
+      title: lang === "pt" ? "Componentes locais para vídeo e IA" : "Local video and AI components",
+      ids: ["ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj"],
+    },
+    {
+      title: lang === "pt" ? "Drivers e telemetria opcional" : "Drivers and optional telemetry",
+      ids: ["gpu-driver", "telemetry"],
+    },
+  ];
+  const stateCopy = environment.readiness === "ready_full"
+    ? (lang === "pt" ? "Pronto para teste completo" : "Ready for complete testing")
+    : environment.readiness === "ready_diagnostic"
+      ? (lang === "pt" ? "Pronto para diagnóstico e dimensionamento" : "Ready for diagnostics and sizing")
+      : (lang === "pt" ? "Plataforma não suportada" : "Unsupported platform");
+  const statusCopy: Record<ExecutionEnvironment["components"][number]["status"], string> = lang === "pt" ? {
+    installed: "Instalado", missing: "Ausente", incompatible: "Incompatível",
+    not_applicable: "Não aplicável", restart_required: "Aguardando reinicialização",
+  } : {
+    installed: "Installed", missing: "Missing", incompatible: "Incompatible",
+    not_applicable: "Not applicable", restart_required: "Restart required",
+  };
+  const originCopy: Record<ExecutionEnvironment["components"][number]["origin"], string> = lang === "pt" ? {
+    perceptrum: "instalação local conhecida",
+    system_path: "programa do sistema",
+    known_installation: "instalação localizada",
+    os_native: "integrado ao sistema",
+    built_in_proxy: "incluído no aplicativo",
+    missing: "não localizado",
+  } : {
+    perceptrum: "known local installation",
+    system_path: "system program",
+    known_installation: "detected installation",
+    os_native: "operating system",
+    built_in_proxy: "included with the application",
+    missing: "not found",
+  };
+  const selfTestCopy: Record<ExecutionEnvironment["components"][number]["selfTest"], string> = lang === "pt" ? {
+    passed: "Aprovado",
+    failed: "Falhou",
+    not_run: "Não executado",
+    not_applicable: "Não aplicável",
+  } : {
+    passed: "Passed",
+    failed: "Failed",
+    not_run: "Not run",
+    not_applicable: "Not applicable",
+  };
+  const openOfficial = async (linkId: string): Promise<void> => {
+    await api(`/api/calibrations/environment/open-link/${encodeURIComponent(linkId)}`, { method: "POST" });
+  };
+  const copyInstructions = async (name: string, instruction: string): Promise<void> => {
+    await navigator.clipboard.writeText(`${name}\n${instruction}`);
+  };
+  const qwenSelection = environment.qwenModelSelection;
+  const candidateById = new Map(qwenSelection?.candidates.map((candidate) => [candidate.id, candidate]) ?? []);
+  const fitCopy = lang === "pt" ? {
+    gpu_memory: "cabe na VRAM",
+    shared_memory: "cabe na memória unificada",
+    system_memory: "cabe na RAM",
+    insufficient_memory: "memória insuficiente",
+    compute_limited: "CPU abaixo do limite seguro",
+    missing_projector: "mmproj correspondente ausente",
+  } : {
+    gpu_memory: "fits GPU memory",
+    shared_memory: "fits unified memory",
+    system_memory: "fits system memory",
+    insufficient_memory: "insufficient memory",
+    compute_limited: "CPU below safe limit",
+    missing_projector: "matching mmproj missing",
+  };
+  const qwenWarningCopy: Record<string, string> = lang === "pt" ? {
+    qwen3_vl_models_not_found: "Nenhum par Qwen3-VL foi encontrado.",
+    qwen3_vl_models_incompatible_with_detected_hardware: "Os pares encontrados não cabem com segurança nesta máquina.",
+    manual_qwen_selection_restored_to_automatic: "A escolha salva não está mais disponível; o modo automático foi restaurado.",
+    same_qwen_model_selected_for_core_and_core_max: "O mesmo modelo atenderá Core e Core Max até outro par compatível ser instalado.",
+  } : {
+    qwen3_vl_models_not_found: "No Qwen3-VL pair was found.",
+    qwen3_vl_models_incompatible_with_detected_hardware: "The discovered pairs do not safely fit this computer.",
+    manual_qwen_selection_restored_to_automatic: "The saved choice is no longer available; automatic mode was restored.",
+    same_qwen_model_selected_for_core_and_core_max: "The same model will serve Core and Core Max until another compatible pair is installed.",
+  };
+  const candidateLabel = (candidate: NonNullable<typeof qwenSelection>["candidates"][number]): string => {
+    const duplicateName = (qwenSelection?.candidates.filter((item) =>
+      item.modelFileName === candidate.modelFileName).length ?? 0) > 1;
+    const pathParts = candidate.modelPath.split(/[\\/]/).filter(Boolean);
+    const knownLocation = pathParts.find((part) => /^(perceptrum|drakon)$/i.test(part));
+    const location = knownLocation ?? pathParts.at(-2) ?? "";
+    return `${candidate.modelFileName} · ${candidate.parameterBillions}B ${candidate.quantization} · ` +
+      `${byteLabel(candidate.estimatedMemoryBytes)} · ${fitCopy[candidate.fit]}` +
+      (duplicateName && location ? ` · ${location}` : "");
+  };
+  const slotSelection = (
+    slot: "core" | "core-max",
+    selectedId: string | null,
+    recommendedId: string | null,
+  ): ReactElement => {
+    const recommended = recommendedId ? candidateById.get(recommendedId) ?? null : null;
+    const value = qwenSelection?.mode === "manual" ? selectedId ?? "" : "__automatic__";
+    return <label className="qwen-model-field">
+      <span>{slot === "core" ? "AiQ Core" : "AiQ Core Max"}</span>
+      <select value={value} disabled={busy || !qwenSelection?.candidates.some((candidate) => candidate.compatible)}
+        onChange={(event) => {
+          if (event.target.value === "__automatic__") {
+            onQwenSelection({ mode: "automatic" });
+            return;
+          }
+          const coreModelId = slot === "core" ? event.target.value : qwenSelection?.selectedCoreModelId ?? null;
+          const coreMaxModelId = slot === "core-max" ? event.target.value : qwenSelection?.selectedCoreMaxModelId ?? null;
+          onQwenSelection({ mode: "manual", coreModelId, coreMaxModelId });
+        }}>
+        <option value="__automatic__">{lang === "pt" ? "Automático" : "Automatic"}{recommended
+          ? ` — ${recommended.modelFileName}` : ""}</option>
+        {qwenSelection?.candidates.map((candidate) =>
+          <option key={`${slot}:${candidate.id}`} value={candidate.id} disabled={!candidate.compatible}>
+            {candidateLabel(candidate)}
+          </option>)}
+      </select>
+    </label>;
+  };
+  return <div className="environment-screen"><section className="environment-panel" aria-labelledby="environment-title">
+    <header className="environment-heading">
+      <div><span>QUAL HARDWARE / INÍCIO</span><h1 id="environment-title">{lang === "pt" ? "Verificação do ambiente" : "Environment verification"}</h1>
+        <p>{lang === "pt"
+          ? "O aplicativo não instala nem baixa programas. Ele usa componentes compatíveis encontrados neste computador e recorre ao benchmark interno quando necessário."
+          : "The application never downloads or installs software. It uses compatible local components and falls back to its built-in benchmark when required."}</p></div>
+      <div className={`environment-readiness ${environment.readiness}`}><b>{stateCopy}</b><small>{environment.platform} · {environment.architecture}</small></div>
+    </header>
+    {error && <div className="environment-error" role="alert">{error}</div>}
+    {qwenSelection && <section className="qwen-model-selection" aria-labelledby="qwen-model-selection-title">
+      <div className="qwen-model-selection-heading">
+        <div><h2 id="qwen-model-selection-title">{lang === "pt" ? "Modelos Qwen3-VL para esta máquina" : "Qwen3-VL models for this computer"}</h2>
+          <p>{lang === "pt"
+            ? "O mesmo GGUF funciona em Windows, macOS e Ubuntu. O Qual Hardware considera RAM, VRAM e CPU, escolhe automaticamente e permite uma substituição manual segura."
+            : "The same GGUF works on Windows, macOS, and Ubuntu. Qual Hardware considers RAM, GPU memory, and CPU, selects automatically, and allows a safe manual override."}</p></div>
+        <div className="qwen-memory-budget"><span>{lang === "pt" ? "Orçamento seguro" : "Safe budget"}</span>
+          <b>{byteLabel(qwenSelection.effectiveMemoryBudgetBytes)}</b>
+          <small>{qwenSelection.acceleratorMemoryBudgetBytes === null
+            ? (lang === "pt" ? "RAM/memória unificada" : "RAM/unified memory")
+            : (lang === "pt" ? "menor limite entre RAM e VRAM" : "lower RAM/GPU-memory limit")}</small></div>
+      </div>
+      <div className="qwen-model-fields">
+        {slotSelection("core", qwenSelection.selectedCoreModelId, qwenSelection.recommendedCoreModelId)}
+        {slotSelection("core-max", qwenSelection.selectedCoreMaxModelId, qwenSelection.recommendedCoreMaxModelId)}
+      </div>
+      <div className="qwen-model-summary"><span>{qwenSelection.candidates.length} {lang === "pt" ? "modelo(s) localizado(s)" : "model(s) found"}</span>
+        <span>{qwenSelection.candidates.filter((candidate) => candidate.compatible).length} {lang === "pt" ? "compatível(is)" : "compatible"}</span>
+        <span>{qwenSelection.mode === "automatic" ? (lang === "pt" ? "seleção automática" : "automatic selection") : (lang === "pt" ? "seleção manual" : "manual selection")}</span></div>
+      {qwenSelection.warnings.length > 0 && <div className="qwen-model-warnings">{qwenSelection.warnings.map((warning) =>
+        <span key={warning}>{qwenWarningCopy[warning] ?? warning}</span>)}</div>}
+    </section>}
+    {groups.map((group) => <section className="environment-group" key={group.title}><h2>{group.title}</h2>
+      <div className="environment-components">{environment.components.filter((item) => group.ids.includes(item.id)).map((item) =>
+        <article className={`environment-component ${item.status}`} key={item.id}>
+          <div className="environment-component-title"><div><b>{visibleText(item.name)}</b><span>{visibleText(item.purpose)}</span></div><em>{statusCopy[item.status]}</em></div>
+          <dl>
+            <div><dt>{lang === "pt" ? "Origem" : "Source"}</dt><dd>{originCopy[item.origin]}</dd></div>
+            <div><dt>{lang === "pt" ? "Versão" : "Version"}</dt><dd>{item.version
+              ? /perceptrum/i.test(item.version)
+                ? (lang === "pt" ? "Detectado e aprovado pelo autoteste local" : "Detected and approved by the local self-test")
+                : visibleText(item.version)
+              : "—"}</dd></div>
+            <div><dt>{lang === "pt" ? "Autoteste" : "Self-test"}</dt><dd>{selfTestCopy[item.selfTest]}</dd></div>
+            {item.path && !/perceptrum/i.test(item.path) && <div><dt>{lang === "pt" ? "Caminho" : "Path"}</dt><dd title={item.path}>{item.path}</dd></div>}
+          </dl>
+          <p>{visibleText(item.impact)}</p><small>{item.status === "installed" && item.selfTest === "passed"
+            ? (lang === "pt" ? "Nenhuma ação necessária." : "No action required.")
+            : visibleText(item.instruction)}</small>
+          <div className="environment-actions">
+            {item.downloadLinkId && <button type="button" className="secondary" onClick={() => void openOfficial(item.downloadLinkId!)}>{lang === "pt" ? "Abrir site oficial" : "Open official site"}</button>}
+            {["ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj"].includes(item.id) &&
+              <button type="button" className="secondary" disabled={busy} onClick={() => onLocate(item.id)}>{lang === "pt" ? "Localizar no computador" : "Locate on computer"}</button>}
+            <button type="button" className="secondary" onClick={() => void copyInstructions(item.name, item.instruction)}>{lang === "pt" ? "Copiar instruções" : "Copy instructions"}</button>
+          </div>
+        </article>)}</div>
+    </section>)}
+    {environment.warnings.filter((warning) => !/perceptrum/i.test(warning)).length > 0 && <div className="environment-warnings"><b>{lang === "pt" ? "Importante" : "Important"}</b>{environment.warnings.filter((warning) => !/perceptrum/i.test(warning)).map((warning) => <span key={warning}>{warning}</span>)}</div>}
+    <footer className="environment-footer"><button type="button" className="secondary" disabled={busy} onClick={onRefresh}>{busy ? (lang === "pt" ? "Verificando…" : "Checking…") : (lang === "pt" ? "Verificar novamente" : "Check again")}</button>
+      <button type="button" className="primary" disabled={!environment.supported || busy} onClick={onContinue}>{environment.readiness === "ready_full"
+        ? (lang === "pt" ? "Abrir o Qual Hardware" : "Open Qual Hardware")
+        : (lang === "pt" ? "Continuar em modo diagnóstico" : "Continue in diagnostic mode")}</button></footer>
+  </section></div>;
 }
 
 export function App(): ReactElement {
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem("qual-hardware-language") as Language | null) ?? "pt");
+  const [environment, setEnvironment] = useState<ExecutionEnvironment | null>(null);
+  const [environmentAccepted, setEnvironmentAccepted] = useState(false);
+  const [environmentBusy, setEnvironmentBusy] = useState(true);
+  const [environmentError, setEnvironmentError] = useState("");
   const [step, setStep] = useState<Step>("project"); const [scenario, setScenario] = useState<CapacityScenario>(createInitialScenario);
   const [cameraCountConfirmed, setCameraCountConfirmed] = useState(false);
   const [record, setRecord] = useState<ScenarioRecord | null>(null); const [recommendations, setRecommendations] = useState<CapacityRecommendation[]>([]);
@@ -931,7 +1244,61 @@ export function App(): ReactElement {
   useEffect(() => {
     void api<CatalogStatus>("/api/catalog/status").then(setCatalogStatus).catch(() => setCatalogStatus(null));
     void api<HardwareNodeTemplate[]>("/api/catalog/hardware").then(setHardwareCatalog).catch(() => setHardwareCatalog([]));
+    void executionEnvironmentWithRetry()
+      .then(async (value) => {
+        const saved = savedQwenSelection();
+        if (!saved || !value.qwenModelSelection ||
+            (value.qwenModelSelection.mode === "manual" &&
+             value.qwenModelSelection.selectedCoreModelId === saved.coreModelId &&
+             value.qwenModelSelection.selectedCoreMaxModelId === saved.coreMaxModelId)) return value;
+        try {
+          return await api<ExecutionEnvironment>("/api/calibrations/environment/qwen-selection", {
+            method: "POST",
+            body: JSON.stringify(saved),
+          });
+        } catch {
+          localStorage.removeItem(QWEN_SELECTION_STORAGE_KEY);
+          return value;
+        }
+      })
+      .then((value) => { setEnvironment(value); setEnvironmentError(""); })
+      .catch((error: unknown) => setEnvironmentError(error instanceof Error ? error.message : "environment_scan_failed"))
+      .finally(() => setEnvironmentBusy(false));
   }, []);
+  const refreshEnvironment = async (): Promise<void> => {
+    setEnvironmentBusy(true); setEnvironmentError("");
+    try { setEnvironment(await api<ExecutionEnvironment>("/api/calibrations/environment/refresh", { method: "POST" })); }
+    catch (error) { setEnvironmentError(error instanceof Error ? error.message : "environment_scan_failed"); }
+    finally { setEnvironmentBusy(false); }
+  };
+  const locateEnvironmentComponent = async (componentId: string): Promise<void> => {
+    setEnvironmentBusy(true); setEnvironmentError("");
+    try {
+      const next = await api<ExecutionEnvironment>(`/api/calibrations/environment/locate/${encodeURIComponent(componentId)}`, { method: "POST" });
+      setEnvironment(next);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "component_location_failed";
+      if (message !== "selection_cancelled") setEnvironmentError(message);
+    } finally { setEnvironmentBusy(false); }
+  };
+  const updateQwenSelection = async (selection: QwenSelectionRequest): Promise<void> => {
+    setEnvironmentBusy(true); setEnvironmentError("");
+    try {
+      const next = await api<ExecutionEnvironment>("/api/calibrations/environment/qwen-selection", {
+        method: "POST",
+        body: JSON.stringify(selection),
+      });
+      setEnvironment(next);
+      if (selection.mode === "manual") localStorage.setItem(QWEN_SELECTION_STORAGE_KEY, JSON.stringify(selection));
+      else localStorage.removeItem(QWEN_SELECTION_STORAGE_KEY);
+    } catch (error) {
+      setEnvironmentError(error instanceof Error ? error.message : "qwen_model_selection_failed");
+    } finally { setEnvironmentBusy(false); }
+  };
+  if (!environmentAccepted) return <EnvironmentVerification environment={environment} lang={lang} busy={environmentBusy}
+    error={environmentError} onRefresh={() => void refreshEnvironment()} onLocate={(id) => void locateEnvironmentComponent(id)}
+    onQwenSelection={(selection) => void updateQwenSelection(selection)}
+    onContinue={() => setEnvironmentAccepted(true)} />;
   const save = async (): Promise<ScenarioRecord> => {
     if (groupTotal !== scenario.totalCameras) throw new Error(lang === "pt" ? "O total dos grupos precisa ser igual ao total de câmeras." : "Camera group total must match total cameras.");
     const next = record ? await api<ScenarioRecord>(`/api/scenarios/${record.id}`, { method: "PATCH", body: JSON.stringify({ expectedRevision: record.revision, scenario }) }) : await api<ScenarioRecord>("/api/scenarios", { method: "POST", body: JSON.stringify({ scenario }) });
@@ -970,7 +1337,11 @@ export function App(): ReactElement {
     <main><div className="intro"><div><p>HARDWARE / {String(stepIndex + 1).padStart(2, "0")}</p><h1>{text[lang].title}</h1><span>{text[lang].subtitle}</span></div><div className="camera-counter"><strong>{cameraCountConfirmed ? scenario.totalCameras : "—"}</strong><span>CAMERAS</span></div></div>
       <div className="step-progress">{lang === "pt" ? "Etapa" : "Step"} {stepIndex + 1} {lang === "pt" ? "de" : "of"} {steps.length} · {text[lang][step]}</div>
       <nav className="stepper">{steps.map((item, index) => <button key={item} className={`${item === step ? "active" : ""} ${index < stepIndex ? "done" : ""}`} onClick={() => index <= stepIndex || recommendations.length ? setStep(item) : undefined}><i>{index < stepIndex ? "✓" : index + 1}</i><span>{text[lang][item]}</span></button>)}</nav>
-      {message && <div className="toast" onClick={() => setMessage("")}>{message}<span>×</span></div>}<CalibrationEntryCard lang={lang} enabled={recommendations.length > 0} onOpen={() => { setCalibrationRecommendation(recommendations[0] ?? null); setCalibrationOpen(true); }} />{body}
-      <div className="actions">{stepIndex > 0 && <button className="secondary" onClick={() => setStep(steps[stepIndex - 1]!)}>{text[lang].back}</button>}<div />{step !== "result" && step !== "storage" && <button className="primary" disabled={step === "project" && !cameraCountConfirmed} onClick={() => setStep(steps[stepIndex + 1]!)}>{text[lang].next} →</button>}{step === "storage" && <button className="primary" disabled={busy || groupTotal !== scenario.totalCameras} onClick={calculate}>{busy ? "…" : text[lang].calculate} →</button>}{step === "result" && <button className="primary" disabled={busy} onClick={calculate}>{lang === "pt" ? "Recalcular" : "Recalculate"}</button>}</div>
-    </main><footer><span>{WORKLOAD_CONTRACT_VERSION}</span><div className="catalog-state"><span>{catalogStatus ? `${lang === "pt" ? "Catálogo" : "Catalog"}: ${catalogStatus.catalogVersion} · ${catalogStatus.source}${catalogStatus.stalePriceCount ? ` · ${catalogStatus.stalePriceCount} ${lang === "pt" ? "preços defasados" : "stale prices"}` : ""}` : (lang === "pt" ? "Catálogo: verificando" : "Catalog: checking")}</span><button type="button" disabled={busy} onClick={() => setCatalogManagerOpen(true)}>{lang === "pt" ? "Atualizar hardware" : "Update hardware"}</button></div><span>{lang === "pt" ? "SQLite local · calibração offline · zero OpenAI" : "Local SQLite · offline calibration · zero OpenAI"}</span></footer>{catalogManagerOpen && <CatalogManager status={catalogStatus} lang={lang} onClose={() => setCatalogManagerOpen(false)} onStatus={setCatalogStatus} onCatalogApplied={(status, detail) => { setCatalogStatus(status); void api<HardwareNodeTemplate[]>("/api/catalog/hardware").then(setHardwareCatalog); setRecommendations([]); setRecord(null); setMessage(`${detail} ${lang === "pt" ? "Recalcule os projetos existentes." : "Recalculate existing projects."}`); setCatalogManagerOpen(false); }} />}{calibrationOpen && <CalibrationCenter recommendation={calibrationRecommendation} catalogStatus={catalogStatus} hardwareCatalog={hardwareCatalog} initialHardwareTemplateId={scenario.constraints.requiredHardwareTemplateId ?? null} lang={lang} onClose={() => setCalibrationOpen(false)} onChanged={(detail) => { setMessage(detail); }} />}{busy && <div className="loading"><div /></div>}</div>;
+      {message && <div className="toast" role="alert" onClick={() => setMessage("")}>{message}<span>×</span></div>}{body}
+      {step === "storage" && groupTotal !== scenario.totalCameras && <div id="camera-allocation-guidance" className="total-check error allocation-blocker" role="alert"><b>{lang === "pt" ? "A distribuição precisa ser corrigida" : "The allocation needs correction"}</b><span>{lang === "pt"
+        ? `O projeto tem ${scenario.totalCameras} câmeras, mas os perfis VÍDEO FULL/FRAME somam ${groupTotal}. Volte a “Perfis de operação” e ajuste as quantidades. A calibração não é necessária para dimensionar.`
+        : `The project has ${scenario.totalCameras} cameras, but FULL VIDEO/FRAME profiles total ${groupTotal}. Return to Operating profiles and adjust the counts. Calibration is not required for sizing.`}</span></div>}
+      <div className="actions">{stepIndex > 0 && <button className="secondary" onClick={() => setStep(steps[stepIndex - 1]!)}>{text[lang].back}</button>}<div />{step !== "result" && step !== "storage" && <button className="primary" disabled={step === "project" && !cameraCountConfirmed} onClick={() => setStep(steps[stepIndex + 1]!)}>{text[lang].next} →</button>}{step === "storage" && <button className="primary" disabled={busy} aria-describedby={groupTotal !== scenario.totalCameras ? "camera-allocation-guidance" : undefined} onClick={calculate}>{busy ? "…" : text[lang].calculate} →</button>}{step === "result" && <button className="primary" disabled={busy} onClick={calculate}>{lang === "pt" ? "Recalcular" : "Recalculate"}</button>}</div>
+      <CalibrationEntryCard lang={lang} enabled={recommendations.length > 0} onOpen={() => { setCalibrationRecommendation(recommendations[0] ?? null); setCalibrationOpen(true); }} />
+    </main><footer><span>{lang === "pt" ? "Dimensionamento para VÍDEO FULL e FRAME" : "Sizing for FULL VIDEO and FRAME"}</span><div className="catalog-state"><span>{catalogStatus ? `${lang === "pt" ? "Catálogo" : "Catalog"}: ${catalogStatus.catalogVersion}${catalogStatus.stalePriceCount ? ` · ${catalogStatus.stalePriceCount} ${lang === "pt" ? "preços defasados" : "stale prices"}` : ""}` : (lang === "pt" ? "Catálogo: verificando" : "Catalog: checking")}</span><button type="button" disabled={busy} onClick={() => setCatalogManagerOpen(true)}>{lang === "pt" ? "Atualizar hardware" : "Update hardware"}</button></div><span>{lang === "pt" ? "Resultados e relatórios salvos neste computador" : "Results and reports saved on this computer"}</span></footer>{catalogManagerOpen && <CatalogManager status={catalogStatus} lang={lang} onClose={() => setCatalogManagerOpen(false)} onStatus={setCatalogStatus} onCatalogApplied={(status, detail) => { setCatalogStatus(status); void api<HardwareNodeTemplate[]>("/api/catalog/hardware").then(setHardwareCatalog); setRecommendations([]); setRecord(null); setMessage(`${detail} ${lang === "pt" ? "Recalcule os projetos existentes." : "Recalculate existing projects."}`); setCatalogManagerOpen(false); }} />}{calibrationOpen && <CalibrationCenter recommendation={calibrationRecommendation} catalogStatus={catalogStatus} hardwareCatalog={hardwareCatalog} initialHardwareTemplateId={scenario.constraints.requiredHardwareTemplateId ?? null} lang={lang} onClose={() => setCalibrationOpen(false)} onChanged={(detail) => { setMessage(detail); }} />}{busy && <div className="loading"><div /></div>}</div>;
 }

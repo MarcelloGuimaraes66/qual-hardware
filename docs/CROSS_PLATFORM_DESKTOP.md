@@ -36,9 +36,11 @@ Open the DMG, copy **Qual Hardware** to Applications and use the organization's 
 
 Either mark the AppImage executable and launch it, or install the `.deb` with the system package tool. Validate both formats in GNOME/Wayland; CI provides an additional Xvfb/X11 smoke test.
 
-## Runtime and data
+## Ambiente de execução e dados
 
-The packaged application contains Electron and does not use a separately installed Node.js. It starts Hono on an operating-system-assigned port bound only to `127.0.0.1`. The renderer is sandboxed and can reach only the application origin. A single-instance lock prevents two applications from concurrently owning SQLite. FFmpeg, MediaMTX, Qwen/llama and the telemetry probe are distributed separately in a signed target-specific `.qhruntime`; they are never stored in ASAR.
+The packaged application contains Electron, the topology helper and the native benchmark and does not use a separately installed Node.js or runtime file. It starts Hono on an operating-system-assigned port bound only to `127.0.0.1`. The renderer is sandboxed and can reach only the application origin. A single-instance lock prevents two applications from concurrently owning SQLite.
+
+Before the main window, **Verificação do ambiente** searches the system path and known installations for GPU drivers, FFmpeg/FFprobe, llama.cpp, Qwen models and a compatible Perceptrum worker. Missing items do not block the built-in diagnostic. The screen opens only catalogued official links after an explicit click; it never downloads or installs software. The operator can locate an existing executable/model and click **Verificar novamente**.
 
 Qual Hardware is exclusively desktop: it has no standalone server, Docker image or hosted deployment. The operating system chosen in a scenario is the target for the planned Perceptrum machine and is independent from the operating system running the calculator.
 
@@ -99,10 +101,10 @@ For all systems, verify that only loopback is listening, the package runs withou
 
 ## Autonomous local calibration
 
-The permanent **Calibração de capacidade** area is the only calibration runner. The operator first sizes a project, opens that area, selects the exact physical profile when available and chooses one of three modes: 10-minute diagnostic, 60-minute engineering validation or adaptive 6–7 hour qualification with sequential CPU/GPU phases and three repetitions. The application itself owns the session and never opens or modifies Perceptrum.
+The permanent **Calibração de capacidade** area is the only calibration runner. The operator first sizes a project, opens that area, selects the exact physical profile when available and chooses one of three modes: 10-minute diagnostic, 60-minute engineering validation or commercial qualification in three eight-hour blocks with two 30-minute cooldowns. The application itself owns the automatic CPU/GPU plan and the session and never opens or modifies Perceptrum.
 
-Install the target-specific signed package with **Instalar runtime de arquivo**. The file path stays in the Electron main process. Installation streams validation for signature, target, minimum app version, limits, duplicate names, traversal, links, expansion, space, licenses, SBOMs and every SHA-256 before atomic activation. Candidate packages run diagnostics; only production-trusted packages can make a completed v4 result commercially eligible.
+There is no `.qhruntime` installation or rollback flow. The application uses, in order, a compatible isolated Perceptrum worker, a complete local stack that passes self-tests, compatible installed programs, and the built-in native benchmark. The weakest component used defines the evidence level. A generic result is an estimate and can never become commercial qualification.
 
-The application starts the calibration worker as an isolated utility process. Its MediaMTX, FFmpeg, llama/Qwen and telemetry children are owned by the session and remain offline except for loopback traffic. Missing sensors are reported as `null` plus a reason. Results are saved append-only under the operating system's real Documents folder at `Qual Hardware/Calibracoes`; `.qhcal` and `.qhcalset` remain signed interchange formats.
+The application starts the calibration worker as an isolated utility process. Its internal RTSP/RTP loopback, FFmpeg, llama/Qwen, native benchmark and telemetry children are owned by the session and remain offline except for loopback traffic. Missing sensors are reported as `null` plus a reason. Results are saved append-only under the operating system's real Documents folder at `Qual Hardware/Calibracoes`; `.qhcal` and `.qhcalset` v4 remain signed interchange formats. PDF, TXT, XLSX and JSON operator reports are generated from the same model.
 
 While a run is active, **Interromper e limpar temporários** sends a private IPC cancellation. The app stops its workload processes, saves an append-only `-interrompido.partial.json` diagnostic, removes session-owned temporary files and only then confirms cancellation. Partial files never become capacity anchors or purchase evidence.

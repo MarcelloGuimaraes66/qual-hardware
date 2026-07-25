@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   const llamaDirectory = join(targetRoot, "bin", "llama");
   assets[3]!.companions = (await readdir(llamaDirectory)).filter((name) => name.toLowerCase().endsWith(".dll"))
     .sort().map((name) => `bin/llama/${name}`);
-  for (const contract of ["calibration-kernel-authority-v1.json", "calibration-pipeline-contract-v1.json"]) {
+  for (const contract of ["calibration-kernel-authority-v2.json", "calibration-pipeline-contract-v2.json"]) {
     await mkdir(join(stage, "contracts"), { recursive: true });
     await copyFile(join(repository, "contracts", contract), join(stage, "contracts", contract));
   }
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
   const packageSbom = join(targetRoot, "sbom", "runtime-package.cdx.json");
   await writeFile(packageSbom, `${JSON.stringify({
     bomFormat: "CycloneDX", specVersion: "1.6", serialNumber: `urn:uuid:${randomUUID()}`, version: 1,
-    metadata: { timestamp: "2026-07-22T12:00:00.000Z", component: { type: "application", name: "qual-hardware-calibration-runtime", version: "1.0.0" } },
+    metadata: { timestamp: "2026-07-23T18:00:00.000Z", component: { type: "application", name: "qual-hardware-calibration-runtime", version: "1.1.0" } },
     components: assets.map((asset) => ({ type: asset.kind === "model" ? "machine-learning-model" : "application", name: asset.id, version: asset.version })),
   }, null, 2)}\n`, "utf8");
   const emptyArtifact = (id: string, executable: boolean) => ({ relativePath: executable ? `bin/${id}` : `models/${id}`, sha256: null, sizeBytes: null });
@@ -119,10 +119,10 @@ async function main(): Promise<void> {
     schemaVersion: "qual-hardware-calibration-runtime-manifest/3.0.0",
     kernelVersion: CALIBRATION_KERNEL_VERSION,
     authorityCommit: PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT,
-    pipelineImplementation: "perceptrum-equivalent-v2-multi-device",
+    pipelineImplementation: "perceptrum-equivalent-v3-mixed-workload",
     supportedTargets: ["darwin-arm64", "win32-x64", "linux-x64"],
-    authorityContract: { relativePath: "contracts/calibration-kernel-authority-v1.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-kernel-authority-v1.json")) },
-    pipelineContract: { relativePath: "contracts/calibration-pipeline-contract-v1.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-pipeline-contract-v1.json")) },
+    authorityContract: { relativePath: "contracts/calibration-kernel-authority-v2.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-kernel-authority-v2.json")) },
+    pipelineContract: { relativePath: "contracts/calibration-pipeline-contract-v2.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-pipeline-contract-v2.json")) },
     sourceLock: { relativePath: "resources/calibration/asset-sources.lock.json", sha256: await canonicalTextDigest(join(stage, "resources", "calibration", "asset-sources.lock.json")) },
     assets: manifestAssets,
   };
@@ -138,8 +138,8 @@ async function main(): Promise<void> {
     { prefix: "resources/calibration/", licenseSpdx: "LicenseRef-AIQuimist-Internal", licenseRef: genericLicense, sbomRef: genericSbom },
   ];
   await writeFile(join(stage, "runtime-package-definition.json"), `${JSON.stringify({
-    version: "1.0.0-candidate.1", target: TARGET, minimumAppVersion: "0.3.0", classification: "candidate",
-    keyId: "qual-hardware-candidate-2026", createdAt: "2026-07-23T14:00:00.000Z", rules,
+    version: "1.1.0-candidate.1", target: TARGET, minimumAppVersion: "0.5.0", classification: "candidate",
+    keyId: "qual-hardware-candidate-2026", createdAt: "2026-07-23T18:00:00.000Z", rules,
   }, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify({ stage, assets: assets.length, companions: assets[3]!.companions?.length ?? 0 })}\n`);
 }

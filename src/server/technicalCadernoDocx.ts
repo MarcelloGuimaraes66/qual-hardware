@@ -120,7 +120,7 @@ function configurationSection(
     bodyParagraph(`Sistema operacional: ${operatingSystemLabel(hardware.operatingSystemFamily)}. ${usageText(configuration)}.`),
     heading(`${index}. Configuração técnica e referência comercial`, HeadingLevel.HEADING_2),
     bodyParagraph(`${usageText(configuration)}. A referência central utiliza ${hardware.cpuModel}, ${hardware.ramGb} GB de memória RAM por nó e ${hardware.gpuCount} unidade(s) de ${hardware.gpuModel}. A configuração possui ${option.headroomPercent}% de folga planejada, gargalo calculado em ${String(option.bottleneck).replaceAll("_", " ")} e preço de projeto ${money(option.price.median, option.price.currency)}.`),
-    bodyParagraph(`Esta ficha descreve a BOM e as especificações encontradas para os seus componentes. O estado de aquisição continua sendo ${option.procurementEligibility === "eligible" ? "apto, sujeito aos demais controles do relatório" : "bloqueado ou restrito a planejamento"}; especificação oficial não substitui benchmark comparável nem calibração física completa do Perceptrum.`, true),
+    bodyParagraph(`Esta ficha descreve a BOM e as especificações encontradas para os seus componentes. O estado de aquisição continua sendo ${option.procurementEligibility === "eligible" ? "apto, sujeito aos demais controles do relatório" : "bloqueado ou restrito a planejamento"}; especificação oficial não substitui benchmark comparável nem calibração física completa da carga configurada.`, true),
     heading(`${index}.1. Resumo dos componentes`, HeadingLevel.HEADING_2),
   ];
 
@@ -224,7 +224,7 @@ export async function technicalCadernoDocx(context: ReportContext): Promise<Buff
       ["TDP", "Referência térmica de projeto; não equivale necessariamente ao consumo máximo"], ["BOM", "Lista exata de materiais e componentes da configuração"],
     ], [1800, 7900]),
     bodyParagraph("Este caderno é uma memória técnica identificada. Ele pode apoiar pesquisa, comparação e elaboração interna, mas não substitui o relatório de dimensionamento, benchmarks comparáveis, calibração física, pesquisa de preços, ETP, Termo de Referência ou revisão jurídica."),
-    bodyParagraph("Uma especificação publicada pelo fabricante comprova características e compatibilidade declaradas; ela não comprova, isoladamente, quantas câmeras o Perceptrum executará de forma sustentada. Somente as condições de evidência e calibração do relatório principal podem liberar aquisição.", true),
+    bodyParagraph("Uma especificação publicada pelo fabricante comprova características e compatibilidade declaradas; ela não comprova, isoladamente, quantas câmeras a configuração executará de forma sustentada. Somente as condições de evidência e calibração do relatório principal podem liberar aquisição.", true),
   );
 
   const document = new Document({

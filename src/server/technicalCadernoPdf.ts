@@ -441,7 +441,7 @@ function renderConfiguration(
 
   writer.heading(`${index}. Configuração técnica e referência comercial`);
   writer.paragraph(`${usageText(configuration)}. A referência central utiliza ${hardware.cpuModel}, ${hardware.ramGb} GB de memória RAM por nó e ${hardware.gpuCount} unidade(s) de ${hardware.gpuModel}. A configuração possui ${option.headroomPercent}% de folga planejada, gargalo calculado em ${String(option.bottleneck).replaceAll("_", " ")} e preço de projeto ${money(option.price.median, option.price.currency)}.`);
-  writer.paragraph(`Esta ficha descreve a BOM e as especificações encontradas para os seus componentes. O estado de aquisição continua sendo ${option.procurementEligibility === "eligible" ? "apto, sujeito aos demais controles do relatório" : "bloqueado ou restrito a planejamento"}; especificação oficial não substitui benchmark comparável nem calibração física completa do Perceptrum.`, 9.2, true);
+  writer.paragraph(`Esta ficha descreve a BOM e as especificações encontradas para os seus componentes. O estado de aquisição continua sendo ${option.procurementEligibility === "eligible" ? "apto, sujeito aos demais controles do relatório" : "bloqueado ou restrito a planejamento"}; especificação oficial não substitui benchmark comparável nem calibração física completa da carga configurada.`, 9.2, true);
 
   writer.heading(`${index}.1. Resumo dos componentes`);
   const itemRows = (option.bom?.items ?? []).map((item) => {
@@ -552,7 +552,7 @@ function renderGlossary(writer: CadernoWriter): void {
     [105, 402],
   );
   writer.paragraph("Este caderno é uma memória técnica identificada. Ele pode apoiar pesquisa, comparação e elaboração interna, mas não substitui o relatório de dimensionamento, benchmarks comparáveis, calibração física, pesquisa de preços, ETP, Termo de Referência ou revisão jurídica.");
-  writer.paragraph("Uma especificação publicada pelo fabricante comprova características e compatibilidade declaradas; ela não comprova, isoladamente, quantas câmeras o Perceptrum executará de forma sustentada. Somente as condições de evidência e calibração do relatório principal podem liberar aquisição.", 9.2, true);
+  writer.paragraph("Uma especificação publicada pelo fabricante comprova características e compatibilidade declaradas; ela não comprova, isoladamente, quantas câmeras a configuração executará de forma sustentada. Somente as condições de evidência e calibração do relatório principal podem liberar aquisição.", 9.2, true);
 }
 
 export async function technicalCadernoPdf(context: ReportContext): Promise<Buffer> {

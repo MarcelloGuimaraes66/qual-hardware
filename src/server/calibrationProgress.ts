@@ -11,7 +11,10 @@ export interface CalibrationDurationEstimate {
   maximumSeconds: number;
 }
 
-const REQUIRED_COMPUTE_MODE_COUNT = 2;
+// The automatic production plan runs once on the primary compute path. A short
+// CPU contingency probe is recorded separately and must not double every phase
+// in the duration displayed to the operator.
+const REQUIRED_COMPUTE_MODE_COUNT = 1;
 
 function discoveryProbeEstimate(plan: CalibrationPlan): number {
   const limit = plan.discovery.generatorCameraLimit ?? plan.scenario.totalCameras;
@@ -101,9 +104,17 @@ export class CalibrationProgressTracker {
     const linearRemaining = this.overallPercent > 0
       ? elapsedSeconds * (100 - this.overallPercent) / this.overallPercent
       : this.duration.expectedSeconds;
-    const expectedRemaining = options.terminalCleanupCompleted ? 0 : Math.max(0,
-      Math.min(this.duration.maximumSeconds - elapsedSeconds,
-        Math.max(phaseDurationSeconds - phaseElapsedSeconds, linearRemaining)));
+    const scheduledRemaining = this.scheduledRemainingSeconds(phase, phaseElapsedSeconds);
+    const predictedRemaining = Math.max(
+      1,
+      scheduledRemaining ?? phaseDurationSeconds - phaseElapsedSeconds,
+      linearRemaining,
+    );
+    const remainingInsideOriginalWindow = this.duration.maximumSeconds - elapsedSeconds;
+    const expectedRemaining = options.terminalCleanupCompleted ? 0
+      : remainingInsideOriginalWindow > 0
+        ? Math.max(1, Math.min(remainingInsideOriginalWindow, predictedRemaining))
+        : predictedRemaining;
     const estimatedRemainingSeconds = Number.isFinite(expectedRemaining) ? expectedRemaining : null;
     const estimateAdjusted = this.previousEstimatedRemaining !== null && estimatedRemainingSeconds !== null &&
       Math.abs(estimatedRemainingSeconds - this.previousEstimatedRemaining) > Math.max(30, this.previousEstimatedRemaining * 0.1);
@@ -151,6 +162,20 @@ export class CalibrationProgressTracker {
     if (phase === "discovery") return this.plan.discovery.stabilizationSeconds + this.plan.discovery.sampleSeconds;
     return this.plan.phases.find((item) => item.name === phase)?.durationSeconds ??
       (phase === "preflight" || phase === "cleanup" ? 15 : 60);
+  }
+
+  private scheduledRemainingSeconds(phase: string, phaseElapsedSeconds: number): number | null {
+    const phaseIndex = this.plan.phases.findIndex((item) => item.name === phase);
+    if (phaseIndex < 0) return null;
+    const repetitions = Math.max(1, this.plan.qualification.repetitions);
+    const repetition = Math.min(repetitions, Math.max(1, Math.floor(finite(this.lastRaw.repetition, 1))));
+    const currentRemaining = Math.max(0, this.plan.phases[phaseIndex]!.durationSeconds - phaseElapsedSeconds);
+    const laterPhases = this.plan.phases.slice(phaseIndex + 1)
+      .reduce((sum, item) => sum + item.durationSeconds, 0);
+    const fullRepetitionSeconds = this.plan.phases.reduce((sum, item) => sum + item.durationSeconds, 0);
+    const futureRepetitions = Math.max(0, repetitions - repetition);
+    const futureCooldowns = futureRepetitions * this.plan.qualification.cooldownSeconds;
+    return currentRemaining + laterPhases + futureRepetitions * fullRepetitionSeconds + futureCooldowns;
   }
 
   private segmentBudget(phase: string): number {

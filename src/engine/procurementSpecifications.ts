@@ -14,7 +14,7 @@ import { PROCUREMENT_NEUTRAL_SPECIFICATION_VERSION } from "../shared/types.js";
 import { isPublicObservationEligible } from "./evidence.js";
 import { withTechnicalSpecification } from "./technicalSpecifications.js";
 
-const LEGAL_NOTICE = "Documento de apoio tecnico. Nao substitui ETP, pesquisa de mercado, edital, parecer juridico ou aprovacao da autoridade competente.";
+const LEGAL_NOTICE = "Documento de apoio técnico. Não substitui estudo técnico preliminar, pesquisa de mercado, edital, parecer jurídico nem aprovação da autoridade competente.";
 
 function hashId(...values: string[]): string {
   return createHash("sha256").update(values.join("\0")).digest("hex").slice(0, 24);
@@ -34,8 +34,10 @@ export function uniqueRecommendationOptions(recommendations: CapacityRecommendat
     left.hardware.name.localeCompare(right.hardware.name));
 }
 
-function commercialReference(option: RecommendationAlternative, components: HardwareComponent[]): CommercialRecommendationReference {
-  const componentById = new Map(components.map((component) => [component.id, withTechnicalSpecification(component)]));
+function commercialReference(
+  option: RecommendationAlternative,
+  componentById: ReadonlyMap<string, HardwareComponent>,
+): CommercialRecommendationReference {
   return {
     hardwareTemplateId: option.hardware.id,
     hardwareName: option.hardware.name,
@@ -52,7 +54,7 @@ function commercialReference(option: RecommendationAlternative, components: Hard
         kind: item.kind,
         role: item.role,
         quantityPerNode: item.quantity,
-        manufacturer: component?.manufacturer ?? "Nao identificado",
+        manufacturer: component?.manufacturer ?? "Não identificado",
         model: component?.sku ?? item.componentId,
         canonicalMpn: component?.canonicalMpn ?? component?.sku ?? item.componentId,
         specificationCompletenessPercent: component?.technicalSpecification?.completeness.percent ?? 0,
@@ -98,23 +100,23 @@ function baseRequirements(scenario: CapacityScenario, option: RecommendationAlte
   const os = scenario.constraints.operatingSystem === "auto" || !scenario.constraints.operatingSystem
     ? option.hardware.operatingSystemFamily
     : scenario.constraints.operatingSystem;
-  const commonProof = "Comprovar por ficha tecnica oficial do fabricante vinculada ao codigo exato ofertado.";
+  const commonProof = "Comprovar por ficha técnica oficial do fabricante vinculada ao código exato ofertado.";
   const requirements = [
-    requirement(option, { componentKind: "cpu", componentRole: "compute", characteristicCode: "physical_cores", characteristic: "Nucleos fisicos", comparator: "minimum", value: cpuCores, unit: "nucleos", mandatory: true, rationale: "Capacidade minima para recepcao RTSP, Jobs, Agents, Intelligence, banco e dashboard com reserva operacional.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} O processador deve possuir pelo menos ${cpuCores} nucleos fisicos.`, sourceStage: "job_scheduler" }),
-    requirement(option, { componentKind: "cpu", componentRole: "compute", characteristicCode: "supported_operating_systems", characteristic: "Compatibilidade com o sistema operacional", comparator: "supports", value: os, unit: null, mandatory: true, rationale: "O runtime e os drivers precisam operar no sistema selecionado sem alteracao do codigo-fonte.", proofMethod: "technical_proposal", acceptanceCriterion: `Comprovar suporte oficial ao sistema ${os} e aos drivers exigidos pelo Perceptrum.`, sourceStage: "compatibility" }),
-    requirement(option, { componentKind: "motherboard", componentRole: "platform", characteristicCode: "platform_compatibility", characteristic: "Compatibilidade integral da plataforma", comparator: "supports", value: "processador, memoria, aceleradores, armazenamento, rede e sistema operacional ofertados", unit: null, mandatory: true, rationale: "Evita uma BOM eletrica ou logicamente incompatível, mesmo quando cada peca isolada atende a sua ficha.", proofMethod: "technical_proposal", acceptanceCriterion: "Apresentar matriz de compatibilidade, versao de BIOS/firmware, lanes, slots, bifurcacao e limites do fabricante para a BOM ofertada.", sourceStage: "compatibility" }),
-    requirement(option, { componentKind: "memory_kit", componentRole: "memory", characteristicCode: "capacity_gb", characteristic: "Memoria instalada", comparator: "minimum", value: ramGb, unit: "GB", mandatory: true, rationale: "Mantem quadros, mosaicos, filas, modelo local e banco dentro da reserva maxima de 75%.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Capacidade instalada minima de ${ramGb} GB por no.`, sourceStage: "memory_bandwidth" }),
-    requirement(option, { componentKind: "memory_kit", componentRole: "memory", characteristicCode: "ecc", characteristic: "Correcao de erros", comparator: scenario.constraints.requireEcc ? "equals" : "supports", value: scenario.constraints.requireEcc, unit: null, mandatory: scenario.constraints.requireEcc, rationale: "Reduz risco de corrupcao em operacao continua quando ECC foi exigido no projeto.", proofMethod: "official_datasheet", acceptanceCriterion: scenario.constraints.requireEcc ? "Memoria e plataforma devem operar com ECC habilitado." : "Informar se a configuracao suporta ECC.", sourceStage: "compatibility" }),
-    requirement(option, { componentKind: "gpu", componentRole: "acceleration", characteristicCode: "vram_gb", characteristic: "Memoria dedicada ou unificada disponivel para inferencia", comparator: "minimum", value: Math.max(vramGb, option.hardware.memoryArchitecture === "unified" ? ramGb : 1), unit: "GB", mandatory: true, rationale: "Mantem modelo AiQ/Qwen, quadros e inferencias simultaneas abaixo de 75% da memoria disponivel.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Demonstrar a memoria utilizavel pelo backend de inferencia.`, sourceStage: "local_inference", quantityPerNode: Math.max(1, option.hardware.gpuCount) }),
-    requirement(option, { componentKind: "gpu", componentRole: "acceleration", characteristicCode: "video_decode", characteristic: "Decodificacao de video", comparator: "supports", value: codecs, unit: null, mandatory: scenario.cameraGroups.some((group) => group.decodeMode === "gpu"), rationale: "Os canais selecionados precisam ser decodificados simultaneamente no codec de origem.", proofMethod: "official_datasheet", acceptanceCriterion: `Comprovar suporte de decodificacao aos codecs ${codecs} no sistema e driver ofertados.`, sourceStage: "video_decode", quantityPerNode: Math.max(1, option.hardware.gpuCount) }),
-    requirement(option, { componentKind: "storage_os", componentRole: "operating_storage", characteristicCode: "capacity_gb", characteristic: "Capacidade util de armazenamento", comparator: "minimum", value: storageGb, unit: "GB", mandatory: true, rationale: "Comporta sistema, aplicacao, clipes temporarios e reserva de operacao.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Capacidade util minima de ${storageGb} GB por no.`, sourceStage: "capacity" }),
-    requirement(option, { componentKind: "storage_os", componentRole: "operating_storage", characteristicCode: "sequential_write_mbps", characteristic: "Escrita sequencial sustentada", comparator: "minimum", value: diskWriteMbps, unit: "MB/s", mandatory: true, rationale: "Sustenta gravacao simultanea de clipes com utilizacao de ate 60% da capacidade comprovada.", proofMethod: "independent_benchmark", acceptanceCriterion: `Apresentar resultado reproduzivel de escrita sustentada igual ou superior a ${diskWriteMbps} MB/s no perfil definido no anexo.`, sourceStage: "disk_write" }),
-    requirement(option, { componentKind: "storage_os", componentRole: "operating_storage", characteristicCode: "endurance_tbw", characteristic: "Endurance do SSD", comparator: "minimum", value: enduranceTbw, unit: "TBW", mandatory: true, rationale: "Dimensiona cinco anos de escrita calculada, acrescida de 20% de reserva, sem usar a taxa maxima do SSD como carga continua.", proofMethod: "official_datasheet", acceptanceCriterion: "Comprovar endurance oficial igual ou superior ao valor solicitado e garantia valida para o regime de gravacao.", sourceStage: "lifecycle" }),
-    requirement(option, { componentKind: "nic", componentRole: "network", characteristicCode: "link_speed_gbps", characteristic: "Velocidade da interface de rede", comparator: "minimum", value: nicGbps, unit: "Gbps", mandatory: true, rationale: "Mantem ingestao RTSP e trafego operacional abaixo de 60% da capacidade nominal do enlace.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Pelo menos uma interface de ${nicGbps} Gbps por no.`, sourceStage: "network_ingest" }),
-    requirement(option, { componentKind: "psu", componentRole: "power", characteristicCode: "continuous_power_watts", characteristic: "Dimensionamento da fonte", comparator: "supports", value: "potencia continua da BOM acrescida de reserva minima de 20%", unit: null, mandatory: true, rationale: "Evita instabilidade durante picos simultaneos de CPU, GPU e armazenamento.", proofMethod: "technical_proposal", acceptanceCriterion: "Apresentar memoria de calculo de potencia, conectores e transientes para a BOM ofertada.", sourceStage: "compatibility" }),
-    requirement(option, { componentKind: "cooling", componentRole: "cooling", characteristicCode: "cooling_capacity_watts", characteristic: "Capacidade de refrigeracao", comparator: "supports", value: "carga termica sustentada da BOM sem throttling", unit: null, mandatory: true, rationale: "A capacidade comercial depende de desempenho sustentado e nao apenas de pico.", proofMethod: "sample_or_poc", acceptanceCriterion: "Demonstrar operacao sustentada no ensaio de aceite sem throttling critico e sem filas crescentes.", sourceStage: "thermal_sustain" }),
-    requirement(option, { componentKind: "chassis", componentRole: "chassis", characteristicCode: "component_clearance", characteristic: "Compatibilidade mecanica e fluxo de ar", comparator: "supports", value: "toda a BOM, expansao e fluxo de ar especificados", unit: null, mandatory: true, rationale: "Garante montagem, manutencao e refrigeracao de todos os componentes.", proofMethod: "technical_proposal", acceptanceCriterion: "Apresentar desenho ou ficha tecnica comprovando dimensoes, slots, baias e fluxo de ar suficientes.", sourceStage: "compatibility" }),
-    requirement(option, { componentKind: "oem_system", componentRole: "oem_system", characteristicCode: "perceptrum_sustained_camera_capacity", characteristic: "Capacidade sustentada do sistema completo", comparator: "minimum", value: Math.ceil(scenario.totalCameras / Math.max(1, option.activeNodeCount)), unit: "cameras por no", mandatory: true, rationale: "Confirma conjuntamente Jobs, Steps, Agents, Intelligence, banco, dashboard, midia, I/O e termica no workload definido.", proofMethod: "sample_or_poc", acceptanceCriterion: "Executar calibracao completa de 60 minutos no pipeline de producao, sem fila crescente, perda acima do limite, OOM ou throttling sustentado.", sourceStage: "thermal_sustain" }),
+    requirement(option, { componentKind: "cpu", componentRole: "compute", characteristicCode: "physical_cores", characteristic: "Núcleos físicos", comparator: "minimum", value: cpuCores, unit: "núcleos", mandatory: true, rationale: "Capacidade mínima para recepção RTSP, Jobs, Agents, Intelligence, banco e painel com reserva operacional.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} O processador deve possuir pelo menos ${cpuCores} núcleos físicos.`, sourceStage: "job_scheduler" }),
+    requirement(option, { componentKind: "cpu", componentRole: "compute", characteristicCode: "supported_operating_systems", characteristic: "Compatibilidade com o sistema operacional", comparator: "supports", value: os, unit: null, mandatory: true, rationale: "O aplicativo e os drivers precisam operar no sistema selecionado sem alteração do código-fonte.", proofMethod: "technical_proposal", acceptanceCriterion: `Comprovar suporte oficial ao sistema ${os} e aos drivers exigidos pela carga de produção.`, sourceStage: "compatibility" }),
+    requirement(option, { componentKind: "motherboard", componentRole: "platform", characteristicCode: "platform_compatibility", characteristic: "Compatibilidade integral da plataforma", comparator: "supports", value: "processador, memória, aceleradores, armazenamento, rede e sistema operacional ofertados", unit: null, mandatory: true, rationale: "Evita uma lista de materiais elétrica ou logicamente incompatível, mesmo quando cada peça isolada atende à sua ficha.", proofMethod: "technical_proposal", acceptanceCriterion: "Apresentar matriz de compatibilidade, versão de BIOS ou firmware, canais PCIe, slots, bifurcação e limites do fabricante para a configuração ofertada.", sourceStage: "compatibility" }),
+    requirement(option, { componentKind: "memory_kit", componentRole: "memory", characteristicCode: "capacity_gb", characteristic: "Memória instalada", comparator: "minimum", value: ramGb, unit: "GB", mandatory: true, rationale: "Mantém quadros, mosaicos, filas, modelo local e banco dentro da reserva máxima de 75%.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Capacidade instalada mínima de ${ramGb} GB por servidor.`, sourceStage: "memory_bandwidth" }),
+    requirement(option, { componentKind: "memory_kit", componentRole: "memory", characteristicCode: "ecc", characteristic: "Correção de erros", comparator: scenario.constraints.requireEcc ? "equals" : "supports", value: scenario.constraints.requireEcc, unit: null, mandatory: scenario.constraints.requireEcc, rationale: "Reduz o risco de corrupção em operação contínua quando ECC foi exigido no projeto.", proofMethod: "official_datasheet", acceptanceCriterion: scenario.constraints.requireEcc ? "Memória e plataforma devem operar com ECC habilitado." : "Informar se a configuração suporta ECC.", sourceStage: "compatibility" }),
+    requirement(option, { componentKind: "gpu", componentRole: "acceleration", characteristicCode: "vram_gb", characteristic: "Memória disponível para inferência", comparator: "minimum", value: Math.max(vramGb, option.hardware.memoryArchitecture === "unified" ? ramGb : 1), unit: "GB", mandatory: true, rationale: "Mantém modelo, quadros e inferências simultâneas abaixo de 75% da memória disponível.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Demonstrar a memória utilizável pelo sistema de inferência.`, sourceStage: "local_inference", quantityPerNode: Math.max(1, option.hardware.gpuCount) }),
+    requirement(option, { componentKind: "gpu", componentRole: "acceleration", characteristicCode: "video_decode", characteristic: "Decodificação de vídeo", comparator: "supports", value: codecs, unit: null, mandatory: scenario.cameraGroups.some((group) => group.decodeMode === "gpu"), rationale: "Os canais selecionados precisam ser decodificados simultaneamente no codec de origem.", proofMethod: "official_datasheet", acceptanceCriterion: `Comprovar suporte de decodificação aos codecs ${codecs} no sistema e driver ofertados.`, sourceStage: "video_decode", quantityPerNode: Math.max(1, option.hardware.gpuCount) }),
+    requirement(option, { componentKind: "storage_os", componentRole: "operating_storage", characteristicCode: "capacity_gb", characteristic: "Capacidade útil de armazenamento", comparator: "minimum", value: storageGb, unit: "GB", mandatory: true, rationale: "Comporta sistema, aplicativo, clipes temporários e reserva de operação.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Capacidade útil mínima de ${storageGb} GB por servidor.`, sourceStage: "capacity" }),
+    requirement(option, { componentKind: "storage_os", componentRole: "operating_storage", characteristicCode: "sequential_write_mbps", characteristic: "Escrita sequencial sustentada", comparator: "minimum", value: diskWriteMbps, unit: "MB/s", mandatory: true, rationale: "Sustenta a gravação simultânea de clipes com utilização de até 60% da capacidade comprovada.", proofMethod: "independent_benchmark", acceptanceCriterion: `Apresentar resultado reproduzível de escrita sustentada igual ou superior a ${diskWriteMbps} MB/s no perfil definido no anexo.`, sourceStage: "disk_write" }),
+    requirement(option, { componentKind: "storage_os", componentRole: "operating_storage", characteristicCode: "endurance_tbw", characteristic: "Durabilidade do SSD", comparator: "minimum", value: enduranceTbw, unit: "TBW", mandatory: true, rationale: "Dimensiona cinco anos de escrita calculada, acrescida de 20% de reserva, sem usar a taxa máxima do SSD como carga contínua.", proofMethod: "official_datasheet", acceptanceCriterion: "Comprovar durabilidade oficial igual ou superior ao valor solicitado e garantia válida para o regime de gravação.", sourceStage: "lifecycle" }),
+    requirement(option, { componentKind: "nic", componentRole: "network", characteristicCode: "link_speed_gbps", characteristic: "Velocidade da interface de rede", comparator: "minimum", value: nicGbps, unit: "Gbps", mandatory: true, rationale: "Mantém recepção RTSP e tráfego operacional abaixo de 60% da capacidade nominal do enlace.", proofMethod: "official_datasheet", acceptanceCriterion: `${commonProof} Pelo menos uma interface de ${nicGbps} Gbps por servidor.`, sourceStage: "network_ingest" }),
+    requirement(option, { componentKind: "psu", componentRole: "power", characteristicCode: "continuous_power_watts", characteristic: "Dimensionamento da fonte", comparator: "supports", value: "potência contínua da configuração acrescida de reserva mínima de 20%", unit: null, mandatory: true, rationale: "Evita instabilidade durante picos simultâneos de CPU, GPU e armazenamento.", proofMethod: "technical_proposal", acceptanceCriterion: "Apresentar memória de cálculo de potência, conectores e transientes para a configuração ofertada.", sourceStage: "compatibility" }),
+    requirement(option, { componentKind: "cooling", componentRole: "cooling", characteristicCode: "cooling_capacity_watts", characteristic: "Capacidade de refrigeração", comparator: "supports", value: "carga térmica sustentada da configuração sem redução térmica de desempenho", unit: null, mandatory: true, rationale: "A capacidade comercial depende de desempenho sustentado e não apenas de pico.", proofMethod: "sample_or_poc", acceptanceCriterion: "Demonstrar operação sustentada no ensaio de aceite, sem redução térmica crítica nem filas crescentes.", sourceStage: "thermal_sustain" }),
+    requirement(option, { componentKind: "chassis", componentRole: "chassis", characteristicCode: "component_clearance", characteristic: "Compatibilidade mecânica e fluxo de ar", comparator: "supports", value: "toda a configuração, expansão e fluxo de ar especificados", unit: null, mandatory: true, rationale: "Garante montagem, manutenção e refrigeração de todos os componentes.", proofMethod: "technical_proposal", acceptanceCriterion: "Apresentar desenho ou ficha técnica que comprove dimensões, slots, baias e fluxo de ar suficientes.", sourceStage: "compatibility" }),
+    requirement(option, { componentKind: "oem_system", componentRole: "oem_system", characteristicCode: "perceptrum_sustained_camera_capacity", characteristic: "Capacidade sustentada do sistema completo", comparator: "minimum", value: Math.ceil(scenario.totalCameras / Math.max(1, option.activeNodeCount)), unit: "câmeras por servidor", mandatory: true, rationale: "Confirma conjuntamente Jobs, Steps, Agents, Intelligence, banco, painel, mídia, entrada e saída e sustentação térmica na carga definida.", proofMethod: "sample_or_poc", acceptanceCriterion: "Executar calibração completa de 60 minutos no pipeline de produção, sem fila crescente, perda acima do limite, falta de memória ou redução térmica sustentada.", sourceStage: "thermal_sustain" }),
   ];
   if (scenario.cameraGroups.some((group) => group.storage.storeVideo) && rawStorageGb > 0) {
     requirements.splice(9, 0,
@@ -153,11 +155,14 @@ function benchmarkMatches(item: NeutralProcurementRequirement, component: Hardwa
   });
 }
 
-function populateMatches(requirements: NeutralProcurementRequirement[], components: HardwareComponent[], observations: PublicBenchmarkObservation[]): NeutralProcurementRequirement[] {
-  const enriched = components.map((component) => withTechnicalSpecification(component));
+function populateMatches(
+  requirements: NeutralProcurementRequirement[],
+  enrichedComponents: HardwareComponent[],
+  observations: PublicBenchmarkObservation[],
+): NeutralProcurementRequirement[] {
   return requirements.map((item) => ({
     ...item,
-    matchingComponentIds: enriched.filter((component) => {
+    matchingComponentIds: enrichedComponents.filter((component) => {
       if (component.kind !== item.componentKind) return false;
       if (item.proofMethod === "independent_benchmark") return benchmarkMatches(item, component, observations);
       if (!component.technicalSpecification?.completeness.procurementReady) return false;
@@ -208,9 +213,15 @@ export function forbiddenNeutralIdentifiers(specification: Pick<ProcurementNeutr
   return [...tokens].filter((token) => new RegExp(`(^|[^a-z0-9])${token.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`, "i").test(text)).sort();
 }
 
-export function procurementSpecification(scenario: CapacityScenario, option: RecommendationAlternative, components: HardwareComponent[], observations: PublicBenchmarkObservation[] = [], generatedAt = new Date().toISOString()): ProcurementNeutralSpecification {
-  const matchedRequirements = populateMatches(baseRequirements(scenario, option), components, observations);
-  const internalAssessment = competition(matchedRequirements, components);
+function procurementSpecificationPrepared(
+  scenario: CapacityScenario,
+  option: RecommendationAlternative,
+  enrichedComponents: HardwareComponent[],
+  observations: PublicBenchmarkObservation[],
+  generatedAt: string,
+): ProcurementNeutralSpecification {
+  const matchedRequirements = populateMatches(baseRequirements(scenario, option), enrichedComponents, observations);
+  const internalAssessment = competition(matchedRequirements, enrichedComponents);
   // A neutral public specification contains counts and conclusions, never
   // product identifiers or manufacturer names. Traceability remains in the
   // explicitly separate commercial-reference section.
@@ -230,22 +241,43 @@ export function procurementSpecification(scenario: CapacityScenario, option: Rec
     forbiddenIdentifierFindings: [],
     disclaimers: [
       LEGAL_NOTICE,
-      "A referencia comercial nao deve ser copiada para o edital. Use somente requisitos neutros aprovados e revisados.",
-      "Especificacoes oficiais comprovam caracteristicas e compatibilidade, mas nao substituem benchmarks nem calibracoes fisicas do Perceptrum.",
+      "A referência comercial não deve ser copiada para o edital. Use somente requisitos neutros aprovados e revisados.",
+      "Especificações oficiais comprovam características e compatibilidade, mas não substituem benchmarks nem calibrações físicas da carga de produção.",
     ],
   };
-  draft.forbiddenIdentifierFindings = forbiddenNeutralIdentifiers(draft, components);
+  draft.forbiddenIdentifierFindings = forbiddenNeutralIdentifiers(draft, enrichedComponents);
   const blocked = option.procurementEligibility !== "eligible" || ["restricted", "no_coverage"].includes(marketCompetitionAssessment.status) || draft.forbiddenIdentifierFindings.length > 0;
   draft.status = blocked ? "blocked" : marketCompetitionAssessment.status === "limited" ? "review_required" : "apt";
   return draft;
 }
 
+export function procurementSpecification(scenario: CapacityScenario, option: RecommendationAlternative, components: HardwareComponent[], observations: PublicBenchmarkObservation[] = [], generatedAt = new Date().toISOString()): ProcurementNeutralSpecification {
+  return procurementSpecificationPrepared(
+    scenario,
+    option,
+    components.map((component) => withTechnicalSpecification(component, generatedAt)),
+    observations,
+    generatedAt,
+  );
+}
+
 export function withProcurementSpecifications(scenario: CapacityScenario, recommendations: CapacityRecommendation[], components: HardwareComponent[], observations: PublicBenchmarkObservation[] = [], generatedAt = new Date().toISOString()): CapacityRecommendation[] {
+  // Technical specification normalization is the expensive part of this
+  // operation. A report can contain dozens of alternatives, so normalizing
+  // the full catalog once avoids repeating the same work for every option.
+  const enrichedComponents = components.map((component) => withTechnicalSpecification(component, generatedAt));
+  const componentById = new Map(enrichedComponents.map((component) => [component.id, component]));
   const decorate = (option: RecommendationAlternative): RecommendationAlternative => {
-    const neutral = procurementSpecification(scenario, option, components, observations, generatedAt);
+    const neutral = procurementSpecificationPrepared(
+      scenario,
+      option,
+      enrichedComponents,
+      observations,
+      generatedAt,
+    );
     return {
       ...option,
-      commercialReference: commercialReference(option, components),
+      commercialReference: commercialReference(option, componentById),
       procurementNeutralSpecification: neutral,
       marketCompetitionAssessment: neutral.marketCompetitionAssessment,
       warnings: [...new Set([...option.warnings, ...(neutral.status === "blocked" ? ["procurement_neutral_specification_blocked"] : [])])],

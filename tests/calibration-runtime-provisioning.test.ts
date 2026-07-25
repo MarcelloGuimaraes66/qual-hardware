@@ -17,8 +17,8 @@ async function copyProvisioningFixture(root: string): Promise<void> {
   for (const relativePath of [
     "resources/calibration/runtime-manifest.json",
     "resources/calibration/asset-sources.lock.json",
-    "contracts/calibration-kernel-authority-v1.json",
-    "contracts/calibration-pipeline-contract-v1.json",
+    "contracts/calibration-kernel-authority-v2.json",
+    "contracts/calibration-pipeline-contract-v2.json",
   ]) {
     const destination = join(root, relativePath);
     await mkdir(dirname(destination), { recursive: true });

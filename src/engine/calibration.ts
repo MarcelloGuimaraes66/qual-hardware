@@ -308,7 +308,7 @@ export function createCalibrationPlan(
     cameraTiers: [scenario.totalCameras],
     discovery: {
       ...(quick
-        ? { stabilizationSeconds: 10, sampleSeconds: 20 }
+        ? { stabilizationSeconds: 5, sampleSeconds: 10, maximumEvaluations: 10 }
         : validation
           ? { stabilizationSeconds: 5, sampleSeconds: 10 }
           : { stabilizationSeconds: 30, sampleSeconds: 90 }),
@@ -327,7 +327,7 @@ export function createCalibrationPlan(
     localOnly: true,
     rtspOrigin: "rtsp://127.0.0.1",
     aiqOrigin: "http://127.0.0.1",
-    inferenceProvider: "aiq_local",
+    inferenceProvider: "automatic_offline",
     phases: quick
       ? [
           { name: "warmup", durationSeconds: 45, loadPercent: 80 },
@@ -337,10 +337,10 @@ export function createCalibrationPlan(
         ]
       : validation
         ? [
-          { name: "warmup", durationSeconds: 240, loadPercent: 80 },
-          { name: "ramp", durationSeconds: 480, loadPercent: 100 },
-          { name: "sustained", durationSeconds: 720, loadPercent: 100 },
-          { name: "surge", durationSeconds: 345, loadPercent: 120 },
+          { name: "warmup", durationSeconds: 300, loadPercent: 80 },
+          { name: "ramp", durationSeconds: 600, loadPercent: 100 },
+          { name: "sustained", durationSeconds: 2_100, loadPercent: 100 },
+          { name: "surge", durationSeconds: 600, loadPercent: 120 },
         ]
         : [
           { name: "warmup", durationSeconds: 1_800, loadPercent: 80 },
@@ -349,10 +349,11 @@ export function createCalibrationPlan(
           { name: "surge", durationSeconds: 1_800, loadPercent: 120 },
         ],
     sourceProfiles: scenario.cameraGroups.map((group) => ({ ...group.source })),
-    // The currently packaged AiQ/Qwen Core path is fixed to one effective
-    // inference FPS. RTSP source FPS remains independent and is preserved in
-    // each source profile. Future local backends may add further values here.
-    requestedInferenceFps: [1],
+    requestedInferenceFps: [...new Set(scenario.cameraGroups.flatMap((group) =>
+      group.agents
+        .filter((agent) => agent.model === "aiq-3.7" || agent.model === "aiq-3.7-max")
+        .map((agent) => agent.inputType === "image" ? 1 : Math.min(10, agent.modelFps)),
+    ))].sort((left, right) => left - right),
     instructions: [
       "Execute this plan only with the internal Qual Hardware Calibration Kernel.",
       "The kernel must use synthetic RTSP-equivalent streams and local AiQ/Qwen assets on 127.0.0.1 only.",

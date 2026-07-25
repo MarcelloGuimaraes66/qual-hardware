@@ -14,7 +14,7 @@ import {
 
 export const CALIBRATION_AUTHORITY_COMMIT = PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT;
 export const CALIBRATION_RUNTIME_MANIFEST_VERSION = SHARED_CALIBRATION_RUNTIME_MANIFEST_VERSION;
-const CALIBRATION_PIPELINE_IMPLEMENTATION = "perceptrum-equivalent-v2-multi-device";
+const CALIBRATION_PIPELINE_IMPLEMENTATION = "perceptrum-equivalent-v3-mixed-workload";
 
 export const SUPPORTED_RUNTIME_TARGETS = ["darwin-arm64", "win32-x64", "linux-x64"] as const;
 export type SupportedRuntimeTarget = typeof SUPPORTED_RUNTIME_TARGETS[number];

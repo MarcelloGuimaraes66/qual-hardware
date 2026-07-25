@@ -18,17 +18,26 @@ import {
 } from "../shared/types.js";
 import { calibrationPolicyHash, canonicalSha256 } from "../engine/calibrationProfile.js";
 import { discoverCapacityBoundary } from "../engine/capacityDiscovery.js";
+import { perceptrumAuthorityContract } from "../engine/perceptrumAuthority.js";
 import { REQUIRED_CALIBRATION_STAGES } from "../engine/calibration.js";
 import { calibrationHardwareDigest, calibrationHardwareMatchesTemplate, detectCalibrationHardware } from "./calibrationHardware.js";
 import {
   CALIBRATION_PIPELINE_CONTRACT_VERSION,
+  calibrationAverageIngressMbpsPerCamera,
+  calibrationTierComposition,
   OfflineCalibrationPipeline,
   type CalibrationPipelineSummary,
   type PipelinePhaseMeasurement,
 } from "./calibrationPipeline.js";
 import { CALIBRATION_AUTHORITY_COMMIT } from "./calibrationRuntime.js";
-import { evaluateCalibrationQualification, selectTechnicalCalibrationMeasurements } from "./calibrationQualification.js";
-import { expectedGpuInferenceBackend, REQUIRED_CALIBRATION_COMPUTE_MODES } from "./calibrationCompute.js";
+import {
+  evaluateCalibrationQualification,
+  quickDiagnosticSafeCameraCapacity,
+  selectTechnicalCalibrationMeasurements,
+  technicalPhaseCoverageComplete,
+} from "./calibrationQualification.js";
+import { expectedGpuInferenceBackend } from "./calibrationCompute.js";
+import { calibrationInfrastructureFailures, classifyCalibrationProbe } from "./calibrationOutcome.js";
 import {
   createCalibrationWorkspace,
   calibrationDiskStatus,
@@ -54,6 +63,7 @@ type UtilityParentPort = {
   postMessage(message: unknown): void;
 };
 const utilityParentPort = (process as NodeJS.Process & { parentPort?: UtilityParentPort }).parentPort;
+const processIpcAvailable = typeof process.send === "function";
 let input = workerData as CalibrationKernelWorkerInput;
 let started = Boolean(workerData);
 const nativeFetch = globalThis.fetch;
@@ -96,7 +106,8 @@ parentPort?.on("message", controlMessage);
 function send(message: CalibrationKernelWorkerMessage): void {
   if (message.type === "progress") lastProgress = message.progress;
   if (parentPort) parentPort.postMessage(message);
-  else utilityParentPort?.postMessage(message);
+  else if (utilityParentPort) utilityParentPort.postMessage(message);
+  else process.send?.(message);
 }
 
 function terminalDiagnostic(
@@ -285,7 +296,7 @@ function measurementTierResult(
     : 0;
   const inferenceSuccessRate = measurement.inferencesPlanned > 0
     ? Math.min(1, measurement.framesInferred / measurement.inferencesPlanned)
-    : 0;
+    : 1;
   const thermalEvidence = measurement.hardwareTelemetry.thermalThrottlePercent;
   const p95BottleneckUtilizationPercent = measurement.computeMode === "gpu_accelerated"
     ? Math.max(measurement.cpuUtilizationPercent?.p95 ?? 0,
@@ -294,8 +305,10 @@ function measurementTierResult(
   const failures = [...new Set([
     ...measurement.failures,
     ...(frameDeliveryRate < 0.995 ? ["frame_delivery_below_99_5_percent"] : []),
-    ...(inferenceSuccessRate < 0.995 ? ["inference_success_below_99_5_percent"] : []),
-    ...((measurement.p99InferenceLatencyMs ?? measurement.inferenceIntervalMs) >= measurement.inferenceIntervalMs * 0.75
+    ...(measurement.inferencesPlanned > 0 && inferenceSuccessRate < 0.995
+      ? ["inference_success_below_99_5_percent"] : []),
+    ...(measurement.inferencesPlanned > 0 &&
+      (measurement.p99InferenceLatencyMs ?? measurement.inferenceIntervalMs) >= measurement.inferenceIntervalMs * 0.75
       ? ["p99_inference_latency_exceeded"] : []),
     ...(measurement.queueGrowthPerMinute > 0 ? ["queue_growth_detected"] : []),
     ...(!measurement.cpuUtilizationPercent ? ["resource_utilization_sensor_unavailable"] : []),
@@ -303,6 +316,7 @@ function measurementTierResult(
     ...((thermalEvidence?.peak ?? 0) > 0 ? ["thermal_throttling_detected"] : []),
   ])];
   const completedAt = new Date();
+  const outcome = classifyCalibrationProbe(failures);
   return {
     tier: measurement.tier,
     repetition,
@@ -310,7 +324,8 @@ function measurementTierResult(
     phase: measurement.phase,
     startedAt: new Date(completedAt.getTime() - measurement.durationSeconds * 1_000).toISOString(),
     completedAt: completedAt.toISOString(),
-    passed: failures.length === 0,
+    passed: outcome === "pass",
+    outcome,
     frameDeliveryRate,
     inferenceSuccessRate,
     p99InferenceLatencyMs: measurement.p99InferenceLatencyMs ?? measurement.inferenceIntervalMs,
@@ -330,7 +345,7 @@ function phaseMetric(measurement: PipelinePhaseMeasurement): CalibrationPhaseMet
     loadPercent: measurement.phase === "surge" ? 120 : 100,
     cameraCount: measurement.tier,
     inferenceSuccessRate: measurement.inferencesPlanned > 0
-      ? Math.min(1, measurement.framesInferred / measurement.inferencesPlanned) : 0,
+      ? Math.min(1, measurement.framesInferred / measurement.inferencesPlanned) : 1,
     p99InferenceLatencyMs: measurement.p99InferenceLatencyMs ?? measurement.inferenceIntervalMs,
     inferenceIntervalMs: measurement.inferenceIntervalMs,
     maxQueueDepth: measurement.queueGrowthPerMinute > 0 ? 1 : 0,
@@ -374,6 +389,7 @@ async function run(): Promise<void> {
     workspace,
     database,
     workloadProfile: input.plan.workloadProfile,
+    seedCameraCount: input.plan.scenario.totalCameras,
     runtimeStatus: input.runtimeStatus,
     hardware: detectedHardware,
     physicalNetworkLinks: detectedHardware.networkLinks,
@@ -385,9 +401,13 @@ async function run(): Promise<void> {
   activePipeline = pipeline;
   const pipelineSummary: CalibrationPipelineSummary = await pipeline.initialize();
   diagnosticPipelineSummary = pipelineSummary;
+  const primaryComputeMode = pipelineSummary.gpuInferenceAvailable || pipelineSummary.gpuMediaAvailable
+    ? "gpu_accelerated" as const
+    : "cpu_only" as const;
   const tierResults = diagnosticTierResults;
   const repetitions = diagnosticRepetitions;
   const measurements = diagnosticMeasurements;
+  const contingencyMeasurements: PipelinePhaseMeasurement[] = [];
   const isolatedGpuMeasurements: PipelinePhaseMeasurement[] = [];
   const scalingProbeFailures: string[] = [];
   let degradedGpuMeasurement: PipelinePhaseMeasurement | null = null;
@@ -424,50 +444,58 @@ async function run(): Promise<void> {
     seedCameraCount: input.plan.discovery.seedCameraCount ?? input.plan.scenario.totalCameras,
     generatorCameraLimit: effectiveGeneratorLimit,
     confirmationRuns: input.plan.discovery.confirmationRuns ?? (input.plan.mode === "qualification" ? 3 : 1),
+    ...(input.plan.mode === "quick"
+      ? {
+          maximumEvaluations: input.plan.discovery.maximumEvaluations ?? 10,
+          maximumDurationMs: 270_000,
+        }
+      : {}),
     operationalHeadroomPercent: input.plan.discovery.operationalHeadroomPercent ?? 20,
     evaluate: async (tier, context) => {
     const attempt = checkpointSequence + 1;
     const ownerPhase = `discovery-${tier}`;
     setCalibrationWorkspaceOwner(workspace, ownerPhase, attempt);
     selectedTier = tier;
-    const tierMeasurements: PipelinePhaseMeasurement[] = [];
-    const tierMetrics: CalibrationTierResult[] = [];
-    for (const [modeIndex, computeMode] of REQUIRED_CALIBRATION_COMPUTE_MODES.entries()) {
-      const discoveryProgress = { phase: "discovery", stage: "discovering", tier, computeMode,
-        percent: 2 + Math.min(27, ((context.attempt - 1) * REQUIRED_CALIBRATION_COMPUTE_MODES.length + modeIndex) /
-          Math.max(1, discoveryOperationEstimate * REQUIRED_CALIBRATION_COMPUTE_MODES.length) * 28),
-        attempt, message: `Testando ${tier} câmeras · ${computeMode === "cpu_only" ? "CPU" : "GPU"}.` };
-      send({ type: "progress", progress: { ...discoveryProgress, updatedAt: new Date().toISOString() } });
-      const measurement = await pipeline.executePhase({
-        phase: "discovery",
-        tier,
-        durationSeconds: input.plan.discovery.stabilizationSeconds + input.plan.discovery.sampleSeconds,
-        computeMode,
-      });
-      measurements.push(measurement);
-      tierMeasurements.push(measurement);
-      const metric = measurementTierResult(measurement, null);
-      tierResults.push(metric);
-      tierMetrics.push(metric);
-    }
-    const tierPassed = tierMetrics.length === REQUIRED_CALIBRATION_COMPUTE_MODES.length && tierMetrics.every((metric) => metric.passed);
+    const composition = calibrationTierComposition(input.plan.workloadProfile, tier);
+    const discoveryProgress = { phase: "discovery", stage: "discovering", tier, computeMode: primaryComputeMode,
+      percent: 2 + Math.min(27, (context.attempt - 1) /
+        Math.max(1, discoveryOperationEstimate) * 28),
+      attempt, message: `Testando ${tier} câmeras no plano automático de produção.` };
+    send({ type: "progress", progress: { ...discoveryProgress, updatedAt: new Date().toISOString() } });
+    const measurement = await pipeline.executePhase({
+      phase: "discovery",
+      tier,
+      durationSeconds: input.plan.discovery.stabilizationSeconds + input.plan.discovery.sampleSeconds,
+      computeMode: primaryComputeMode,
+    });
+    measurements.push(measurement);
+    const metric = { ...measurementTierResult(measurement, null), composition };
+    tierResults.push(metric);
+    const probeOutcome = metric.outcome ?? classifyCalibrationProbe(metric.failures);
+    const tierPassed = probeOutcome === "pass";
     if (tierPassed) {
       discoveryPassed = true;
       highestPassedDiscoveryTier = Math.max(highestPassedDiscoveryTier ?? 0, tier);
     }
     completedDiscoveryTiers.add(tier);
-    const discoveryProgress = { phase: "discovery", stage: "discovering", tier, attempt,
+    const discoveryCompletedProgress = { phase: "discovery", stage: "discovering", tier, attempt,
       percent: 2 + Math.min(28, context.attempt / discoveryOperationEstimate * 28),
-      message: `CPU e GPU concluídos para ${tier} câmeras.` };
+      message: `Plano automático concluído para ${tier} câmeras: ${probeOutcome}.` };
     await persistCheckpointAndReclaim({
       workspace, ownerPhase, checkpointPhase: "discovery", tier, repetition: null, attempt, fingerprint,
       completedDiscoveryTiers: [...completedDiscoveryTiers], highestPassedDiscoveryTier,
-      progress: { ...discoveryProgress,
-        bytesProjected: Math.max(0, ...tierMeasurements.map((measurement) => measurement.temporaryBytesEstimated)),
-        diskFreeBytes: Math.min(...tierMeasurements.map((measurement) => measurement.temporaryBytesFreeBeforePhase ?? 0)),
-        diskReserveBytes: Math.max(0, ...tierMeasurements.map((measurement) => measurement.temporaryDiskReserveBytes ?? 0)) },
+      progress: { ...discoveryCompletedProgress,
+        bytesProjected: measurement.temporaryBytesEstimated,
+        diskFreeBytes: measurement.temporaryBytesFreeBeforePhase ?? 0,
+        diskReserveBytes: measurement.temporaryDiskReserveBytes ?? 0 },
     });
-    return tierPassed;
+    return {
+      outcome: probeOutcome,
+      passed: tierPassed,
+      failures: metric.failures,
+      failureCode: metric.failures[0] ?? null,
+      composition,
+    };
   },
   });
   highestPassedDiscoveryTier = capacityBoundary.highestPassingCameraCount;
@@ -490,23 +518,21 @@ async function run(): Promise<void> {
           setCalibrationWorkspaceOwner(workspace, ownerPhase, attempt);
           const effectiveTier = Math.ceil(selectedTier * phase.loadPercent / 100);
           const phaseMeasurements: PipelinePhaseMeasurement[] = [];
-          for (const [modeIndex, computeMode] of REQUIRED_CALIBRATION_COMPUTE_MODES.entries()) {
+          for (const [modeIndex, computeMode] of [primaryComputeMode].entries()) {
             const operationIndex = ((repetition - 1) * input.plan.phases.length + input.plan.phases.indexOf(phase)) *
-              REQUIRED_CALIBRATION_COMPUTE_MODES.length + modeIndex;
+              1 + modeIndex;
             const qualificationProgress = {
               phase: phase.name, stage: progressStage, tier: selectedTier, repetition, computeMode,
               attempt,
               percent: 30 + operationIndex /
-                (requiredRepetitions * input.plan.phases.length * REQUIRED_CALIBRATION_COMPUTE_MODES.length) * 65,
-              message: `Repetição ${repetition}/${requiredRepetitions} · ${phase.name} · ${computeMode === "cpu_only" ? "CPU" : "GPU"} · ${selectedTier} câmeras.`,
+                (requiredRepetitions * input.plan.phases.length) * 65,
+              message: `Repetição ${repetition}/${requiredRepetitions} · ${phase.name} · plano automático · ${selectedTier} câmeras.`,
             };
             send({ type: "progress", progress: { ...qualificationProgress, updatedAt: new Date().toISOString() } });
             const measurement = await pipeline.executePhase({
               phase: phase.name,
               tier: effectiveTier,
-              durationSeconds: input.plan.mode === "qualification" && computeMode === "cpu_only"
-                ? Math.min(60, phase.durationSeconds)
-                : phase.durationSeconds,
+              durationSeconds: phase.durationSeconds,
               computeMode,
             });
             measurements.push(measurement);
@@ -519,7 +545,7 @@ async function run(): Promise<void> {
             phase: phase.name, stage: progressStage, tier: selectedTier, repetition, attempt,
             percent: 30 + ((((repetition - 1) * input.plan.phases.length + input.plan.phases.indexOf(phase) + 1) /
               (requiredRepetitions * input.plan.phases.length))) * 65,
-            message: `Repetição ${repetition}/${requiredRepetitions} · ${phase.name} · CPU e GPU concluídos.`,
+            message: `Repetição ${repetition}/${requiredRepetitions} · ${phase.name} · plano automático concluído.`,
           };
           await persistCheckpointAndReclaim({
             workspace, ownerPhase, checkpointPhase: "qualification", tier: selectedTier, repetition, attempt, fingerprint,
@@ -543,17 +569,17 @@ async function run(): Promise<void> {
         selectedTier = Math.max(1, Math.floor(selectedTier * 0.8));
       }
     }
-  } else if (input.plan.mode === "quick") {
+  } else if (input.plan.mode === "quick" && discoveryPassed) {
     for (const phase of input.plan.phases) {
       const attempt = checkpointSequence + 1;
       const ownerPhase = `quick-${selectedTier}-${phase.name}`;
       setCalibrationWorkspaceOwner(workspace, ownerPhase, attempt);
       const phaseMeasurements: PipelinePhaseMeasurement[] = [];
-      for (const [modeIndex, computeMode] of REQUIRED_CALIBRATION_COMPUTE_MODES.entries()) {
+      for (const [modeIndex, computeMode] of [primaryComputeMode].entries()) {
         const quickProgress = { phase: phase.name, stage: "qualifying", tier: selectedTier, attempt, computeMode,
-          percent: 30 + (input.plan.phases.indexOf(phase) * REQUIRED_CALIBRATION_COMPUTE_MODES.length + modeIndex) /
-            Math.max(1, input.plan.phases.length * REQUIRED_CALIBRATION_COMPUTE_MODES.length) * 65,
-          message: `Diagnóstico ${phase.name} · ${computeMode === "cpu_only" ? "CPU" : "GPU"} · ${selectedTier} câmeras.` };
+          percent: 30 + (input.plan.phases.indexOf(phase) + modeIndex) /
+            Math.max(1, input.plan.phases.length) * 65,
+          message: `Diagnóstico ${phase.name} · plano automático · ${selectedTier} câmeras.` };
         send({ type: "progress", progress: { ...quickProgress, updatedAt: new Date().toISOString() } });
         const measurement = await pipeline.executePhase({
           phase: phase.name,
@@ -567,7 +593,7 @@ async function run(): Promise<void> {
       }
       const quickProgress = { phase: phase.name, stage: "qualifying", tier: selectedTier, attempt,
         percent: 30 + (input.plan.phases.indexOf(phase) + 1) / Math.max(1, input.plan.phases.length) * 65,
-        message: `Diagnóstico ${phase.name} · CPU e GPU concluídos.` };
+        message: `Diagnóstico ${phase.name} · plano automático concluído.` };
       await persistCheckpointAndReclaim({
         workspace, ownerPhase, checkpointPhase: "qualification", tier: selectedTier, repetition: null, attempt, fingerprint,
         completedDiscoveryTiers: [...completedDiscoveryTiers], highestPassedDiscoveryTier,
@@ -578,7 +604,21 @@ async function run(): Promise<void> {
       });
     }
   }
-  if (pipelineSummary.gpuInferenceDevices.length > 1 && pipelineSummary.gpuInferenceAvailable &&
+  if (primaryComputeMode === "gpu_accelerated" && discoveryPassed) {
+    try {
+      const contingency = await pipeline.executePhase({
+        phase: "discovery",
+        tier: selectedTier,
+        durationSeconds: Math.max(5, Math.min(30, input.plan.discovery.sampleSeconds)),
+        computeMode: "cpu_only",
+      });
+      contingencyMeasurements.push(contingency);
+    } catch (error) {
+      scalingProbeFailures.push(`cpu_contingency:${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (capacityBoundary.bound !== "inconclusive" &&
+      pipelineSummary.gpuInferenceDevices.length > 1 && pipelineSummary.gpuInferenceAvailable &&
       pipelineSummary.gpuMediaAvailable && selectedTier > 0) {
     const scalingDurationSeconds = Math.max(5, Math.min(30, input.plan.discovery.sampleSeconds));
     for (const [deviceIndex, device] of pipelineSummary.gpuInferenceDevices.entries()) {
@@ -619,7 +659,7 @@ async function run(): Promise<void> {
   database.close();
   activeDatabase = null;
   await writeFile(telemetryPath, [...measurements, ...isolatedGpuMeasurements,
-    ...(degradedGpuMeasurement ? [degradedGpuMeasurement] : [])]
+    ...contingencyMeasurements, ...(degradedGpuMeasurement ? [degradedGpuMeasurement] : [])]
     .map((measurement) => JSON.stringify(measurement)).join("\n"), "utf8");
   await finalizeTemporaryManifest();
   const qualification = evaluateCalibrationQualification({
@@ -639,6 +679,8 @@ async function run(): Promise<void> {
     cpuInferenceAvailable: pipelineSummary.cpuInferenceAvailable,
     gpuInferenceAvailable: pipelineSummary.gpuInferenceAvailable,
     gpuMediaAvailable: pipelineSummary.gpuMediaAvailable,
+    localInferenceRequired: pipelineSummary.localInferenceRequired,
+    primaryComputeMode,
     externalRequestCount: 0,
     openAiRequestCount: 0,
     measurements,
@@ -662,13 +704,20 @@ async function run(): Promise<void> {
     cpuInferenceAvailable: pipelineSummary.cpuInferenceAvailable,
     gpuInferenceAvailable: pipelineSummary.gpuInferenceAvailable,
     gpuMediaAvailable: pipelineSummary.gpuMediaAvailable,
+    localInferenceRequired: pipelineSummary.localInferenceRequired,
+    primaryComputeMode,
     externalRequestCount: 0,
     openAiRequestCount: 0,
     measurements,
     repetitions,
   }, qualification);
-  const cpuModeMeasurements = resultMeasurements.filter((measurement) => measurement.computeMode === "cpu_only");
+  const cpuModeMeasurements = [
+    ...resultMeasurements.filter((measurement) => measurement.computeMode === "cpu_only"),
+    ...contingencyMeasurements,
+  ];
   const gpuModeMeasurements = resultMeasurements.filter((measurement) => measurement.computeMode === "gpu_accelerated");
+  const gpuMediaLoadRequired = input.plan.workloadProfile.cameraGroups.some((group) =>
+    group.storage.storeVideo || group.agents.some((agent) => agent.inputType === "video"));
   const gpuEvidenceMeasurements = [...gpuModeMeasurements, ...isolatedGpuMeasurements,
     ...(degradedGpuMeasurement ? [degradedGpuMeasurement] : [])];
   const cpuModeMeasured = cpuModeMeasurements.length > 0 && cpuModeMeasurements.every((measurement) =>
@@ -677,7 +726,7 @@ async function run(): Promise<void> {
   const gpuInferenceMeasured = gpuModeMeasurements.length > 0 && gpuModeMeasurements.every((measurement) =>
     measurement.gpuInferenceMeasured && measurement.localInferenceMeasured);
   const gpuMediaMeasured = gpuModeMeasurements.length > 0 && gpuModeMeasurements.every((measurement) =>
-    measurement.gpuMediaMeasured && measurement.mediaMeasured);
+    measurement.mediaMeasured && (!gpuMediaLoadRequired || measurement.gpuMediaMeasured));
   const gpuUtilizationEvidenceMeasured = gpuModeMeasurements.length > 0 && gpuModeMeasurements.every((measurement) =>
     measurement.hardwareTelemetry.gpuUtilizationPercent !== null &&
     measurement.hardwareTelemetry.gpuMemoryUsedBytes !== null &&
@@ -716,11 +765,15 @@ async function run(): Promise<void> {
       sum + measurement.durationSeconds * input.timeScale, 0);
     const telemetryMeasured = telemetrySamples.length > 0 &&
       telemetrySamples.every((sample) => sample.utilizationPercent !== null && sample.memoryUsedBytes !== null);
+    const inferenceLoadRequired = pipelineSummary.localInferenceRequired;
     const receivedLoad = device.classification === "compute" &&
-      successfulRequests > 0 && mediaMeasuredForDevice;
+      (!inferenceLoadRequired || successfulRequests > 0) &&
+      (!gpuMediaLoadRequired || mediaMeasuredForDevice);
     const failuresForDevice = [
-      ...(device.classification === "compute" && successfulRequests === 0 ? ["inference_load_not_observed"] : []),
-      ...(device.classification === "compute" && !mediaMeasuredForDevice ? ["media_load_not_observed"] : []),
+      ...(device.classification === "compute" && inferenceLoadRequired && successfulRequests === 0
+        ? ["inference_load_not_observed"] : []),
+      ...(device.classification === "compute" && gpuMediaLoadRequired && !mediaMeasuredForDevice
+        ? ["media_load_not_observed"] : []),
       ...(device.classification === "compute" && !telemetryMeasured ? ["individual_telemetry_not_observed"] : []),
     ];
     return {
@@ -734,7 +787,8 @@ async function run(): Promise<void> {
       telemetryMeasured,
       receivedLoad,
       requestCount,
-      safeCameraCapacity: successfulRequests > 0 && mediaMeasuredForDevice ? selectedTier : null,
+      safeCameraCapacity: successfulRequests > 0 && (!gpuMediaLoadRequired || mediaMeasuredForDevice)
+        ? selectedTier : null,
       throughput: successfulRequests > 0 ? successfulRequests / Math.max(0.001, totalSeconds) : null,
       p95LatencyMs: inferenceSamples.length > 0
         ? Math.max(...inferenceSamples.map((sample) => sample.p95LatencyMs ?? 0)) : null,
@@ -757,11 +811,14 @@ async function run(): Promise<void> {
     .every((device) => device.telemetryMeasured);
   const isolatedDeviceCoverageComplete = runtimeGpuDevices.length <= 1 ||
     runtimeGpuDevices.every((device) => isolatedGpuMeasurements.some((measurement) =>
-      measurement.gpuInferenceMeasured && measurement.gpuMediaMeasured &&
+      measurement.gpuInferenceMeasured && (!gpuMediaLoadRequired || measurement.gpuMediaMeasured) &&
       (measurement.deviceInference ?? []).some((sample) =>
         sample.deviceId === device.id && sample.requestsSuccessful > 0)));
-  const multiDeviceEvidenceComplete = allEligibleDevicesReceivedLoad && allLoadedDevicesHaveTelemetry &&
-    isolatedDeviceCoverageComplete && scalingProbeFailures.length === 0;
+  const multiDeviceEvidenceRequired = primaryComputeMode === "gpu_accelerated" &&
+    (pipelineSummary.localInferenceRequired || gpuMediaLoadRequired);
+  const multiDeviceEvidenceComplete = !multiDeviceEvidenceRequired ||
+    (allEligibleDevicesReceivedLoad && allLoadedDevicesHaveTelemetry &&
+      isolatedDeviceCoverageComplete && scalingProbeFailures.length === 0);
   const inferenceThroughput = (items: PipelinePhaseMeasurement[]): number | null => {
     const successful = items.reduce((sum, item) => sum + item.framesInferred, 0);
     const seconds = items.reduce((sum, item) => sum + item.durationSeconds * input.timeScale, 0);
@@ -778,17 +835,27 @@ async function run(): Promise<void> {
     : measuredMultiGpuSpeedup / Math.max(1, runtimeGpuDevices.length) * 100;
   const degradedGpuPassed = degradedGpuMeasurement !== null &&
     degradedGpuMeasurement.failures.length === 0 && degradedGpuMeasurement.exactCameraConcurrency &&
-    degradedGpuMeasurement.gpuInferenceMeasured && degradedGpuMeasurement.gpuMediaMeasured;
+    degradedGpuMeasurement.gpuInferenceMeasured &&
+    (!gpuMediaLoadRequired || degradedGpuMeasurement.gpuMediaMeasured);
   const eligible = qualificationEligible && multiDeviceEvidenceComplete;
   const technicalExactConcurrencyComplete = resultMeasurements.length > 0 &&
     resultMeasurements.every((measurement) => measurement.exactCameraConcurrency);
+  const primaryModeMeasured = primaryComputeMode === "gpu_accelerated"
+    ? gpuModeMeasurements.length > 0 && gpuModeMeasurements.every((measurement) =>
+      measurement.mediaMeasured &&
+      (!pipelineSummary.localInferenceRequired || measurement.gpuInferenceMeasured))
+    : cpuModeMeasurements.length > 0 && cpuModeMeasurements.every((measurement) =>
+      measurement.mediaMeasured &&
+      (!pipelineSummary.localInferenceRequired || measurement.localInferenceMeasured));
   const technicalPipelineComplete = pipelineSummary.mediaAvailable && pipelineSummary.rtspAvailable &&
-    pipelineSummary.localInferenceAvailable && resultMeasurements.length > 0 &&
+    (!pipelineSummary.localInferenceRequired || pipelineSummary.localInferenceAvailable) &&
+    resultMeasurements.length > 0 &&
     resultMeasurements.every((measurement) => measurement.mediaMeasured && measurement.rtspMeasured &&
-      measurement.localInferenceMeasured && measurement.databaseOperations > 0 && measurement.dashboardQueries > 0 &&
+      (!pipelineSummary.localInferenceRequired || measurement.localInferenceMeasured) &&
+      measurement.databaseOperations > 0 && measurement.dashboardQueries > 0 &&
       measurement.completedJobRuns > 0 && measurement.completedStepRuns > 0 &&
       measurement.completedIntelligenceJobs > 0 && measurement.processedCameraCount === measurement.tier) &&
-    technicalExactConcurrencyComplete && cpuModeMeasured && gpuInferenceMeasured && gpuMediaMeasured && combinedCpuGpuMeasured;
+    technicalExactConcurrencyComplete && primaryModeMeasured;
   const uniqueModeFailures = (modeMeasurements: PipelinePhaseMeasurement[]): string[] => [...new Set(
     modeMeasurements.flatMap((measurement) => measurement.failures),
   )].slice(0, 100);
@@ -815,11 +882,29 @@ async function run(): Promise<void> {
       .map(([tier]) => tier);
   const highestMeasuredPassingCapacity = technicallyPassedTiers.length > 0
     ? Math.max(...technicallyPassedTiers) : null;
-  const technicalSafeCameraCapacity = highestMeasuredPassingCapacity === null
+  const selectedPhaseCoverageComplete = technicalPhaseCoverageComplete({
+    mode: input.plan.mode,
+    phaseNames: input.plan.phases.map((phase) => phase.name),
+    primaryComputeMode,
+    measurements: resultMeasurements,
+    highestMeasuredPassingCapacity,
+  });
+  const quickSafeCameraCapacity = input.plan.mode === "quick"
+    ? quickDiagnosticSafeCameraCapacity({
+        selectedTier,
+        primaryComputeMode,
+        phases: input.plan.phases,
+        measurements,
+      })
+    : selectedTier;
+  const technicalSafeCameraCapacity = capacityBoundary.bound === "inconclusive" ||
+      capacityBoundary.operationalSafeCameraCount === null || !selectedPhaseCoverageComplete ||
+      quickSafeCameraCapacity === null
     ? null
     : Math.min(
-        highestMeasuredPassingCapacity,
-        capacityBoundary.operationalSafeCameraCount ?? highestMeasuredPassingCapacity,
+        capacityBoundary.operationalSafeCameraCount,
+        highestMeasuredPassingCapacity ?? capacityBoundary.operationalSafeCameraCount,
+        quickSafeCameraCapacity,
       );
   const measuredStages = new Set(resultMeasurements.flatMap((measurement) => measurement.measuredStages));
   const operationCount = resultMeasurements.reduce((sum, measurement) => sum + measurement.databaseOperations, 0);
@@ -834,9 +919,19 @@ async function run(): Promise<void> {
   const inferenceErrors = [...new Set(resultMeasurements.flatMap((measurement) => measurement.inferenceErrors))].slice(0, 100);
   const infrastructureErrors = [...new Set([
     ...inferenceErrors,
-    ...resultMeasurements.flatMap((measurement) => measurement.failures.filter((failure) =>
-      /(?:runtime_unavailable|process_(?:failed|timeout)|preflight|qwen_unavailable)/.test(failure))),
+    ...(capacityBoundary.infrastructureFailure ? [capacityBoundary.infrastructureFailure] : []),
+    ...measurements.flatMap((measurement) =>
+      calibrationInfrastructureFailures(measurement.failures)),
   ])].slice(0, 100);
+  const seedTrace = capacityBoundary.searchTrace.filter((item) =>
+    item.cameraCount === capacityBoundary.seedCameraCount &&
+    item.outcome !== "infrastructure_error").at(-1);
+  const conclusion = capacityBoundary.bound === "inconclusive" || infrastructureErrors.length > 0 ||
+      technicalSafeCameraCapacity === null
+    ? "inconclusive" as const
+    : seedTrace?.outcome === "pass" && capacityBoundary.seedCameraCount <= technicalSafeCameraCapacity
+      ? "approved" as const
+      : "not_approved" as const;
   const freeSpaceSamples = resultMeasurements.flatMap((measurement) =>
     measurement.temporaryBytesFreeBeforePhase === null ? [] : [measurement.temporaryBytesFreeBeforePhase]);
   const networkEvidence = pipelineSummary.rtspAvailable && resultMeasurements.length > 0 &&
@@ -885,8 +980,7 @@ async function run(): Promise<void> {
     const isNetworkStage = stage === "network_ingest";
     const networkSafeCameraCapacity = isNetworkStage && minimumPhysicalNetworkCapacityMbps !== null
       ? Math.floor(minimumPhysicalNetworkCapacityMbps * 0.8 /
-          Math.max(0.000_001, input.plan.workloadProfile.cameraGroups.reduce((sum, group) =>
-            sum + group.sharePpm / 1_000_000 * group.bitrateMbps, 0)))
+          Math.max(0.000_001, calibrationAverageIngressMbpsPerCamera(input.plan.workloadProfile)))
       : null;
     return {
       stage,
@@ -970,6 +1064,7 @@ async function run(): Promise<void> {
     startedAt: createdAt,
     completedAt,
     workloadContractVersion: input.plan.workloadContractVersion,
+    perceptrumAuthority: perceptrumAuthorityContract(),
     mode: input.plan.mode,
     executionMode: input.plan.executionMode,
     ...(input.timeScale !== 1 || !input.runtimeStatus.manifestApproved ? { developmentOnly: true as const } : {}),
@@ -977,7 +1072,7 @@ async function run(): Promise<void> {
     requestedSourceFps: Math.max(...input.plan.sourceProfiles.map((profile) => profile.sourceFps)),
     measuredSourceFps: pipelineSummary.mediaAvailable ? Math.max(...input.plan.sourceProfiles.map((profile) => profile.sourceFps)) : 0,
     requestedInferenceFps: input.plan.requestedInferenceFps[0] ?? 1,
-    effectiveInferenceFps: Math.min(5, inferredFrames / Math.max(1, measurements.reduce((sum, item) =>
+    effectiveInferenceFps: Math.min(10, inferredFrames / Math.max(1, measurements.reduce((sum, item) =>
       sum + item.durationSeconds * input.timeScale * item.tier, 0))),
     framesPlanned: Math.max(plannedFrames, packedInferenceFrames),
     framesExtracted: Math.max(extractedFrames, packedInferenceFrames),
@@ -1009,7 +1104,7 @@ async function run(): Promise<void> {
       databaseWritesPersisted: operationCount > 0,
       intelligenceSchedulerExecuted: resultMeasurements.some((item) => item.completedIntelligenceJobs > 0),
       dashboardQueriesExecuted: resultMeasurements.some((item) => item.dashboardQueries > 0),
-      concurrentWithLoad: pipelineSummary.mediaAvailable && operationCount > 0 && combinedCpuGpuMeasured,
+      concurrentWithLoad: pipelineSummary.mediaAvailable && operationCount > 0 && primaryModeMeasured,
       cpuOnlyCompleted: cpuModeMeasured,
       gpuAcceleratedCompleted: gpuInferenceMeasured && gpuMediaMeasured,
       combinedCpuGpuCompleted: combinedCpuGpuMeasured,
@@ -1030,13 +1125,15 @@ async function run(): Promise<void> {
     executionHealth: {
       status: infrastructureErrors.length === 0 ? "completed" : "completed_with_errors",
       infrastructureErrors,
+      conclusion,
     },
     capacityRecommendation: {
       safeCameraCount: technicalSafeCameraCapacity,
-      maximumTestedCameraCount: Math.max(...tierResults.map((item) => item.tier)),
+      maximumTestedCameraCount: capacityBoundary.maximumAttemptedCameraCount,
       confidence: technicalSafeCameraCapacity === null ? "insufficient"
         : input.plan.mode === "qualification" && repetitions.length === 3 ? "high" : "medium",
-      basis: "physical_measurement",
+      basis: input.runtimeStatus.environmentEvidenceLevel === "generic_native"
+        ? "generic_native_estimate" : "physical_measurement",
     },
     sensorCoverage: {
       measured: ["cpu.identity", "cpu.utilization", "memory.used",
@@ -1067,6 +1164,9 @@ async function run(): Promise<void> {
     },
     kernelVersion: CALIBRATION_KERNEL_VERSION,
     runtimeManifestHash: input.runtimeStatus.manifestHash,
+    environmentSignature: input.runtimeStatus.environmentSignature ?? input.runtimeStatus.manifestHash,
+    ...(input.runtimeStatus.environmentProvenance
+      ? { environmentProvenance: structuredClone(input.runtimeStatus.environmentProvenance) } : {}),
     runtimeProvenance: {
       platform: input.runtimeStatus.platform,
       architecture: input.runtimeStatus.architecture,
@@ -1083,7 +1183,7 @@ async function run(): Promise<void> {
     cameraTiers: [...new Set(capacityBoundary.searchTrace.map((item) => item.cameraCount))].sort((left, right) => left - right),
     tierResults,
     repetitions,
-    maxTestedTier: Math.max(...tierResults.map((item) => item.tier)),
+    maxTestedTier: capacityBoundary.maximumAttemptedCameraCount,
     capacityBound: capacityBoundary.bound,
     capacityBoundary,
     repeatVariabilityPercent: qualification.repeatVariabilityPercent,
@@ -1184,13 +1284,13 @@ async function run(): Promise<void> {
     notes: [
       "Executado integralmente pelo Qual Hardware Calibration Kernel com mídia sintética e banco isolado.",
       "Jobs, Steps, Agents, Intelligence e dashboard foram exercitados pelo contrato local; o stub de Intelligence não equivale à inferência Qwen.",
-      "Cada nível e fase executou CPU-only e GPU acelerada; a fase GPU também exigiu carga concorrente mensurável na CPU.",
+      "Cada nível e fase usou o plano automático de produção; a CPU foi medida separadamente como contingência quando a GPU era o caminho principal.",
       "Nenhuma solicitação externa foi realizada.",
       networkEvidence === "loopback_measured_physical_link_spec_verified"
         ? "O tráfego RTSP foi medido em loopback; a rede física foi avaliada somente pela velocidade negociada e duplex, com reserva de 20%."
         : "O tráfego RTSP em loopback não comprova a capacidade da rede física externa; a especificação negociada permaneceu indisponível ou insuficiente.",
       "Métricas de GPU do sistema são diagnósticas; somente o probe empacotado e verificado pode satisfazer o guardrail térmico comercial.",
-      "Nenhuma capacidade do Perceptrum foi validada enquanto qualquer inferência, concorrência exata ou guardrail obrigatório permanecer indisponível.",
+      "Nenhuma capacidade operacional foi validada enquanto qualquer análise local, concorrência exata ou controle obrigatório permanecer indisponível.",
     ],
   };
   send({ type: "result", result });
@@ -1212,7 +1312,7 @@ async function runWorker(): Promise<void> {
     // here can invalidate the inherited ICU descriptor used by a later fork on
     // Windows portable builds.
     parentPort?.close();
-    if (utilityParentPort) setImmediate(() => process.exit(0));
+    if (utilityParentPort || processIpcAvailable) setImmediate(() => process.exit(0));
   }
 }
 
@@ -1221,6 +1321,16 @@ if (started) {
 } else if (utilityParentPort) {
   utilityParentPort.on("message", (event) => {
     const raw = event && typeof event === "object" && "data" in event ? event.data : event;
+    if (!started && raw && typeof raw === "object" && (raw as CalibrationKernelBootstrapMessage).type === "start") {
+      input = (raw as CalibrationKernelBootstrapMessage).input;
+      started = true;
+      void runWorker();
+      return;
+    }
+    if (started) controlMessage(raw as CalibrationKernelControlMessage);
+  });
+} else if (processIpcAvailable) {
+  process.on("message", (raw) => {
     if (!started && raw && typeof raw === "object" && (raw as CalibrationKernelBootstrapMessage).type === "start") {
       input = (raw as CalibrationKernelBootstrapMessage).input;
       started = true;

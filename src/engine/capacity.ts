@@ -21,6 +21,7 @@ import type {
   ResourceDemand,
   FleetPlan,
 } from "../shared/types.js";
+import { agentExecutionBackend, agentExecutionScope } from "./calibrationProfile.js";
 import { FLEET_PLAN_VERSION, WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
 
 const RESOURCE_KEYS: Array<keyof ResourceDemand> = [
@@ -83,22 +84,23 @@ function scaleDemand(demand: ResourceDemand, scale: number): ResourceDemand {
 }
 
 export function normalizeAgent(agent: AgentLoad): EffectiveAgentLoad {
-  const normalized: EffectiveAgentLoad = { ...agent, features: { ...agent.features }, normalizedFields: [] };
-  if (normalized.inputType === "video" && normalized.modelFps > 5) {
-    normalized.normalizedFields.push(`modelFps:${normalized.modelFps}→5`);
-    normalized.modelFps = 5;
+  const normalized: EffectiveAgentLoad = {
+    ...agent,
+    executionBackend: agentExecutionBackend(agent),
+    executionScope: agentExecutionScope(agent),
+    features: { ...agent.features },
+    normalizedFields: [],
+  };
+  if (normalized.inputType === "video" && normalized.modelFps > 10) {
+    normalized.normalizedFields.push(`modelFps:${normalized.modelFps}→10`);
+    normalized.modelFps = 10;
   }
   if (agent.packaging === "mosaic_3x3") {
     normalized.packaging = "mosaic_2x2";
     normalized.normalizedFields.push("packaging:mosaic_3x3→mosaic_2x2");
   }
   if (agent.model === "aiq-3.7" || agent.model === "aiq-3.7-max") {
-    if (normalized.inputType !== "video") normalized.normalizedFields.push("inputType:image→video");
-    if (normalized.modelFps !== 1) normalized.normalizedFields.push(`modelFps:${normalized.modelFps}→1`);
-    if (normalized.runEverySeconds !== 60) normalized.normalizedFields.push(`runEverySeconds:${normalized.runEverySeconds}→60`);
-    normalized.inputType = "video";
-    normalized.modelFps = 1;
-    normalized.runEverySeconds = 60;
+    if (normalized.inputType === "image") normalized.modelFps = 1;
   }
   if (agent.model === "opencv-portal-counter") {
     normalized.inputType = "video";
@@ -131,11 +133,17 @@ function calculateCameraGroupDemand(
   const outputHeight = Math.min(group.source.height, 1080);
   const bgrFrameGb = (outputWidth * outputHeight * 3) / 1024 ** 3;
   const bufferFrames = group.source.sourceFps * 2;
+  const normalizedAgents = group.agents.map(normalizeAgent);
+  const videoCaptureRequired = group.storage.storeVideo ||
+    normalizedAgents.some((agent) => agent.inputType === "video");
   const demand = emptyDemand();
   const warnings: string[] = [];
 
   demand.processThreads = 4;
   demand.ramGb = 0.12 + bgrFrameGb * bufferFrames + 4 / 1024;
+  // Perceptrum keeps the RTSP session and base decode alive for FRAME Agents.
+  // FRAME is lighter because it captures/infers one image per cadence and does
+  // not create a video clip, not because the camera stream disappears.
   demand.lanGbps = (group.source.bitrateMbps * 1.2) / 1000;
 
   const decode1080p30 = normalized1080p * (group.source.sourceFps / 30) * codecFactor;
@@ -150,13 +158,13 @@ function calculateCameraGroupDemand(
   let activeCaptureFps = 0.1;
   let hasCore = false;
   let hasCoreMax = false;
-  for (const rawAgent of group.agents) {
-    const agent = normalizeAgent(rawAgent);
+  for (const agent of normalizedAgents) {
     warnings.push(...agent.normalizedFields.map((field) => `${group.name}/${agent.name}: ${field}`));
     const activity = agent.features.onlyCaptureOnMotion ? motionFraction : 1;
-    const windowSeconds = agent.runEverySeconds <= 10 ? 10 : 60;
+    const windowSeconds = agent.runEverySeconds;
     const frames = agent.inputType === "image" ? 1 : Math.min(300, windowSeconds * agent.modelFps);
-    const requestsPerSecond = activity / agent.runEverySeconds;
+    const scopeDivisor = agent.executionScope === "inference_group" ? Math.max(1, group.count) : 1;
+    const requestsPerSecond = activity / agent.runEverySeconds / scopeDivisor;
     const frameRateForRequest = frames * requestsPerSecond;
     const packagingFactor = agent.packaging === "mosaic_2x2" ? 0.7 : 1;
     const cropFactor = agent.features.croppedFrame ? 1.12 : 1;
@@ -176,7 +184,7 @@ function calculateCameraGroupDemand(
       demand.ramGb += 0.02 * referenceFactor;
     }
 
-    if (agent.model === "aiq-3.7" || agent.model === "aiq-3.7-max") {
+    if (agent.executionBackend === "local_aiq") {
       const isMax = agent.model === "aiq-3.7-max";
       const serviceSeconds =
         (isMax ? 4 : 2.5) + frames * (agent.packaging === "mosaic_2x2" ? (isMax ? 0.055 : 0.035) : (isMax ? 0.12 : 0.075));
@@ -186,7 +194,7 @@ function calculateCameraGroupDemand(
       demand.cpuCores += requestsPerSecond * 0.35 * packagingFactor;
       hasCore ||= !isMax;
       hasCoreMax ||= isMax;
-    } else if (agent.model === "opencv-portal-counter") {
+    } else if (agent.executionBackend === "native_cv") {
       demand.cpuCores += 0.75 * normalized1080p;
       demand.ramGb += 0.35;
     } else {
@@ -200,13 +208,20 @@ function calculateCameraGroupDemand(
 
   const sampled1080p30 = normalized1080p * (activeCaptureFps / 30);
   demand.cpuCores += sampled1080p30 * 0.28;
-  // The local pipeline writes rolling source clips even when long-term retention is disabled.
-  // Disk units are MB/s and decimal TB to match manufacturer SSD specifications.
+  // FRAME-only analysis does not create rolling video clips unless recording
+  // or another video Agent requires them. Disk units are MB/s and decimal TB.
   if (storageSizingEnabled) {
-    demand.diskWriteMbps = (group.source.bitrateMbps / 8) * 1.25;
-    const effectiveRetentionDays = group.storage.storeVideo ? Math.max(1, group.storage.retentionDays || 0) : 1;
-    const raidFactor = group.storage.storeVideo ? group.storage.raidFactor : 1;
-    demand.diskCapacityTb = (group.source.bitrateMbps * 86_400 * effectiveRetentionDays * raidFactor) / 8_000_000;
+    if (videoCaptureRequired) {
+      demand.diskWriteMbps = (group.source.bitrateMbps / 8) * 1.25;
+      const effectiveRetentionDays = group.storage.storeVideo ? Math.max(1, group.storage.retentionDays || 0) : 1;
+      const raidFactor = group.storage.storeVideo ? group.storage.raidFactor : 1;
+      demand.diskCapacityTb = (group.source.bitrateMbps * 86_400 * effectiveRetentionDays * raidFactor) / 8_000_000;
+    } else {
+      const snapshotWritesPerSecond = normalizedAgents.reduce((sum, agent) =>
+        sum + (agent.inputType === "image" ? 1 / agent.runEverySeconds : 0), 0);
+      demand.diskWriteMbps = snapshotWritesPerSecond * normalized1080p * 0.16;
+      demand.diskCapacityTb = demand.diskWriteMbps * 86_400 / 1_000_000;
+    }
   }
 
   return { groupId: group.id, groupName: group.name, count: group.count, perCamera: demand, warnings };
@@ -281,10 +296,10 @@ function operatingSystemFor(template: HardwareNodeTemplate): OperatingSystemFami
 function operatingSystemAssumption(template: HardwareNodeTemplate): string {
   const operatingSystem = operatingSystemFor(template);
   if (operatingSystem === "macos") {
-    return "Apple hardware is an opt-in planning target. Perceptrum and local AiQ/Qwen use the macOS build; unified memory is budgeted conservatively and RTSP decode remains charged to the observed CPU path until calibrated otherwise.";
+    return "Apple hardware is an opt-in planning target. The local video and analysis pipeline must use a compatible macOS build; unified memory is budgeted conservatively and RTSP decode remains charged to the observed CPU path until calibrated otherwise.";
   }
   if (operatingSystem === "ubuntu") {
-    return "Ubuntu execution has been observed on the supplied ASUS configuration, but every Ubuntu desktop/server recommendation still requires the matching Perceptrum build, drivers and sustained benchmark before validation.";
+    return "Ubuntu execution has been observed on the supplied ASUS configuration, but every Ubuntu desktop/server recommendation still requires a compatible local pipeline, drivers and sustained benchmark before validation.";
   }
   return "Windows is the current packaged workstation target; the exact CPU, GPU, driver and workload still require a matching sustained benchmark before validation.";
 }
@@ -555,8 +570,13 @@ function buildFleetPlan(input: {
   maximumAdditionalCameras: number;
   procurementEligibility: RecommendationAlternative["procurementEligibility"];
 }): FleetPlan {
-  const safeCamerasPerServer = input.prediction?.safeCameraMaximum ??
-    Math.max(1, Math.ceil(input.scenario.totalCameras / input.activeServers));
+  const estimatedCamerasPerServer = Math.max(1, Math.floor(
+    (input.scenario.totalCameras + input.maximumAdditionalCameras) / input.activeServers,
+  ));
+  const safeCamerasPerServer = input.prediction?.safeCameraMaximum &&
+    input.prediction.safeCameraMaximum > 0
+    ? input.prediction.safeCameraMaximum
+    : estimatedCamerasPerServer;
   const totalServers = input.activeServers + input.reserveServers;
   const cpuSockets = input.template.cpuSocketCount ?? 1;
   const logicalCores = input.template.physicalCores;
@@ -713,21 +733,24 @@ function evaluateTemplate(
     ? "automatic_n_plus_one_reserve"
     : "automatic_ten_percent_reserve_minimum_two");
 
-  const predictionEligibility = prediction?.procurementEligibility ?? (
+  const evidenceEligibility = prediction?.procurementEligibility ?? (
     prediction?.status === "validated_local" || prediction?.status === "extrapolated_high"
       ? "eligible"
       : prediction?.status === "extrapolated_medium" ? "planning_only" : "blocked"
   );
-  const procurementEligibility = predictionEligibility === "eligible" && (policy === "minimum" || totalNodes > 1)
+  // A falta de calibração impede homologação e aquisição, mas não impede o
+  // dimensionamento técnico. O gate de compra é aplicado novamente quando a
+  // BOM e a cobertura de evidências são anexadas pela camada de aplicação.
+  const sizingEligibility = evidenceEligibility === "blocked" ? "planning_only" : evidenceEligibility;
+  const procurementEligibility = sizingEligibility === "eligible" && (policy === "minimum" || totalNodes > 1)
     ? "planning_only"
-    : predictionEligibility;
-  if (predictionEligibility === "eligible" && totalNodes > 1) {
+    : sizingEligibility;
+  if (evidenceEligibility === "eligible" && totalNodes > 1) {
     candidateWarnings.push("multi_node_design_is_planning_only_until_cluster_validation");
   }
-  if (procurementEligibility === "blocked") candidateWarnings.push("not_eligible_for_hardware_acquisition");
   if (procurementEligibility === "planning_only") candidateWarnings.push("planning_only_not_approved_for_hardware_acquisition");
 
-  const maximumAdditionalCameras = procurementEligibility === "blocked" ? 0 : estimateAdditionalCameras(
+  const maximumAdditionalCameras = estimateAdditionalCameras(
     aggregate,
     fixed,
     template,

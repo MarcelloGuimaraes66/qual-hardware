@@ -149,13 +149,13 @@ describe("capacity engine", () => {
     const agent = createDefaultAgent();
     agent.model = "aiq-3.7"; agent.inputType = "image"; agent.packaging = "mosaic_3x3"; agent.runEverySeconds = 600;
     const normalized = normalizeAgent(agent);
-    expect(normalized.inputType).toBe("video");
+    expect(normalized.inputType).toBe("image");
     expect(normalized.packaging).toBe("mosaic_2x2");
     expect(normalized.modelFps).toBe(1);
-    expect(normalized.runEverySeconds).toBe(60);
-    expect(normalized.normalizedFields.some((field) => field.startsWith("inputType:"))).toBe(true);
+    expect(normalized.runEverySeconds).toBe(600);
+    expect(normalized.normalizedFields.some((field) => field.startsWith("inputType:"))).toBe(false);
     expect(normalized.normalizedFields.some((field) => field.startsWith("packaging:"))).toBe(true);
-    expect(normalized.normalizedFields.some((field) => field.startsWith("runEverySeconds:"))).toBe(true);
+    expect(normalized.normalizedFields.some((field) => field.startsWith("runEverySeconds:"))).toBe(false);
   });
 
   it("rejects a vendor constraint that cannot perform requested GPU decode", () => {
@@ -233,8 +233,11 @@ describe("capacity engine", () => {
     scenario.constraints.requiredHardwareTemplateId = "laptop-vivobook-s16-285h-32gb-user";
     const recommendations = buildRecommendations("00000000-0000-4000-8000-000000000042", 1, scenario, HARDWARE_CATALOG, []);
     expect(recommendations.every((item) => item.primary.hardware.id === "laptop-vivobook-s16-285h-32gb-user")).toBe(true);
-    expect(recommendations[0]!.primary.maximumAdditionalCameras).toBe(0);
-    expect(recommendations[0]!.primary.procurementEligibility).toBe("blocked");
+    expect(recommendations[0]!.primary.maximumAdditionalCameras).toBeGreaterThan(0);
+    expect(recommendations[0]!.primary.procurementEligibility).toBe("planning_only");
+    expect(recommendations[0]!.primary.fleetPlan!.safeCamerasPerServer).toBeGreaterThanOrEqual(
+      Math.ceil(4 / recommendations[0]!.primary.activeNodeCount),
+    );
     expect(recommendations[0]!.primary.warnings).toEqual(expect.arrayContaining([
       "laptop_sustained_thermal_and_ac_power_benchmark_required",
       "wired_ethernet_adapter_required_for_production_rtsp",

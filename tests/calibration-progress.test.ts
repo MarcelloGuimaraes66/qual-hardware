@@ -31,7 +31,7 @@ describe("calibration progress v2", () => {
     const singleComputeQuickSeconds = quickPlan.discovery.stabilizationSeconds + quickPlan.discovery.sampleSeconds +
       quickPlan.phases.reduce((sum, phase) => sum + phase.durationSeconds, 0);
     expect(quick.minimumSeconds).toBeLessThanOrEqual(quick.expectedSeconds);
-    expect(quick.expectedSeconds).toBe(singleComputeQuickSeconds * 2);
+    expect(quick.expectedSeconds).toBe(singleComputeQuickSeconds);
     expect(quick.expectedSeconds).toBeLessThanOrEqual(quick.maximumSeconds);
     expect(full.maximumSeconds).toBeGreaterThan(full.expectedSeconds);
     expect(full.expectedSeconds).toBeGreaterThan(quick.expectedSeconds);
@@ -48,5 +48,47 @@ describe("calibration progress v2", () => {
     expect(gpu.computeMode).toBe("gpu_accelerated");
     expect(gpu.phaseStartedAt).toBe(new Date(1_020_000).toISOString());
     expect(gpu.overallPercent).toBeGreaterThanOrEqual(cpu.overallPercent!);
+  });
+
+  it("never reports zero remaining time while an overrun is still active", () => {
+    const plan = createCalibrationPlan(createDefaultScenario(12), "quick");
+    const tracker = new CalibrationProgressTracker(plan, { epochMs: 1_000_000, monotonicMs: 100 });
+    const elapsedMs = (estimateCalibrationDuration(plan).maximumSeconds + 30) * 1_000;
+    const active = tracker.update({
+      phase: "surge",
+      percent: 85,
+      overallPercent: 85,
+      phasePercent: 70,
+      updatedAt: new Date().toISOString(),
+    }, {
+      epochMs: 1_000_000 + elapsedMs,
+      monotonicMs: 100 + elapsedMs,
+    });
+    expect(active.overallPercent).toBeLessThan(100);
+    expect(active.estimatedRemainingSeconds).not.toBeNull();
+    expect(active.estimatedRemainingSeconds).toBeGreaterThan(0);
+    expect(Date.parse(active.estimatedCompletionAt!)).toBeGreaterThan(1_000_000 + elapsedMs);
+  });
+
+  it("includes all later phases in the remaining time shown during engineering validation", () => {
+    const plan = createCalibrationPlan(createDefaultScenario(12), "validation");
+    const tracker = new CalibrationProgressTracker(plan, { epochMs: 1_000_000, monotonicMs: 100 });
+    const warmup = tracker.update({
+      phase: "warmup",
+      stage: "validating",
+      repetition: 1,
+      percent: 30,
+      overallPercent: 30,
+      phasePercent: 10,
+      updatedAt: new Date().toISOString(),
+    }, {
+      epochMs: 1_030_000,
+      monotonicMs: 30_100,
+    });
+    const remainingAfterThirtySeconds = plan.phases.reduce((sum, phase) => sum + phase.durationSeconds, 0) - 30;
+    expect(warmup.estimatedRemainingSeconds).toBeGreaterThanOrEqual(remainingAfterThirtySeconds);
+    expect(Date.parse(warmup.estimatedCompletionAt!)).toBeGreaterThanOrEqual(
+      1_030_000 + remainingAfterThirtySeconds * 1_000,
+    );
   });
 });

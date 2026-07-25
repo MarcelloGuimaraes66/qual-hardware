@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildCapacityPredictions, createCalibrationPlan, REQUIRED_CALIBRATION_STAGES } from "../src/engine/calibration.js";
+import { perceptrumAuthorityContract } from "../src/engine/perceptrumAuthority.js";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
 import { createDefaultScenario, localCalibrationRunSchema } from "../src/shared/schemas.js";
 import type { HardwareNodeTemplate, LocalCalibrationRun, PublicBenchmarkObservation } from "../src/shared/types.js";
-import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, LEGACY_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT, WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
+import { AUTONOMOUS_LOCAL_CALIBRATION_VERSION, CALIBRATION_KERNEL_VERSION, LEGACY_LOCAL_CALIBRATION_VERSION, PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT, WORKLOAD_CONTRACT_VERSION } from "../src/shared/types.js";
 
 const base = HARDWARE_CATALOG.find((item) => item.id === "hp-z2-g1i-ultra9-rtx4500ada")!;
 const catalog: HardwareNodeTemplate[] = ["anchor-a", "anchor-b", "anchor-d", "target-c"].map((id) => ({
@@ -12,7 +13,7 @@ const catalog: HardwareNodeTemplate[] = ["anchor-a", "anchor-b", "anchor-d", "ta
 
 function completeComputeEvidence(capacity: number): NonNullable<LocalCalibrationRun["computeEvidence"]> {
   return {
-    schemaVersion: "qual-hardware-calibration-compute-evidence/1.0.0",
+    schemaVersion: "qual-hardware-calibration-compute-evidence/2.0.0",
     requiredModes: ["cpu_only", "gpu_accelerated"],
     cpu: {
       mode: "cpu_only", backend: "cpu", device: "Intel Core Ultra 9 285K", measured: true,
@@ -23,6 +24,27 @@ function completeComputeEvidence(capacity: number): NonNullable<LocalCalibration
       deviceId: "CUDA0", deviceName: "NVIDIA RTX 4500 Ada", inferenceMeasured: true,
       mediaMeasured: true, utilizationMeasured: true, safeCameraCapacity: capacity,
       measurementCount: 12, failures: [],
+    },
+    devices: [{
+      deviceId: "CUDA0", deviceName: "NVIDIA RTX 4500 Ada", classification: "compute",
+      inferenceBackend: "cuda", mediaBackend: "cuda_nvenc", inferenceMeasured: true,
+      mediaMeasured: true, telemetryMeasured: true, receivedLoad: true, requestCount: 100,
+      safeCameraCapacity: capacity, throughput: 10, p95LatencyMs: 100, peakVramBytes: 1024,
+      peakTemperatureCelsius: 65, peakPowerWatts: 150, throttlingObserved: false,
+      schedulerWeight: 1, failures: [],
+    }],
+    allocation: {
+      strategy: "single_device", allEligibleDevicesReceivedLoad: true,
+      allLoadedDevicesHaveTelemetry: true, modelSplitUsed: false, modelSplitReason: null,
+      numaAware: true,
+    },
+    scaling: {
+      baselineDeviceCount: 1, activeDeviceCount: 1, measuredSpeedup: 1,
+      efficiencyPercent: 100, linearlyExtrapolated: false,
+    },
+    degraded: {
+      simulatedLostDeviceId: "CUDA0", measured: true,
+      safeCameraCapacity: capacity, capacityLossPercent: 0,
     },
     combined: { measured: true, safeCameraCapacity: capacity, measurementCount: 12, failures: [] },
   };
@@ -37,6 +59,7 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
     startedAt: "2026-07-18T12:00:00.000Z",
     completedAt: "2026-07-18T13:00:00.000Z",
     workloadContractVersion: WORKLOAD_CONTRACT_VERSION,
+    perceptrumAuthority: perceptrumAuthorityContract(),
     mode: "qualification",
     executionMode: "production_pipeline",
     fingerprint: {
@@ -77,8 +100,22 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
       phaseCoverage: ["warmup", "ramp", "sustained", "surge"].map((phase) => ({ phase: phase as "warmup" | "ramp" | "sustained" | "surge", completedProbeCount: 1, failedProbeCount: 0 })),
     },
     qualityGate: { eligibleForCapacityExtrapolation: true, evidenceLevel: "validated_local", validationStatus: "anchor_approved", failures: [], warnings: [] },
-    kernelVersion: "qual-hardware-calibration-kernel/2.0.0",
+    executionHealth: { status: "completed", infrastructureErrors: [], conclusion: "approved" },
+    kernelVersion: CALIBRATION_KERNEL_VERSION,
     runtimeManifestHash: "c".repeat(64),
+    environmentSignature: "c".repeat(64),
+    environmentProvenance: {
+      schemaVersion: "qual-hardware-execution-environment/1.0.0",
+      detectedAt: "2026-07-18T11:59:00.000Z",
+      readiness: "ready_full",
+      evidenceLevel: "exact_perceptrum",
+      components: [{
+        id: "perceptrum", name: "Perceptrum compatível", status: "installed", origin: "perceptrum",
+        path: "C:\\Program Files\\Perceptrum\\Perceptrum.exe", version: "test",
+        sha256: "f".repeat(64), selfTest: "passed", capabilities: ["hardware_benchmark_worker"],
+      }],
+      missingRequiredComponentIds: [],
+    },
     runtimeProvenance: {
       platform: "win32", architecture: "x64", featureMode: "full",
       manifestApproved: true,
@@ -101,6 +138,25 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
       passed: true, safeCameraCapacity: capacity, failures: [] })),
     maxTestedTier: capacity,
     capacityBound: "exact",
+    capacityBoundary: {
+      seedCameraCount: capacity,
+      highestPassingCameraCount: capacity,
+      firstFailingCameraCount: capacity + 1,
+      operationalSafeCameraCount: capacity,
+      bound: "exact",
+      adjacentBoundaryConfirmed: true,
+      confirmationRuns: 3,
+      generatorLimit: 1_000_000,
+      nonMonotonic: false,
+      infrastructureFailure: null,
+      maximumAttemptedCameraCount: capacity + 1,
+      searchTrace: [
+        { cameraCount: capacity, passed: true, outcome: "pass", attempt: 1, phase: "confirm",
+          durationMs: 1, failureCode: null, retryOfAttempt: null, composition: [] },
+        { cameraCount: capacity + 1, passed: false, outcome: "capacity_fail", attempt: 2, phase: "confirm",
+          durationMs: 1, failureCode: "queue_growth_detected", retryOfAttempt: null, composition: [] },
+      ],
+    },
     repeatVariabilityPercent: 0,
     computeEvidence: completeComputeEvidence(capacity),
     networkEvidence: "loopback_measured_physical_link_spec_verified",
@@ -130,11 +186,15 @@ function observations(): PublicBenchmarkObservation[] {
 describe("local calibration and conservative extrapolation", () => {
   it("creates only loopback/AiQ-local plans with the approved durations", () => {
     const quick = createCalibrationPlan(createDefaultScenario(8), "quick", "target-c");
+    const validation = createCalibrationPlan(createDefaultScenario(8), "validation");
     const full = createCalibrationPlan(createDefaultScenario(8), "qualification");
     expect(quick.localOnly).toBe(true);
-    expect(quick.inferenceProvider).toBe("aiq_local");
+    expect(quick.inferenceProvider).toBe("automatic_offline");
     expect(quick.targetHardwareTemplateId).toBe("target-c");
     expect(quick.phases.map((phase) => phase.durationSeconds)).toEqual([45, 75, 90, 60]);
+    expect(validation.phases.map((phase) => phase.durationSeconds)).toEqual([300, 600, 2_100, 600]);
+    expect(validation.phases.reduce((sum, phase) => sum + phase.durationSeconds, 0)).toBe(3_600);
+    expect(quick.discovery).toMatchObject({ stabilizationSeconds: 5, sampleSeconds: 10, maximumEvaluations: 10 });
     expect(full.phases.map((phase) => phase.durationSeconds)).toEqual([1_800, 1_800, 23_400, 1_800]);
     expect(quick.requestedInferenceFps).toEqual([1]);
     expect(quick.executionMode).toBe("readiness");
@@ -256,9 +316,10 @@ describe("local calibration and conservative extrapolation", () => {
     expect(prediction.procurementEligibility).toBe("blocked");
   });
 
-  it("runs an unapproved runtime only as candidate validation and never as purchase evidence", () => {
+  it("keeps a generic environment diagnostic and never treats it as purchase evidence", () => {
     const candidate = run("00000000-0000-4000-8000-000000000046", "target-c", 32);
-    candidate.runtimeProvenance!.manifestApproved = false;
+    candidate.environmentProvenance!.evidenceLevel = "generic_native";
+    candidate.environmentProvenance!.readiness = "ready_diagnostic";
     expect(localCalibrationRunSchema.safeParse(candidate).success).toBe(false);
     candidate.developmentOnly = true;
     candidate.overallSafeCameraCapacity = null;

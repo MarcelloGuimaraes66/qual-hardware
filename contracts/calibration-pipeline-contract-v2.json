@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "qual-hardware-calibration-pipeline-contract/2.0.0",
+  "authority": {
+    "commit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
+    "contract": "contracts/calibration-kernel-authority-v2.json"
+  },
+  "workload": {
+    "contract": "perceptrum-workload/4.0.0",
+    "videoFull": {
+      "capture": "continuous_rtsp_decode",
+      "modelFps": { "minimum": 1, "maximum": 10 },
+      "cadenceSeconds": [10, 60]
+    },
+    "frame": {
+      "capture": "periodic_single_image",
+      "framesPerExecution": 1,
+      "cadenceSeconds": [10, 60, 300, 600]
+    },
+    "mixedCamera": {
+      "sharedDecode": true,
+      "videoCaptureDominates": true,
+      "inferenceCallsRemainAdditive": true
+    }
+  },
+  "jobRuntime": {
+    "schedulerEntryPoint": "runJobSchedulerTick",
+    "requiredTables": [
+      "commands",
+      "job_runs",
+      "job_step_runs",
+      "camera_runtime_sessions",
+      "camera_agent_runs",
+      "camera_agent_run_results"
+    ]
+  },
+  "intelligenceRuntime": {
+    "schedulerEntryPoint": "runIntelligenceSchedulerTick",
+    "requiredTables": [
+      "intelligence_projects",
+      "intelligence_sources",
+      "intelligence_jobs",
+      "intelligence_observations",
+      "intelligence_evidence_items",
+      "intelligence_audit_logs"
+    ]
+  },
+  "capacityDiscovery": {
+    "seedIsNotCeiling": true,
+    "expandsAndContracts": true,
+    "infrastructureErrorsExcludedFromBoundary": true,
+    "infrastructureRetryCount": 1,
+    "headroomPercent": 20
+  },
+  "compute": {
+    "automatic": true,
+    "allEligibleGpusMeasuredIndividually": true,
+    "cpuContingencyDoesNotCapPrimaryGpuPlan": true,
+    "numaAware": true
+  },
+  "privacy": {
+    "loopbackOnly": true,
+    "externalRequests": 0,
+    "mediaPersisted": false,
+    "credentialsPersisted": false
+  }
+}

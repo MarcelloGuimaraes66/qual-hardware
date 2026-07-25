@@ -134,7 +134,7 @@ try {
         execFileAsync(firstPath, ["--format", "json"], { timeout: 10_000, maxBuffer: 1_000_000, windowsHide: true }),
       ]);
       const version = versionResult.stdout.trim();
-      if (version !== "0.1.0") throw new Error(`telemetry_probe_version_invalid:${version}`);
+      if (version !== "0.2.0") throw new Error(`telemetry_probe_version_invalid:${version}`);
       const accepted = parseApprovedTelemetryProbe(payloadResult.stdout);
       if (!accepted?.probeThermalEvidence) throw new Error("telemetry_probe_local_contract_rejected");
       localExecution = {

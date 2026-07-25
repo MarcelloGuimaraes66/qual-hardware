@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createCalibrationPlan } from "../src/engine/calibration.js";
 import { createDefaultScenario } from "../src/shared/schemas.js";
@@ -34,6 +37,7 @@ class FakeCalibrationKernel implements CalibrationKernelPort {
   private activeSessionId: string | null = null;
   private handlers: CalibrationKernelHandlers | null = null;
   readonly starts: CalibrationKernelStartInput[] = [];
+  readonly cleanupRecoveries: boolean[] = [];
   readonly status: CalibrationRuntimeStatus = {
     schemaVersion: "qual-hardware-calibration-runtime-status/1.0.0",
     kernelVersion: CALIBRATION_KERNEL_VERSION,
@@ -87,7 +91,10 @@ class FakeCalibrationKernel implements CalibrationKernelPort {
       message: "late worker progress", updatedAt: new Date().toISOString(),
     });
   }
-  async retryCleanup(): Promise<CalibrationCleanupStatus> { return cleaned; }
+  async retryCleanup(_sessionId: string, interruptedRecovery = false): Promise<CalibrationCleanupStatus> {
+    this.cleanupRecoveries.push(interruptedRecovery);
+    return cleaned;
+  }
   isActive(sessionId: string): boolean { return this.activeSessionId === sessionId; }
   hasActiveSession(): boolean { return this.activeSessionId !== null; }
   async close(): Promise<void> { this.activeSessionId = null; }
@@ -202,6 +209,32 @@ describe("secure cross-platform autonomous calibration", () => {
     });
     expect((await store.getCalibrationSession(created.id))?.state).toBe("interrupted");
     expect((await store.getCalibrationSession(created.id))?.cleanup?.remainingBytes).toBe(0);
+    expect(kernel.cleanupRecoveries).toContain(true);
+    await store.close();
+  });
+
+  it("refreshes registered hashes while recovering cleanup of a failed terminal session", async () => {
+    const store = new MemoryPlannerStore();
+    const kernel = new FakeCalibrationKernel();
+    const plan = createCalibrationPlan(createDefaultScenario(4), "quick", null);
+    const created = createInternalCalibrationSession({
+      plan,
+      recommendationId: "00000000-0000-4000-8000-000000000032",
+      scenarioId: "00000000-0000-4000-8000-000000000033",
+      advancedTelemetry: false,
+    });
+    await store.saveCalibrationSession({
+      ...created,
+      state: "failed",
+      cleanup: { ...created.cleanup!, state: "failed", remainingBytes: 1_024, error: "calibration_workspace_hash_changed" },
+      error: "calibration_process_failed",
+    });
+
+    createApp(store, undefined, { calibrationKernel: kernel });
+    await vi.waitFor(async () => {
+      expect((await store.getCalibrationSession(created.id))?.cleanup?.state).toBe("completed");
+    });
+    expect(kernel.cleanupRecoveries).toContain(true);
     await store.close();
   });
 
@@ -277,8 +310,12 @@ describe("secure cross-platform autonomous calibration", () => {
   it("allows an unmapped computer to run the full candidate-validation cycle without making it purchase evidence", async () => {
     const store = new MemoryPlannerStore();
     const kernel = new FakeCalibrationKernel();
+    const evidenceDirectory = await mkdtemp(join(tmpdir(), "qual-hardware-cancel-report-"));
     kernel.status.manifestApproved = false;
-    const application = createApp(store, undefined, { calibrationKernel: kernel });
+    const application = createApp(store, undefined, {
+      calibrationKernel: kernel,
+      calibrationEvidenceDirectory: evidenceDirectory,
+    });
     const scenarioResponse = await application.request("/api/scenarios", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario: createDefaultScenario(4) }),
     });
@@ -295,16 +332,25 @@ describe("secure cross-platform autonomous calibration", () => {
     await kernel.finishCancelled();
     expect((await store.getCalibrationSession(started.session.id))?.state).toBe("cancelled");
     expect(await store.listCalibrationRuns()).toHaveLength(0);
+    expect(await readdir(evidenceDirectory)).toEqual(expect.arrayContaining([
+      `${started.session.id}-inconclusivo.txt`,
+      `${started.session.id}-inconclusivo.pdf`,
+      `${started.session.id}-inconclusivo.xlsx`,
+      `${started.session.id}-inconclusivo.json`,
+    ]));
     await store.close();
+    await rm(evidenceDirectory, { recursive: true, force: true });
   });
 
   it("cancels the internal worker, preserves compact diagnostics and removes temporary files without importing a capacity run", async () => {
     const store = new MemoryPlannerStore();
     const localFetch = vi.fn(async () => { throw new Error("external fetch must not run"); }) as unknown as typeof fetch;
     const kernel = new FakeCalibrationKernel();
+    const evidenceDirectory = await mkdtemp(join(tmpdir(), "qual-hardware-cancel-report-"));
     const application = createApp(store, undefined, {
       fetchImpl: localFetch,
       calibrationKernel: kernel,
+      calibrationEvidenceDirectory: evidenceDirectory,
     });
     const scenarioResponse = await application.request("/api/scenarios", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scenario: createDefaultScenario(2) }),
@@ -335,7 +381,14 @@ describe("secure cross-platform autonomous calibration", () => {
     });
     expect(localFetch).not.toHaveBeenCalled();
     expect(await store.listCalibrationRuns()).toHaveLength(0);
+    expect(await readdir(evidenceDirectory)).toEqual(expect.arrayContaining([
+      `${started.session.id}-inconclusivo.txt`,
+      `${started.session.id}-inconclusivo.pdf`,
+      `${started.session.id}-inconclusivo.xlsx`,
+      `${started.session.id}-inconclusivo.json`,
+    ]));
     await store.close();
+    await rm(evidenceDirectory, { recursive: true, force: true });
   });
 
   it("resumes compatible discovery evidence in a new session while preserving the cancelled source", async () => {

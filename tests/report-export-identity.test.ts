@@ -4,6 +4,7 @@ import { REPORT_DOWNLOAD_FILENAMES, REPORT_EXPORT_COPY, isNeutralAnnexFormat } f
 describe("report export identity", () => {
   it("makes the recommendations PDF the unambiguous primary download", () => {
     expect(REPORT_DOWNLOAD_FILENAMES.pdf).toBe("qual-hardware-recomendacoes.pdf");
+    expect(REPORT_DOWNLOAD_FILENAMES.txt).toBe("qual-hardware-recomendacoes.txt");
     expect(REPORT_EXPORT_COPY.pt.mainTitle).toBe("Relatório completo de recomendações");
     expect(REPORT_EXPORT_COPY.pt.mainPdfButton).toBe("BAIXAR RELATÓRIO PDF");
     expect(REPORT_EXPORT_COPY.pt.mainDescription).toContain("três propostas");

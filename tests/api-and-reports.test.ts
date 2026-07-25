@@ -57,12 +57,24 @@ describe("Qual Hardware API and reports", () => {
     expect(jsonReport.schemaVersion).toBe("capacity-recommendation-export/7.0.0");
     expect(jsonReport.recommendations.map((item) => item.policy)).toEqual(["minimum", "recommended", "n_plus_one"]);
     expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("FPS de leitura RTSP");
-    expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("AiQ/Qwen local");
+    expect(jsonReport.executiveNarrative.paragraphs.join(" ")).toContain("inferência local");
     expect(jsonReport.qualifiedOptions).toHaveLength(0);
     expect(jsonReport.planningOptions.length).toBeGreaterThanOrEqual(6);
     expect(jsonReport.executiveNarrative.cautions.join(" ")).toContain("não apto para compra");
     expect(jsonReport.commercialAndNeutralOptions.length).toBeGreaterThanOrEqual(6);
     expect(jsonReport.commercialAndNeutralOptions.every((item) => item.procurementNeutralSpecification.status === "blocked" && item.procurementNeutralSpecification.requirements.length >= 10)).toBe(true);
+
+    const txt = await app.request(`/api/recommendations/${recommendation.id}/export/txt`);
+    expect(txt.status).toBe(200);
+    expect(txt.headers.get("content-type")).toContain("text/plain");
+    expect(txt.headers.get("content-disposition")).toBe('attachment; filename="qual-hardware-recomendacoes.txt"');
+    const txtReport = await txt.text();
+    expect(txtReport).toContain("RELATÓRIO DE DIMENSIONAMENTO DE INFRAESTRUTURA");
+    expect(txtReport).toContain("CONFIGURAÇÕES PROPOSTAS");
+    expect(txtReport).toContain("Capacidade segura por servidor");
+    expect(txtReport).not.toMatch(/perceptrum/i);
+    expect(txtReport).not.toMatch(/\bworkstation\b/i);
+    expect(txtReport).not.toContain("1 CPUs físicas");
 
     const pdf = await app.request(`/api/recommendations/${recommendation.id}/export/pdf`);
     const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
@@ -77,13 +89,13 @@ describe("Qual Hardware API and reports", () => {
       title: "Relatório comparativo de infraestrutura",
       narrative: "Nossa leitura e recomendação em linguagem direta",
       configurations: "As três configurações sugeridas",
-      alternatives: "Outras maquinas qualificadas em ordem crescente de custo",
-      workload: "Carga de cameras e Agents usada no calculo",
+      alternatives: "Outras máquinas avaliadas em ordem crescente de custo",
+      workload: "Carga de câmeras e agentes usada no cálculo",
       proposalSections: [
         "Resumo de capacidade",
-        "Especificacao tecnica por no",
+        "Especificação técnica por servidor",
         "Custo por componente e total do projeto",
-        "Distribuicao das cameras e utilizacao",
+        "Distribuição das câmeras e utilização",
         "Demanda agregada calculada",
         "Fontes, premissas e avisos",
       ],
@@ -123,8 +135,11 @@ describe("Qual Hardware API and reports", () => {
     expect(Array.from(spreadsheetBytes.slice(0, 2))).toEqual([0x50, 0x4b]);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(spreadsheetBytes.buffer);
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Executive Summary", "Scenario", "3 Configurations", "Fleet Plan", "Qualified Options", "Planning Only", "Commercial Reference", "Detailed Specifications", "Neutral TR Specification", "TR Compliance Matrix", "Market Competition", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
-    expect(workbook.getWorksheet("Executive Summary")!.getCell("B2").value).toContain("RTSP");
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Resumo em português", "Executive Summary", "Scenario", "3 Configurations", "Fleet Plan", "Qualified Options", "Planning Only", "Commercial Reference", "Detailed Specifications", "Neutral TR Specification", "TR Compliance Matrix", "Market Competition", "BOM", "Component Evidence", "Stage Evidence", "Nodes", "Workload", "Calculations", "Quotes", "Assumptions"]);
+    expect(String(workbook.getWorksheet("Resumo em português")!.getCell("C2").value ?? "")).toContain("RTSP");
+    expect(workbook.getWorksheet("Resumo em português")!.getColumn(3).values.join(" ")).toContain("CPU física");
+    expect((workbook.getWorksheet("Scenario")!.getRow(2).values as unknown[]).map(String).join(" ")).not.toMatch(/perceptrum/i);
+    expect(String(workbook.getWorksheet("Executive Summary")!.getCell("B2").value ?? "")).toContain("RTSP");
     const configurations = workbook.getWorksheet("3 Configurations")!;
     expect(configurations.rowCount).toBe(4);
     expect([2, 3, 4].map((row) => configurations.getRow(row).getCell(1).value)).toEqual(["minimum", "recommended", "n_plus_one"]);
@@ -163,7 +178,7 @@ describe("Qual Hardware API and reports", () => {
       body: JSON.stringify({ recommendationId: recommendation.id }),
     });
     expect(removedExternalBenchmark.status).toBe(404);
-  }, 30_000);
+  }, 60_000);
 
   it("exports a valid PDF when runtime normalization warnings contain Unicode arrows", async () => {
     const store = new MemoryPlannerStore();

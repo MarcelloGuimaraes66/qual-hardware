@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "perceptrum-authority-contract/2.0.0",
+  "repository": "perceptrum_desktop_aspp",
+  "legacyCompatibleCommit": "d918faa0ecd6a9906b711039e5d89f78e0536c44",
+  "capturedAt": "2026-07-23T16:30:00.000Z",
+  "usage": "embedded read-only behavioral authority; the Perceptrum checkout is never required at runtime",
+  "files": [
+    {"role":"jobs_ui","path":"DrakonSite/src/react-app/pages/Jobs.tsx","sizeBytes":612740,"sha256":"092592e6222190ae2f1aac92d7d60997c9a5c369e1622a076173ff1d22b4a56b"},
+    {"role":"job_types","path":"Perceptrum/Perceptrum/jobs/JobTypes.h","sizeBytes":10832,"sha256":"b0389aa453319185628bfc8ef06b40bbabb1bfa5abb71dc892ce61844a0bb69c"},
+    {"role":"job_runtime","path":"Perceptrum/Perceptrum/jobs/JobRuntime.cpp","sizeBytes":676943,"sha256":"3392e8f5b11241dfa495a0ec2e7e287f271016ab4e602b67ab2666b428d53740"},
+    {"role":"agent_runtime","path":"Perceptrum/Perceptrum/core/AgentCore.cpp","sizeBytes":1620237,"sha256":"1a83d4c5f9e10fb949ca446b19908a36c3220e41b6c7b6a23c1697bb3bb34e53"},
+    {"role":"camera_session","path":"Perceptrum/Perceptrum/camera/CameraSession.cpp","sizeBytes":456655,"sha256":"e0c2b37f4e7c7c3f77860fae948280f1fbf3173df969c07a6267e5892e2f00a5"},
+    {"role":"frame_writer","path":"Perceptrum/Perceptrum/camera/FrameDiskWriter.cpp","sizeBytes":116073,"sha256":"b78e4e110ff0538d0542f52d833eea49a25dc667bbe623152259649615c78442"}
+  ],
+  "rules": {
+    "videoModelFps": {"minimum":1,"maximum":10},
+    "individualCadenceSeconds": [10,60],
+    "groupCadenceSeconds": [10,60,300,600],
+    "imageWritesSnapshotEverySeconds": 10,
+    "sharedDecodeWithinCamera": true,
+    "videoCaptureDominatesMixedCamera": true,
+    "inferenceCallsRemainAdditive": true
+  }
+}

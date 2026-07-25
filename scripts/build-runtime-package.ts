@@ -112,7 +112,7 @@ async function main(): Promise<void> {
   const archive = new yazl.ZipFile();
   for (const file of files) archive.addFile(file.absolutePath, file.archivePath, { compress: false, mode: file.permissions });
   archive.addBuffer(Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8"), "manifest.json", { compress: false, mode: 0o644 });
-  archive.end({ forceZip64Format: totalBytes > 4 * 1024 ** 3 });
+  archive.end({ forceZip64Format: totalBytes > 4 * 1024 ** 3, comment: "" });
   await pipeline(archive.outputStream, createWriteStream(output, { flags: "wx" }));
   const outputInfo = await stat(output);
   process.stdout.write(`${JSON.stringify({ output, bytes: outputInfo.size, files: files.length, target: manifest.target, classification: manifest.classification })}\n`);

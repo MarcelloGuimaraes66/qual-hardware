@@ -2,6 +2,11 @@ appId: ai.aiquimist.qualhardware
 productName: Qual Hardware
 copyright: Copyright © 2026 Aiquimist
 asar: true
+# The application has no third-party native Node modules. The only native
+# helper is built explicitly by `npm run native:build`, so electron-rebuild
+# would add user-cache access and permission prompts without producing an
+# artifact used by the package.
+npmRebuild: false
 directories:
   output: release
   buildResources: build
@@ -17,12 +22,16 @@ extraResources:
     to: resources/calibration/runtime-manifest.json
   - from: resources/calibration/asset-sources.lock.json
     to: resources/calibration/asset-sources.lock.json
-  - from: resources/calibration/runtime-trust.json
-    to: resources/calibration/runtime-trust.json
   - from: contracts/calibration-kernel-authority-v1.json
     to: contracts/calibration-kernel-authority-v1.json
   - from: contracts/calibration-pipeline-contract-v1.json
     to: contracts/calibration-pipeline-contract-v1.json
+  - from: contracts/calibration-kernel-authority-v2.json
+    to: contracts/calibration-kernel-authority-v2.json
+  - from: contracts/calibration-pipeline-contract-v2.json
+    to: contracts/calibration-pipeline-contract-v2.json
+  - from: contracts/perceptrum-workload-v4.json
+    to: contracts/perceptrum-workload-v4.json
 
 win:
   icon: build/icon.ico
@@ -32,8 +41,8 @@ win:
         - x64
   artifactName: Qual-Hardware-${version}-windows-${arch}-portable.${ext}
   extraResources:
-    - from: resources/calibration/win32-x64
-      to: resources/calibration/win32-x64
+    - from: resources/native/win32-x64/qual-hardware-native-bench.exe
+      to: resources/native/win32-x64/qual-hardware-native-bench.exe
 
 portable:
   # A per-launch extraction directory prevents a second portable bootstrap
@@ -62,8 +71,8 @@ mac:
           NSIncludesSubdomains: false
           NSTemporaryExceptionAllowsInsecureHTTPLoads: true
   extraResources:
-    - from: resources/calibration/darwin-arm64
-      to: resources/calibration/darwin-arm64
+    - from: resources/native/darwin-arm64/qual-hardware-native-bench
+      to: resources/native/darwin-arm64/qual-hardware-native-bench
 
 linux:
   icon: build/icon.png
@@ -80,8 +89,8 @@ linux:
       arch:
         - x64
   extraResources:
-    - from: resources/calibration/linux-x64
-      to: resources/calibration/linux-x64
+    - from: resources/native/linux-x64/qual-hardware-native-bench
+      to: resources/native/linux-x64/qual-hardware-native-bench
 
 appImage:
   artifactName: Qual-Hardware-${version}-linux-${arch}.${ext}

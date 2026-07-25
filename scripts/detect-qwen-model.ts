@@ -1,6 +1,6 @@
 import { discoverBestQwenTextModel, discoverLlamaCppServer, QWEN_MEMORY_BUDGET_FRACTION } from "../src/server/qwenModelSelection.js";
 
-const model = await discoverBestQwenTextModel({ explicitPath: process.env.QWEN_MODEL_PATH });
+const model = await discoverBestQwenTextModel({ explicitPath: process.env.QWEN_MODEL_PATH ?? null });
 const runtime = await discoverLlamaCppServer();
 
 if (!model) {
