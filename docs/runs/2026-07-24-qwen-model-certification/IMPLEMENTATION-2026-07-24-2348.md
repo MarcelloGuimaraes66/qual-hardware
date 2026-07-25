@@ -19,7 +19,10 @@
 - Banco: persistência de ensaio/perfil e migração v12→v13 com preservação de cenário, três recomendações e calibração.
 - Capacidade: perfil medido substitui a constante; piso acima de 75% elimina hardware.
 - Compatibilidade: calibrações v1–v6 continuam legíveis e v7 exige certificação Qwen.
-- Suíte final: 37 arquivos, 298 testes aprovados, 2 testes explicitamente ignorados e nenhuma falha.
+- Recuperação abrupta: arquivos auxiliares `journal`, `wal` e `shm` só são adotados quando pertencem ao `pipeline-probe.sqlite` previamente registrado; arquivos estranhos continuam preservados e bloqueiam a limpeza.
+- Processo filho: a calibração agora cancela ao perder o coordenador e não continua órfã após queda do aplicativo.
+- Suíte final: 37 arquivos, 300 testes aprovados, 2 testes explicitamente ignorados e nenhuma falha.
+- Auditoria npm: zero vulnerabilidades após fixar as versões transitivas corrigidas de `brace-expansion` e `tar`.
 
 ## Aceitação física e empacotada
 
@@ -36,6 +39,7 @@
 
 - `npm run typecheck`
 - `npm test`
+- `npm audit --audit-level=high`
 - `npm run build`
 - `npm run desktop:package`
 - `npm run desktop:smoke`
@@ -43,12 +47,12 @@
 ## Artefato final
 
 - Caminho: `C:\dev\perceptrum_desktop_aspp\qual-hardware\release\Qual-Hardware-0.6.0-windows-x64-portable.exe`
-- Tamanho: 115.758.966 bytes (110,40 MiB).
-- SHA-256: `cdda9c2ee4d2fb0e2e6b69514a632ad81b1fc86a26651a9c5ad9322a86b4b845`.
+- Tamanho: 115.739.077 bytes (110,38 MiB).
+- SHA-256: `2bb312ec78bdf27142cd930f1ae3fcc54c67a6124efdb6ad5e4b1ae9f23e71a9`.
 - Smoke empacotado: aprovado em Windows x64.
 
 ## Rollback
 
-- Reverter o commit único desta execução restaura o seletor v1, ambiente v1 e SQLite v12.
+- Reverter os commits desta execução restaura o seletor v1, ambiente v1 e SQLite v12.
 - A reversão não apaga as tabelas v13; um executável antigo recusará corretamente um banco mais novo em vez de interpretar dados desconhecidos.
 - Para rollback operacional, usar a cópia criada em `schema-backups` antes da primeira abertura v13.

@@ -103,11 +103,24 @@ function controlMessage(message: CalibrationKernelControlMessage): void {
 
 parentPort?.on("message", controlMessage);
 
+function cancelAfterCoordinatorDisconnect(): void {
+  cancelled = true;
+  const error = new Error("calibration_parent_disconnected");
+  for (const waiter of checkpointWaiters.values()) {
+    clearTimeout(waiter.timer);
+    waiter.reject(error);
+  }
+  checkpointWaiters.clear();
+  if (!started) setImmediate(() => process.exit(0));
+}
+
+if (processIpcAvailable) process.once("disconnect", cancelAfterCoordinatorDisconnect);
+
 function send(message: CalibrationKernelWorkerMessage): void {
   if (message.type === "progress") lastProgress = message.progress;
   if (parentPort) parentPort.postMessage(message);
   else if (utilityParentPort) utilityParentPort.postMessage(message);
-  else process.send?.(message);
+  else if (process.connected) process.send?.(message);
 }
 
 function terminalDiagnostic(

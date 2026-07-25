@@ -135,6 +135,33 @@ describe("session-owned calibration temporary files", () => {
     await expect(cleanupCalibrationWorkspace(created.root, created.manifest.sessionId)).resolves.toEqual({ bytesRemoved: 8_192 });
   });
 
+  it("adopts only SQLite sidecars belonging to the registered pipeline database during interrupted recovery", async () => {
+    const created = await workspace();
+    const databasePath = await prepareCalibrationTemporaryFile(created, "pipeline-probe.sqlite", { retain: true });
+    await writeFile(databasePath, Buffer.alloc(8_192, 9));
+    await writeFile(join(created.directory, "pipeline-probe.sqlite-journal"), Buffer.alloc(512, 3));
+    const service = new CalibrationKernelService({
+      temporaryRoot: created.root,
+      evidenceDirectory: join(created.root, "evidence"),
+      resourceRoot: fileURLToPath(new URL("..", import.meta.url)),
+      appVersion: "test",
+    });
+
+    const cleanup = await service.retryCleanup(created.manifest.sessionId, true);
+    expect(cleanup.state).toBe("completed");
+    expect(cleanup.remainingBytes).toBe(0);
+    expect(await readdir(created.root)).toEqual([]);
+  });
+
+  it("refuses a SQLite-looking sidecar when its pipeline database was not registered", async () => {
+    const created = await workspace();
+    await writeFile(join(created.directory, "pipeline-probe.sqlite-journal"), Buffer.alloc(512, 3));
+
+    await expect(refreshRegisteredCalibrationTemporaryFiles(created.root, created.manifest.sessionId))
+      .rejects.toThrow("unregistered_entry:pipeline-probe.sqlite-journal");
+    expect(await readFile(join(created.directory, "pipeline-probe.sqlite-journal"))).toHaveLength(512);
+  });
+
   it("refreshes the live phase manifest before checkpoint reclamation", async () => {
     const created = await workspace();
     setCalibrationWorkspaceOwner(created, "discovery-1", 2);

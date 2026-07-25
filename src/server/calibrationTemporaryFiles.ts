@@ -11,7 +11,8 @@ const GIB = 1024 ** 3;
 const MINIMUM_RESERVE_BYTES = 10 * GIB;
 const MAXIMUM_RESERVE_BYTES = 50 * GIB;
 const WINDOWS_FILE_RELEASE_RETRIES = 20;
-const ABANDONED_WORKSPACE_FILE = /^(?:session-manifest\.json|\.session-manifest\.write\.tmp|telemetry\.jsonl|pipeline-probe\.sqlite(?:-(?:wal|shm))?|synthetic-frame\.jpg|synthetic-source-\d+\.mkv|gpu-media-preflight-\d+-\d+-\d+\.(?:mkv|jpg)|media-\d+-\d+-\d+-\d+\.mkv|snapshot-\d+-\d+-\d+\.jpg)$/;
+const ABANDONED_WORKSPACE_FILE = /^(?:session-manifest\.json|\.session-manifest\.write\.tmp|telemetry\.jsonl|pipeline-probe\.sqlite(?:-(?:journal|wal|shm))?|synthetic-frame\.jpg|synthetic-source-\d+\.mkv|gpu-media-preflight-\d+-\d+-\d+\.(?:mkv|jpg)|media-\d+-\d+-\d+-\d+\.mkv|snapshot-\d+-\d+-\d+\.jpg)$/;
+const PIPELINE_SQLITE_SIDECAR = /^pipeline-probe\.sqlite-(?:journal|wal|shm)$/;
 
 function isTransientFileLock(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -324,8 +325,17 @@ export async function refreshRegisteredCalibrationTemporaryFiles(
   const entries = await readdir(workspace.directory, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === MANIFEST_NAME || entry.name === MANIFEST_TEMP_NAME) continue;
-    if (!registered.has(entry.name) || entry.isSymbolicLink() || !entry.isFile()) {
+    if (entry.isSymbolicLink() || !entry.isFile()) {
       throw new Error(`calibration_workspace_unregistered_entry:${entry.name}`);
+    }
+    if (!registered.has(entry.name)) {
+      const recoverableSqliteSidecar = PIPELINE_SQLITE_SIDECAR.test(entry.name) &&
+        registered.has("pipeline-probe.sqlite");
+      if (!recoverableSqliteSidecar) {
+        throw new Error(`calibration_workspace_unregistered_entry:${entry.name}`);
+      }
+      await registerCalibrationTemporaryFile(workspace, entry.name, { retain: true });
+      registered.add(entry.name);
     }
   }
   for (const relativePath of registered) {
