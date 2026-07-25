@@ -332,14 +332,12 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
     "/contracts/perceptrum-workload-v1.json",
     "/contracts/perceptrum-workload-v2.json",
     "/contracts/perceptrum-workload-v3.json",
-    "/contracts/perceptrum-workload-v4.json",
     "/contracts/qual-hardware-source-registry-v1.schema.json",
     "/contracts/qual-hardware-catalog-bundle-v1.schema.json",
     "/contracts/qual-hardware-component-catalog-v2.schema.json",
     "/contracts/qual-hardware-component-technical-specification-v1.schema.json",
     "/contracts/qual-hardware-procurement-neutral-specification-v1.schema.json",
     "/contracts/qual-hardware-tr-technical-annex-v1.schema.json",
-    "/contracts/qwen3-vl-approved-revisions-v1.json",
     "/database/sqlite-schema.sql",
     "/dist/server/server/calibrationKernelService.js",
     "/dist/server/server/calibrationKernelWorker.js",
@@ -354,6 +352,7 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
     "/dist/server/server/calibrationTemporaryFiles.js",
     "/node_modules/docx/dist/index.mjs",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
+  await stat(join(dirname(paths.asar), "contracts", "perceptrum-workload-v4.json"));
   await stat(join(dirname(paths.asar), "contracts", "qwen3-vl-approved-revisions-v1.json"));
   await stat(join(dirname(paths.asar), "resources", "qwen-model-probe.png"));
   for (const forbidden of [
@@ -510,6 +509,8 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
   assert.equal(health.status, "ok");
   assert.equal(health.storage, "sqlite");
   assert.equal(health.processId, application.appProcessId);
+  const workloadContract = await api<{ schemaVersion: string }>(application.origin, "/api/contract");
+  assert.equal(workloadContract.schemaVersion, "perceptrum-workload/4.0.0");
   const catalog = await api<{ source: string; channel: string; automatic: boolean; hardwareCount: number }>(application.origin, "/api/catalog/status");
   assert(["bundled", "cached", "remote"].includes(catalog.source));
   assert.equal(catalog.channel, "official_public");

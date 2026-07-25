@@ -21,7 +21,7 @@
 - Compatibilidade: calibrações v1–v6 continuam legíveis e v7 exige certificação Qwen.
 - Recuperação abrupta: arquivos auxiliares `journal`, `wal` e `shm` só são adotados quando pertencem ao `pipeline-probe.sqlite` previamente registrado; arquivos estranhos continuam preservados e bloqueiam a limpeza.
 - Processo filho: a calibração agora cancela ao perder o coordenador e não continua órfã após queda do aplicativo.
-- Multiplataforma: o inventário normaliza nomes com separadores Windows/POSIX e o servidor falso usa o backend real da plataforma (`CUDA`/`Metal`) nos ensaios de CI.
+- Multiplataforma: o inventário normaliza nomes com separadores Windows/POSIX, o servidor falso usa o backend real da plataforma (`CUDA`/`Metal`) e contratos empacotados são lidos da raiz externa comum a Windows, macOS e Linux.
 - Suíte final: 37 arquivos, 300 testes aprovados, 2 testes explicitamente ignorados e nenhuma falha.
 - Auditoria npm: zero vulnerabilidades após fixar as versões transitivas corrigidas de `brace-expansion` e `tar`.
 
@@ -48,8 +48,8 @@
 ## Artefato final
 
 - Caminho: `C:\dev\perceptrum_desktop_aspp\qual-hardware\release\Qual-Hardware-0.6.0-windows-x64-portable.exe`
-- Tamanho: 115.738.421 bytes (110,38 MiB).
-- SHA-256: `66d26a21a2dd505362a839a194bce17b0475ad89a092fd3a603b5cb015fd4055`.
+- Tamanho: 115.739.635 bytes (110,38 MiB).
+- SHA-256: `ba201cca22841671977aa999f7805ccaa2b423907ca97097faf3c9aa49ba9b28`.
 - Smoke empacotado: aprovado em Windows x64.
 
 ## Rollback

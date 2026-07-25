@@ -807,7 +807,10 @@ export function createApp(
   }));
   app.get("/api/calibrations/features", (context) => context.json(calibrationFeatures));
   app.get("/api/contract", async (context) => {
-    const file = applicationResourcePath("contracts", "perceptrum-workload-v4.json");
+    // Runtime contracts are copied beside app.asar on every platform. macOS
+    // intentionally excludes duplicated extraResources from the ASAR, so the
+    // external resource root is the portable source of truth here.
+    const file = resolve(resourceRoot, "contracts", "perceptrum-workload-v4.json");
     return context.json(JSON.parse(await readFile(file, "utf8")) as unknown);
   });
   app.get("/api/scenarios", async (context) => context.json(await store.listScenarios()));
