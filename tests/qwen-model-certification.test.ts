@@ -24,20 +24,22 @@ afterEach(async () => {
 });
 
 function hardware(): CalibrationHardwarePreflight {
+  const macos = process.platform === "darwin";
+  const operatingSystem = macos ? "macos" : process.platform === "linux" ? "ubuntu" : "windows";
   return {
     schemaVersion: "qual-hardware-calibration-hardware/2.0.0",
     detectedAt: "2026-07-24T00:00:00.000Z",
-    cpuModel: "Intel Core i9",
-    cpuArchitecture: "x64",
+    cpuModel: macos ? "Apple M4" : "Intel Core i9",
+    cpuArchitecture: macos ? "arm64" : "x64",
     physicalCores: 16,
     logicalCores: 32,
-    gpuModel: "NVIDIA GeForce RTX",
-    gpuDriver: "600.00",
-    gpuArchitecture: "NVIDIA CUDA",
+    gpuModel: macos ? "Apple GPU" : "NVIDIA GeForce RTX",
+    gpuDriver: macos ? "Metal" : "600.00",
+    gpuArchitecture: macos ? "Apple GPU" : "NVIDIA CUDA",
     gpuCount: 1,
     gpuVramBytes: 24 * 1024 ** 3,
     ramBytes: 64 * 1024 ** 3,
-    operatingSystem: "windows",
+    operatingSystem,
     operatingSystemVersion: "test",
     formFactor: "workstation",
     gpuDevices: [],
@@ -49,6 +51,7 @@ async function fixtureEnvironment(contractSha256: string): Promise<{
   environment: ExecutionEnvironment;
   candidate: QwenVisionModelCandidate;
 }> {
+  const macos = process.platform === "darwin";
   const directory = await mkdtemp(join(tmpdir(), "qual-hardware-qwen-probe-"));
   temporaryDirectories.push(directory);
   const modelPath = join(directory, "Qwen3VL-2B-Instruct-Q4_K_M.gguf");
@@ -91,10 +94,10 @@ async function fixtureEnvironment(contractSha256: string): Promise<{
         llamaServerPath: process.execPath,
         llamaServerSha256: createHash("sha256").update(process.execPath).digest("hex"),
         llamaServerVersion: "fake",
-        backend: "cuda",
-        deviceId: "CUDA0",
-        deviceName: "NVIDIA GeForce RTX",
-        driverVersion: "600.00",
+        backend: macos ? "metal" : "cuda",
+        deviceId: macos ? "Metal0" : "CUDA0",
+        deviceName: macos ? "Apple GPU" : "NVIDIA GeForce RTX",
+        driverVersion: macos ? "Metal" : "600.00",
       },
       components: [],
       qwenModelSelection: {
@@ -276,7 +279,7 @@ describe("Qwen3-VL functional certification", () => {
     expect(crashed.failureCode).toContain("qwen_probe_server_exit_17");
   });
 
-  it("rejects a CPU or wrong-backend runtime when the inventory requires CUDA", async () => {
+  it("rejects a CPU or wrong-backend runtime when the inventory requires a GPU backend", async () => {
     const { contract, service } = await serviceFor();
     const { environment, candidate } = await fixtureEnvironment(contract.sha256);
     environment.runtimeIdentity!.backend = "unavailable";

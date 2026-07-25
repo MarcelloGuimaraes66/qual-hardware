@@ -155,6 +155,14 @@ describe("Qwen3-VL hardware-aware selection", () => {
       path: "C:\\models\\Qwen3VL-4B-Q4_K_M-00001-of-00002.gguf",
       sizeBytes: 1_200_000_000,
     })).toBeNull();
+    expect(qwenVisionFileDescriptor({
+      path: "C:\\models\\Qwen3VL-4B-Q4_K_M.gguf",
+      sizeBytes: 2_400_000_000,
+    })?.fileName).toBe("Qwen3VL-4B-Q4_K_M.gguf");
+    expect(qwenVisionFileDescriptor({
+      path: "/models/Qwen3VL-4B-Q4_K_M.gguf",
+      sizeBytes: 2_400_000_000,
+    })?.fileName).toBe("Qwen3VL-4B-Q4_K_M.gguf");
   });
 
   it("never selects a model from filename and memory estimates alone", () => {

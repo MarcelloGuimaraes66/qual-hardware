@@ -88,7 +88,10 @@ function quantization(fileName: string): string {
 export function qwenVisionFileDescriptor(file: QwenVisionDiscoveredFile): QwenVisionFileDescriptor | null {
   if (!Number.isSafeInteger(file.sizeBytes) || file.sizeBytes <= 0) return null;
   const path = resolve(file.path);
-  const fileName = basename(path);
+  // Persisted inventories can be inspected after moving between Windows and
+  // POSIX hosts. Accept either separator for discovery metadata; the real
+  // functional probe still verifies that the resolved local path is readable.
+  const fileName = file.path.split(/[\\/]/).at(-1) || basename(path);
   if (/-\d{5}-of-\d{5}(?:[-_.]|$)/i.test(fileName)) return null;
   const match = fileName.match(/qwen3[-_.]?vl[-_.]?(\d+(?:\.\d+)?)b(?:[-_.]|$)/i);
   if (!match?.[1]) return null;
