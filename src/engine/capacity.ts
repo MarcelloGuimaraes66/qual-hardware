@@ -20,6 +20,8 @@ import type {
   RecommendationVariant,
   ResourceDemand,
   FleetPlan,
+  QwenRuntimeResourceProfile,
+  QwenStackCertification,
 } from "../shared/types.js";
 import { agentExecutionBackend, agentExecutionScope } from "./calibrationProfile.js";
 import { FLEET_PLAN_VERSION, WORKLOAD_CONTRACT_VERSION } from "../shared/types.js";
@@ -124,6 +126,7 @@ interface GroupDemand {
 function calculateCameraGroupDemand(
   group: CapacityScenario["cameraGroups"][number],
   storageSizingEnabled: boolean,
+  qwenCertification?: QwenStackCertification,
 ): GroupDemand {
   const sourceMegapixels = (group.source.width * group.source.height) / 1_000_000;
   const normalized1080p = sourceMegapixels / 2.0736;
@@ -156,8 +159,6 @@ function calculateCameraGroupDemand(
   }
 
   let activeCaptureFps = 0.1;
-  let hasCore = false;
-  let hasCoreMax = false;
   for (const agent of normalizedAgents) {
     warnings.push(...agent.normalizedFields.map((field) => `${group.name}/${agent.name}: ${field}`));
     const activity = agent.features.onlyCaptureOnMotion ? motionFraction : 1;
@@ -190,10 +191,11 @@ function calculateCameraGroupDemand(
         (isMax ? 4 : 2.5) + frames * (agent.packaging === "mosaic_2x2" ? (isMax ? 0.055 : 0.035) : (isMax ? 0.12 : 0.075));
       const slots = requestsPerSecond * serviceSeconds * temporalFactor * referenceFactor;
       demand.localAiqSlots += slots;
-      demand.gpuVramGb += slots * 5.12;
+      const profile = isMax
+        ? qwenCertification?.coreMaxResourceProfile
+        : qwenCertification?.coreResourceProfile;
+      demand.gpuVramGb += slots * ((profile?.incrementalSlotBytes ?? 5.12 * 1024 ** 3) / 1024 ** 3);
       demand.cpuCores += requestsPerSecond * 0.35 * packagingFactor;
-      hasCore ||= !isMax;
-      hasCoreMax ||= isMax;
     } else if (agent.executionBackend === "native_cv") {
       demand.cpuCores += 0.75 * normalized1080p;
       demand.ramGb += 0.35;
@@ -202,9 +204,6 @@ function calculateCameraGroupDemand(
       demand.internetUploadMbps += frameRateForRequest * averageJpegMb * 1.34 * 8;
     }
   }
-
-  if (hasCore) demand.gpuVramGb += 0.512 / Math.max(1, group.count);
-  if (hasCoreMax) demand.gpuVramGb += 0.512 / Math.max(1, group.count);
 
   const sampled1080p30 = normalized1080p * (activeCaptureFps / 30);
   demand.cpuCores += sampled1080p30 * 0.28;
@@ -253,20 +252,52 @@ function calculateFixedWorkloadDemand(scenario: CapacityScenario): ResourceDeman
   return demand;
 }
 
-export function calculateScenarioDemand(scenario: CapacityScenario): {
+export function calculateScenarioDemand(scenario: CapacityScenario, qwenCertification?: QwenStackCertification): {
   aggregate: ResourceDemand;
   groups: GroupDemand[];
   fixed: ResourceDemand;
+  perNode: ResourceDemand;
+  maximumValidatedParallelism: number | null;
   warnings: string[];
 } {
   const groups = scenario.cameraGroups.map((group) => calculateCameraGroupDemand(
     group,
     scenario.workloadContractVersion === WORKLOAD_CONTRACT_VERSION || scenario.workloadContractVersion === "perceptrum-workload/3.0.0",
+    qwenCertification,
   ));
   const fixed = calculateFixedWorkloadDemand(scenario);
-  let aggregate = fixed;
+  const localModels = new Set(scenario.cameraGroups.flatMap((group) => group.agents.map(normalizeAgent))
+    .filter((agent) => agent.executionBackend === "local_aiq")
+    .map((agent) => agent.model === "aiq-3.7-max" ? "core-max" as const : "core" as const));
+  const perNode = emptyDemand();
+  const activeStacks = new Map<string, QwenRuntimeResourceProfile>();
+  if (localModels.has("core")) {
+    if (qwenCertification) activeStacks.set(qwenCertification.coreProbeId, qwenCertification.coreResourceProfile);
+    else perNode.gpuVramGb += 0.512;
+  }
+  if (localModels.has("core-max")) {
+    if (qwenCertification) activeStacks.set(qwenCertification.coreMaxProbeId, qwenCertification.coreMaxResourceProfile);
+    else perNode.gpuVramGb += 0.512;
+  }
+  for (const profile of activeStacks.values()) {
+    perNode.gpuVramGb += profile.baseRequirementBytes / 1024 ** 3;
+  }
+  const maximumValidatedParallelism = activeStacks.size > 0
+    ? [...activeStacks.values()].reduce((sum, profile) => sum + profile.maxValidatedParallelism, 0)
+    : null;
+  let aggregate = addDemand(fixed, perNode);
   for (const group of groups) aggregate = addDemand(aggregate, scaleDemand(group.perCamera, group.count));
-  return { aggregate, groups, fixed, warnings: groups.flatMap((group) => group.warnings) };
+  return {
+    aggregate,
+    groups,
+    fixed,
+    perNode,
+    maximumValidatedParallelism,
+    warnings: [
+      ...groups.flatMap((group) => group.warnings),
+      ...(!qwenCertification && localModels.size > 0 ? ["qwen_resource_profile_unmeasured_conservative_fallback"] : []),
+    ],
+  };
 }
 
 function nodeCapacity(template: HardwareNodeTemplate): ResourceDemand {
@@ -452,13 +483,19 @@ function splitFixedDemand(fixed: ResourceDemand, activeNodes: number): ResourceD
 function allocateGroups(
   groups: GroupDemand[],
   fixed: ResourceDemand,
+  perNode: ResourceDemand,
   template: HardwareNodeTemplate,
   activeNodes: number,
   totalNodes: number,
   utilizationLimit: number,
+  maximumValidatedParallelism: number | null,
 ): NodeAllocation[] | null {
   const capacity = nodeCapacity(template);
   const effectiveCapacity = scaleDemand(capacity, utilizationLimit);
+  effectiveCapacity.gpuVramGb = capacity.gpuVramGb * Math.min(utilizationLimit, 0.75);
+  if (maximumValidatedParallelism !== null) {
+    effectiveCapacity.localAiqSlots = Math.min(effectiveCapacity.localAiqSlots, maximumValidatedParallelism);
+  }
   if (activeNodes > 256) {
     const remainders = groups.map((group) => group.count % activeNodes).filter((value) => value > 0);
     const boundaries = [...new Set([0, ...remainders, activeNodes])].sort((left, right) => left - right);
@@ -467,7 +504,7 @@ function allocateGroups(
       const start = boundaries[boundaryIndex]!;
       const end = boundaries[boundaryIndex + 1]!;
       if (end <= start) continue;
-      let demand = splitFixedDemand(fixed, activeNodes);
+      let demand = addDemand(perNode, splitFixedDemand(fixed, activeNodes));
       const cameraGroups: NodeAllocation["cameraGroups"] = [];
       for (const group of groups) {
         const cameras = Math.floor(group.count / activeNodes) + (start < group.count % activeNodes ? 1 : 0);
@@ -504,7 +541,7 @@ function allocateGroups(
     nodeIndex: index + 1,
     role: index < activeNodes ? "active" : "reserve",
     cameraGroups: [],
-    demand: index < activeNodes ? splitFixedDemand(fixed, activeNodes) : emptyDemand(),
+    demand: index < activeNodes ? addDemand(perNode, splitFixedDemand(fixed, activeNodes)) : emptyDemand(),
     utilization: Object.fromEntries(RESOURCE_KEYS.map((key) => [key, 0])) as Record<keyof ResourceDemand, number>,
   }));
 
@@ -660,6 +697,9 @@ function evaluateTemplate(
   aggregate: ResourceDemand,
   groups: GroupDemand[],
   fixed: ResourceDemand,
+  perNode: ResourceDemand,
+  maximumValidatedParallelism: number | null,
+  qwenCertification: QwenStackCertification | undefined,
   quotes: PriceQuote[],
   warnings: string[],
   prediction?: CapacityPrediction,
@@ -681,6 +721,10 @@ function evaluateTemplate(
   const utilizationLimit = 1 - headroomPercent / 100;
   const capacity = nodeCapacity(template);
   const adjustedCapacity = scaleDemand(capacity, utilizationLimit);
+  adjustedCapacity.gpuVramGb = capacity.gpuVramGb * Math.min(utilizationLimit, 0.75);
+  if (maximumValidatedParallelism !== null) {
+    adjustedCapacity.localAiqSlots = Math.min(adjustedCapacity.localAiqSlots, maximumValidatedParallelism);
+  }
   const highest = ratioFor(aggregate, adjustedCapacity);
   let activeNodes = Math.max(1, Math.ceil(highest.value));
   const calibratedCapacity = prediction?.safeCameraMaximum ?? null;
@@ -696,7 +740,16 @@ function evaluateTemplate(
     reserveNodes = reserveServerCount(activeNodes);
     totalNodes = activeNodes + reserveNodes;
     if (scenario.constraints.maxNodes !== null && totalNodes > scenario.constraints.maxNodes) return null;
-    allocations = allocateGroups(groups, fixed, template, activeNodes, totalNodes, utilizationLimit);
+    allocations = allocateGroups(
+      groups,
+      fixed,
+      perNode,
+      template,
+      activeNodes,
+      totalNodes,
+      utilizationLimit,
+      maximumValidatedParallelism,
+    );
     if (allocations) break;
     activeNodes += 1;
   }
@@ -742,9 +795,17 @@ function evaluateTemplate(
   // dimensionamento técnico. O gate de compra é aplicado novamente quando a
   // BOM e a cobertura de evidências são anexadas pela camada de aplicação.
   const sizingEligibility = evidenceEligibility === "blocked" ? "planning_only" : evidenceEligibility;
-  const procurementEligibility = sizingEligibility === "eligible" && (policy === "minimum" || totalNodes > 1)
+  const qwenEligibility = qwenCertification?.usageGate ?? "blocked";
+  const qwenBoundEligibility = qwenEligibility === "purchase"
+    ? sizingEligibility : "planning_only";
+  const procurementEligibility = qwenBoundEligibility === "eligible" && (policy === "minimum" || totalNodes > 1)
     ? "planning_only"
-    : sizingEligibility;
+    : qwenBoundEligibility;
+  if (qwenEligibility !== "purchase") {
+    candidateWarnings.push(qwenEligibility === "planning_only"
+      ? "qwen_revision_unknown_planning_only"
+      : "qwen_stack_not_functionally_certified");
+  }
   if (evidenceEligibility === "eligible" && totalNodes > 1) {
     candidateWarnings.push("multi_node_design_is_planning_only_until_cluster_validation");
   }
@@ -752,7 +813,7 @@ function evaluateTemplate(
 
   const maximumAdditionalCameras = estimateAdditionalCameras(
     aggregate,
-    fixed,
+    addDemand(fixed, perNode),
     template,
     activeNodes,
     utilizationLimit,
@@ -887,8 +948,8 @@ export function buildRecommendations(
   validated = false,
   catalogVersion = HARDWARE_CATALOG_VERSION,
   predictions: CapacityPrediction[] = [],
+  qwenCertification?: QwenStackCertification,
 ): CapacityRecommendation[] {
-  const demand = calculateScenarioDemand(scenario);
   const workloadProfileId = buildCalibrationWorkloadProfile(scenario).id;
   const policies: RecommendationPolicy[] = ["minimum", "recommended", "n_plus_one"];
   const recommendations: CapacityRecommendation[] = [];
@@ -896,19 +957,27 @@ export function buildRecommendations(
   let minimumHardware: HardwareNodeTemplate | null = null;
   for (const policy of policies) {
     const candidates = catalog
-      .map((template) => evaluateTemplate(
-        scenario,
-        template,
-        policy,
-        demand.aggregate,
-        demand.groups,
-        demand.fixed,
-        quotes,
-        demand.warnings,
-        predictions.find((prediction) => prediction.hardwareTemplateId === template.id &&
-          prediction.workloadProfileId === workloadProfileId &&
-          prediction.targetBuildHash === scenario.perceptrumBuildHash),
-      ))
+      .map((template) => {
+        const prediction = predictions.find((candidate) => candidate.hardwareTemplateId === template.id &&
+          candidate.workloadProfileId === workloadProfileId &&
+          candidate.targetBuildHash === scenario.perceptrumBuildHash);
+        const effectiveQwenCertification = prediction?.qwenCertification ?? qwenCertification;
+        const demand = calculateScenarioDemand(scenario, effectiveQwenCertification);
+        return evaluateTemplate(
+          scenario,
+          template,
+          policy,
+          demand.aggregate,
+          demand.groups,
+          demand.fixed,
+          demand.perNode,
+          demand.maximumValidatedParallelism,
+          effectiveQwenCertification,
+          quotes,
+          demand.warnings,
+          prediction,
+        );
+      })
       .filter((candidate): candidate is RecommendationAlternative => candidate !== null);
     if (candidates.length === 0) {
       throw new CapacityError(`No compatible ${policy} design was found.`, [
@@ -958,8 +1027,13 @@ export function buildRecommendations(
         `catalog-version:${catalogVersion}`,
         `operating-system:${operatingSystemFor(selected.primary.hardware)}`,
         `procurement-eligibility:${selected.primary.procurementEligibility}`,
+        `qwen-stack:${selected.primary.calibration?.qwenCertification?.selectionSignature ??
+          qwenCertification?.selectionSignature ?? "uncertified"}`,
         ...selected.primary.hardware.sources.map((source) => source.url),
       ],
+      ...(selected.primary.calibration?.qwenCertification
+        ? { qwenCertification: structuredClone(selected.primary.calibration.qwenCertification) }
+        : qwenCertification ? { qwenCertification: structuredClone(qwenCertification) } : {}),
     });
   }
   return recommendations;

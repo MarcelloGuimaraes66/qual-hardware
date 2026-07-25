@@ -6,9 +6,44 @@ import {
 } from "../src/server/executionEnvironment.js";
 import type { CalibrationRuntimeStatus, ExecutionEnvironment } from "../src/shared/types.js";
 
-function environment(level: ExecutionEnvironment["evidenceLevel"]): ExecutionEnvironment {
+function environment(level: ExecutionEnvironment["evidenceLevel"], qwenCertified = false): ExecutionEnvironment {
+  const profile = {
+    staticEstimateBytes: 2_000_000_000,
+    peakRamParallel1Bytes: 1_000_000_000,
+    peakVramParallel1Bytes: 2_000_000_000,
+    peakRamParallel2Bytes: 1_200_000_000,
+    peakVramParallel2Bytes: 2_200_000_000,
+    baseRequirementBytes: 2_000_000_000,
+    incrementalSlotBytes: 200_000_000,
+    maxValidatedParallelism: 2,
+    safeAvailableMemoryFraction: 0.75 as const,
+    sequentialLatencyMs: [10, 11, 12],
+    concurrentLatencyMs: [20, 21],
+  };
+  const candidate = {
+    id: "a".repeat(24),
+    family: "Qwen3-VL" as const,
+    modelPath: "C:\\models\\qwen.gguf",
+    modelFileName: "Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+    modelSizeBytes: 1_000_000_000,
+    projectorPath: "C:\\models\\mmproj.gguf",
+    projectorFileName: "mmproj-Qwen3VL-2B-Instruct-F16.gguf",
+    projectorSizeBytes: 800_000_000,
+    parameterBillions: 2,
+    quantization: "Q4_K_M",
+    estimatedMemoryBytes: 2_000_000_000,
+    fit: "gpu_memory" as const,
+    estimatedCompatible: true,
+    compatible: true,
+    inventorySignature: "b".repeat(64),
+    certificationState: "approved_revision" as const,
+    certificationLevel: "approved_revision" as const,
+    usageGate: "purchase" as const,
+    probeId: "00000000-0000-4000-8000-000000000001",
+    resourceProfile: profile,
+  };
   return {
-    schemaVersion: "qual-hardware-execution-environment/1.0.0",
+    schemaVersion: "qual-hardware-execution-environment/2.0.0",
     detectedAt: "2026-07-23T18:00:00.000Z",
     platform: "win32",
     architecture: "x64",
@@ -16,6 +51,15 @@ function environment(level: ExecutionEnvironment["evidenceLevel"]): ExecutionEnv
     readiness: level === "exact_perceptrum" ? "ready_full" : "ready_diagnostic",
     evidenceLevel: level,
     environmentSignature: "e".repeat(64),
+    runtimeIdentity: {
+      llamaServerPath: "C:\\llama-server.exe",
+      llamaServerSha256: "f".repeat(64),
+      llamaServerVersion: "fixture",
+      backend: "cuda",
+      deviceId: "CUDA0",
+      deviceName: "NVIDIA",
+      driverVersion: "600",
+    },
     components: [{
       id: "native-benchmark",
       name: "Benchmark nativo do Qual Hardware",
@@ -34,6 +78,22 @@ function environment(level: ExecutionEnvironment["evidenceLevel"]): ExecutionEnv
     }],
     missingRequiredComponentIds: ["ffmpeg"],
     warnings: ["Stack exata ausente."],
+    ...(qwenCertified ? {
+      qwenModelSelection: {
+        schemaVersion: "qual-hardware-qwen-vision-selection/2.0.0" as const,
+        mode: "automatic" as const,
+        certificationContractSha256: "c".repeat(64),
+        systemMemoryBudgetBytes: 10_000_000_000,
+        acceleratorMemoryBudgetBytes: 8_000_000_000,
+        effectiveMemoryBudgetBytes: 8_000_000_000,
+        recommendedCoreModelId: candidate.id,
+        recommendedCoreMaxModelId: candidate.id,
+        selectedCoreModelId: candidate.id,
+        selectedCoreMaxModelId: candidate.id,
+        candidates: [candidate],
+        warnings: [],
+      },
+    } : {}),
     externalDownloadsPerformed: false,
   };
 }
@@ -66,9 +126,9 @@ describe("execution environment", () => {
     expect(dependencyDownloadLink("../ffmpeg-official")).toBeNull();
   });
 
-  it("allows a generic benchmark only as diagnostic evidence", async () => {
+  it("keeps a generic benchmark diagnostic until Qwen passes the functional probe", async () => {
     const status = await runtimeStatusFromExecutionEnvironment(environment("generic_native"), legacyStatus());
-    expect(status.readyForQuickTest).toBe(true);
+    expect(status.readyForQuickTest).toBe(false);
     expect(status.readyForFullQualification).toBe(false);
     expect(status.manifestApproved).toBe(false);
     expect(status.environmentEvidenceLevel).toBe("generic_native");
@@ -77,7 +137,7 @@ describe("execution environment", () => {
   });
 
   it("enables the qualification gate only for an exact isolated Perceptrum worker", async () => {
-    const exact = environment("exact_perceptrum");
+    const exact = environment("exact_perceptrum", true);
     exact.missingRequiredComponentIds = [];
     const status = await runtimeStatusFromExecutionEnvironment(exact, legacyStatus());
     expect(status.featureMode).toBe("full");

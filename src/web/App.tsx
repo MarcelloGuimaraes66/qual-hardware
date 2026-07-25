@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import { createDefaultAgent, createDefaultScenario } from "../shared/schemas.js";
 import { defaultCurrencyForSelection, marketSelectionForScenario, marketsForSelection, primaryMarketForSelection, type MarketSelection } from "../shared/markets.js";
 import type {
   AgentLoad, CameraGroup, CapacityRecommendation, CapacityScenario, CatalogPublication, CatalogSource, CatalogStatus, Currency, InfrastructureKind,
   CalibrationCollectionStatus, CalibrationDeviceIdentity, CalibrationDiagnosticReportModel, CalibrationHardwarePreflight, CalibrationMode, CalibrationPlan, CalibrationResumeStatus, CalibrationRuntimeStatus, CalibrationSession, CapacityPrediction, ExecutionEnvironment, HardwareNodeTemplate, LocalCalibrationRun, OperatingSystemFamily,
   HardwareComponent, RecommendationAlternative, RecommendationPolicy, ScenarioRecord,
+  QwenModelProbeResult,
 } from "../shared/types.js";
 import { CalibrationResultPanel } from "./CalibrationResultPanel.js";
 import { REPORT_DOWNLOAD_FILENAMES, REPORT_EXPORT_COPY, isNeutralAnnexFormat, type ExportFormat } from "./reportExports.js";
@@ -1015,6 +1016,9 @@ function EnvironmentVerification({
   onRefresh,
   onLocate,
   onQwenSelection,
+  qwenProbe,
+  onTestQwen,
+  onCancelQwenProbe,
   onContinue,
 }: {
   environment: ExecutionEnvironment | null;
@@ -1024,6 +1028,9 @@ function EnvironmentVerification({
   onRefresh: () => void;
   onLocate: (componentId: string) => void;
   onQwenSelection: (selection: QwenSelectionRequest) => void;
+  qwenProbe: QwenModelProbeResult | null;
+  onTestQwen: (candidateId: string) => void;
+  onCancelQwenProbe: (probeId: string) => void;
   onContinue: () => void;
 }): ReactElement {
   if (!environment) {
@@ -1115,13 +1122,30 @@ function EnvironmentVerification({
   const qwenWarningCopy: Record<string, string> = lang === "pt" ? {
     qwen3_vl_models_not_found: "Nenhum par Qwen3-VL foi encontrado.",
     qwen3_vl_models_incompatible_with_detected_hardware: "Os pares encontrados não cabem com segurança nesta máquina.",
+    qwen3_vl_functional_probe_required: "Os pares encontrados só serão liberados depois do ensaio visual real.",
     manual_qwen_selection_restored_to_automatic: "A escolha salva não está mais disponível; o modo automático foi restaurado.",
     same_qwen_model_selected_for_core_and_core_max: "O mesmo modelo atenderá Core e Core Max até outro par compatível ser instalado.",
   } : {
     qwen3_vl_models_not_found: "No Qwen3-VL pair was found.",
     qwen3_vl_models_incompatible_with_detected_hardware: "The discovered pairs do not safely fit this computer.",
+    qwen3_vl_functional_probe_required: "Discovered pairs are unlocked only after the real visual probe.",
     manual_qwen_selection_restored_to_automatic: "The saved choice is no longer available; automatic mode was restored.",
     same_qwen_model_selected_for_core_and_core_max: "The same model will serve Core and Core Max until another compatible pair is installed.",
+  };
+  const certificationCopy = lang === "pt" ? {
+    not_tested: "Não testado",
+    testing: "Testando",
+    validated_locally: "Validado localmente · somente planejamento",
+    approved_revision: "Revisão aprovada",
+    incompatible: "Incompatível",
+    outdated: "Ensaio desatualizado",
+  } : {
+    not_tested: "Not tested",
+    testing: "Testing",
+    validated_locally: "Locally validated · planning only",
+    approved_revision: "Approved revision",
+    incompatible: "Incompatible",
+    outdated: "Outdated probe",
   };
   const candidateLabel = (candidate: NonNullable<typeof qwenSelection>["candidates"][number]): string => {
     const duplicateName = (qwenSelection?.candidates.filter((item) =>
@@ -1129,8 +1153,9 @@ function EnvironmentVerification({
     const pathParts = candidate.modelPath.split(/[\\/]/).filter(Boolean);
     const knownLocation = pathParts.find((part) => /^(perceptrum|drakon)$/i.test(part));
     const location = knownLocation ?? pathParts.at(-2) ?? "";
-    return `${candidate.modelFileName} · ${candidate.parameterBillions}B ${candidate.quantization} · ` +
+    return `${candidate.modelFileName} + ${candidate.projectorFileName ?? "mmproj ausente"} · ${candidate.parameterBillions}B ${candidate.quantization} · ` +
       `${byteLabel(candidate.estimatedMemoryBytes)} · ${fitCopy[candidate.fit]}` +
+      ` · ${certificationCopy[candidate.certificationState]}` +
       (duplicateName && location ? ` · ${location}` : "");
   };
   const slotSelection = (
@@ -1187,8 +1212,36 @@ function EnvironmentVerification({
         {slotSelection("core-max", qwenSelection.selectedCoreMaxModelId, qwenSelection.recommendedCoreMaxModelId)}
       </div>
       <div className="qwen-model-summary"><span>{qwenSelection.candidates.length} {lang === "pt" ? "modelo(s) localizado(s)" : "model(s) found"}</span>
-        <span>{qwenSelection.candidates.filter((candidate) => candidate.compatible).length} {lang === "pt" ? "compatível(is)" : "compatible"}</span>
+        <span>{qwenSelection.candidates.filter((candidate) => candidate.compatible).length} {lang === "pt" ? "validado(s)" : "validated"}</span>
         <span>{qwenSelection.mode === "automatic" ? (lang === "pt" ? "seleção automática" : "automatic selection") : (lang === "pt" ? "seleção manual" : "manual selection")}</span></div>
+      <div className="qwen-candidate-tests">
+        {qwenSelection.candidates.map((candidate) => {
+          const activeForCandidate = qwenProbe?.candidateId === candidate.id &&
+            ["queued", "running"].includes(qwenProbe.status);
+          return <article key={`probe:${candidate.id}`} className={candidate.certificationState}>
+            <div><b>{candidate.modelFileName}</b><span>{candidate.projectorFileName ?? "mmproj ausente"}</span>
+              <small>{certificationCopy[candidate.certificationState]} · {fitCopy[candidate.fit]}</small></div>
+            {activeForCandidate
+              ? <button type="button" className="secondary" onClick={() => onCancelQwenProbe(qwenProbe.id)}>
+                  {lang === "pt" ? "Cancelar ensaio" : "Cancel probe"}
+                </button>
+              : <button type="button" className="secondary"
+                  disabled={busy || !candidate.estimatedCompatible || !candidate.projectorPath || candidate.compatible}
+                  onClick={() => onTestQwen(candidate.id)}>
+                  {candidate.compatible
+                    ? (lang === "pt" ? "Aprovado" : "Passed")
+                    : (lang === "pt" ? "Testar modelo" : "Test model")}
+                </button>}
+          </article>;
+        })}
+      </div>
+      {qwenProbe && <div className={`qwen-probe-progress ${qwenProbe.status}`} role="status">
+        <b>{qwenProbe.status === "passed" ? (lang === "pt" ? "Ensaio aprovado" : "Probe passed")
+          : qwenProbe.status === "failed" ? (lang === "pt" ? "Ensaio reprovado" : "Probe failed")
+            : qwenProbe.status === "cancelled" ? (lang === "pt" ? "Ensaio cancelado" : "Probe cancelled")
+              : (lang === "pt" ? "Ensaio em andamento" : "Probe running")}</b>
+        <span>{visibleText(qwenProbe.message)}</span>
+      </div>}
       {qwenSelection.warnings.length > 0 && <div className="qwen-model-warnings">{qwenSelection.warnings.map((warning) =>
         <span key={warning}>{qwenWarningCopy[warning] ?? warning}</span>)}</div>}
     </section>}
@@ -1231,6 +1284,9 @@ export function App(): ReactElement {
   const [environmentAccepted, setEnvironmentAccepted] = useState(false);
   const [environmentBusy, setEnvironmentBusy] = useState(true);
   const [environmentError, setEnvironmentError] = useState("");
+  const [qwenProbe, setQwenProbe] = useState<QwenModelProbeResult | null>(null);
+  const [qwenProbeStarting, setQwenProbeStarting] = useState(false);
+  const automaticQwenAttempts = useRef(new Set<string>());
   const [step, setStep] = useState<Step>("project"); const [scenario, setScenario] = useState<CapacityScenario>(createInitialScenario);
   const [cameraCountConfirmed, setCameraCountConfirmed] = useState(false);
   const [record, setRecord] = useState<ScenarioRecord | null>(null); const [recommendations, setRecommendations] = useState<CapacityRecommendation[]>([]);
@@ -1241,6 +1297,40 @@ export function App(): ReactElement {
   const [calibrationRecommendation, setCalibrationRecommendation] = useState<CapacityRecommendation | null>(null);
   const [calibrationOpen, setCalibrationOpen] = useState(false);
   const stepIndex = steps.indexOf(step); const groupTotal = useMemo(() => scenario.cameraGroups.reduce((sum, group) => sum + group.count, 0), [scenario.cameraGroups]);
+  const testQwenCandidate = async (candidateId: string): Promise<void> => {
+    setEnvironmentError("");
+    setQwenProbeStarting(true);
+    try {
+      let probe = await api<QwenModelProbeResult>("/api/calibrations/environment/qwen-probes", {
+        method: "POST",
+        body: JSON.stringify({ candidateId }),
+      });
+      setQwenProbe(probe);
+      while (["queued", "running"].includes(probe.status)) {
+        await new Promise((resolveWait) => window.setTimeout(resolveWait, 750));
+        probe = await api<QwenModelProbeResult>(
+          `/api/calibrations/environment/qwen-probes/${encodeURIComponent(probe.id)}`,
+        );
+        setQwenProbe(probe);
+      }
+      await new Promise((resolveWait) => window.setTimeout(resolveWait, 300));
+      setEnvironment(await api<ExecutionEnvironment>("/api/calibrations/environment/refresh", { method: "POST" }));
+    } catch (error) {
+      setEnvironmentError(error instanceof Error ? error.message : "qwen_model_probe_failed");
+    } finally {
+      setQwenProbeStarting(false);
+    }
+  };
+  const cancelQwenProbe = async (probeId: string): Promise<void> => {
+    try {
+      setQwenProbe(await api<QwenModelProbeResult>(
+        `/api/calibrations/environment/qwen-probes/${encodeURIComponent(probeId)}/cancel`,
+        { method: "POST" },
+      ));
+    } catch (error) {
+      setEnvironmentError(error instanceof Error ? error.message : "qwen_model_probe_cancel_failed");
+    }
+  };
   useEffect(() => {
     void api<CatalogStatus>("/api/catalog/status").then(setCatalogStatus).catch(() => setCatalogStatus(null));
     void api<HardwareNodeTemplate[]>("/api/catalog/hardware").then(setHardwareCatalog).catch(() => setHardwareCatalog([]));
@@ -1265,6 +1355,23 @@ export function App(): ReactElement {
       .catch((error: unknown) => setEnvironmentError(error instanceof Error ? error.message : "environment_scan_failed"))
       .finally(() => setEnvironmentBusy(false));
   }, []);
+  useEffect(() => {
+    if (!environment?.qwenModelSelection || qwenProbeStarting ||
+        qwenProbe && ["queued", "running"].includes(qwenProbe.status)) return;
+    const recommendedIds = [...new Set([
+      environment.qwenModelSelection.recommendedCoreModelId,
+      environment.qwenModelSelection.recommendedCoreMaxModelId,
+    ].filter((id): id is string => Boolean(id)))];
+    const nextId = recommendedIds.find((id) => {
+      const candidate = environment.qwenModelSelection!.candidates.find((item) => item.id === id);
+      return candidate?.estimatedCompatible && !candidate.compatible &&
+        ["not_tested", "outdated"].includes(candidate.certificationState) &&
+        !automaticQwenAttempts.current.has(id);
+    });
+    if (!nextId) return;
+    automaticQwenAttempts.current.add(nextId);
+    void testQwenCandidate(nextId);
+  }, [environment, qwenProbe, qwenProbeStarting]);
   const refreshEnvironment = async (): Promise<void> => {
     setEnvironmentBusy(true); setEnvironmentError("");
     try { setEnvironment(await api<ExecutionEnvironment>("/api/calibrations/environment/refresh", { method: "POST" })); }
@@ -1295,9 +1402,13 @@ export function App(): ReactElement {
       setEnvironmentError(error instanceof Error ? error.message : "qwen_model_selection_failed");
     } finally { setEnvironmentBusy(false); }
   };
-  if (!environmentAccepted) return <EnvironmentVerification environment={environment} lang={lang} busy={environmentBusy}
+  if (!environmentAccepted) return <EnvironmentVerification environment={environment} lang={lang}
+    busy={environmentBusy || qwenProbeStarting || Boolean(qwenProbe && ["queued", "running"].includes(qwenProbe.status))}
     error={environmentError} onRefresh={() => void refreshEnvironment()} onLocate={(id) => void locateEnvironmentComponent(id)}
     onQwenSelection={(selection) => void updateQwenSelection(selection)}
+    qwenProbe={qwenProbe}
+    onTestQwen={(candidateId) => void testQwenCandidate(candidateId)}
+    onCancelQwenProbe={(probeId) => void cancelQwenProbe(probeId)}
     onContinue={() => setEnvironmentAccepted(true)} />;
   const save = async (): Promise<ScenarioRecord> => {
     if (groupTotal !== scenario.totalCameras) throw new Error(lang === "pt" ? "O total dos grupos precisa ser igual ao total de câmeras." : "Camera group total must match total cameras.");

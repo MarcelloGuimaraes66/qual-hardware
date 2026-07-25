@@ -19,7 +19,9 @@ import {
   MAX_PROJECT_CAMERAS,
   LEGACY_QHCAL_PACKAGE_VERSION,
   LEGACY_QHCALSET_PACKAGE_VERSION,
+  PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
   PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
+  PREVIOUS_EXECUTION_ENVIRONMENT_VERSION,
   PREVIOUS_QHCAL_PACKAGE_VERSION,
   PREVIOUS_QHCALSET_PACKAGE_VERSION,
   MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION,
@@ -148,7 +150,7 @@ export const calibrationStageSchema = z.enum([
 const operatingSystemSchema = z.enum(["windows", "ubuntu", "macos"]);
 const telemetryEvidenceStatusSchema = z.enum(["measured", "unavailable", "failed", "not_applicable"]);
 const calibrationComputeModeSchema = z.enum(["cpu_only", "gpu_accelerated"]);
-const calibrationGpuInferenceBackendSchema = z.enum(["cuda", "metal", "vulkan", "rocm", "unavailable"]);
+const calibrationGpuInferenceBackendSchema = z.enum(["cuda", "metal", "vulkan", "rocm", "sycl", "unavailable"]);
 const calibrationGpuMediaBackendSchema = z.enum(["cuda_nvenc", "videotoolbox", "qsv", "d3d11va_amf", "vaapi", "unavailable"]);
 const calibrationGpuClassificationSchema = z.enum(["compute", "media_only", "display_only", "unavailable"]);
 const calibrationCpuPackageSchema = z.object({
@@ -277,9 +279,33 @@ const calibrationCompositionSchema = z.array(z.object({
   frameCameras: z.number().int().nonnegative().max(MAX_PROJECT_CAMERAS),
 })).max(128);
 
+const qwenRuntimeResourceProfileSchema = z.object({
+  staticEstimateBytes: z.number().int().positive(),
+  peakRamParallel1Bytes: z.number().int().nonnegative().nullable(),
+  peakVramParallel1Bytes: z.number().int().nonnegative().nullable(),
+  peakRamParallel2Bytes: z.number().int().nonnegative().nullable(),
+  peakVramParallel2Bytes: z.number().int().nonnegative().nullable(),
+  baseRequirementBytes: z.number().int().positive(),
+  incrementalSlotBytes: z.number().int().nonnegative(),
+  maxValidatedParallelism: z.number().int().min(1).max(128),
+  safeAvailableMemoryFraction: z.literal(0.75),
+  sequentialLatencyMs: z.array(z.number().nonnegative()).min(3).max(20),
+  concurrentLatencyMs: z.array(z.number().nonnegative()).max(20),
+});
+
+const qwenCertificationSchema = z.object({
+  selectionSignature: z.string().regex(/^[0-9a-f]{64}$/i),
+  coreProbeId: z.string().uuid(),
+  coreMaxProbeId: z.string().uuid(),
+  usageGate: z.enum(["purchase", "planning_only", "blocked"]),
+  coreResourceProfile: qwenRuntimeResourceProfileSchema,
+  coreMaxResourceProfile: qwenRuntimeResourceProfileSchema,
+});
+
 export const localCalibrationRunSchema = z.object({
   schemaVersion: z.union([
     z.literal(AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
+    z.literal(PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
     z.literal(PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
     z.literal(LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
     z.literal(INITIAL_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
@@ -450,7 +476,10 @@ export const localCalibrationRunSchema = z.object({
   runtimeManifestHash: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
   environmentSignature: z.string().regex(/^[0-9a-f]{64}$/i).optional(),
   environmentProvenance: z.object({
-    schemaVersion: z.literal(EXECUTION_ENVIRONMENT_VERSION),
+    schemaVersion: z.union([
+      z.literal(EXECUTION_ENVIRONMENT_VERSION),
+      z.literal(PREVIOUS_EXECUTION_ENVIRONMENT_VERSION),
+    ]),
     detectedAt: z.iso.datetime(),
     readiness: z.enum(["ready_full", "ready_diagnostic", "unsupported"]),
     evidenceLevel: z.enum(["exact_perceptrum", "compatible_local_stack", "generic_native", "inventory_only"]),
@@ -469,12 +498,14 @@ export const localCalibrationRunSchema = z.object({
       selfTest: z.enum(["passed", "failed", "not_run", "not_applicable"]),
       capabilities: z.array(z.string().min(1).max(160)).max(100),
     })).max(100),
+    qwenCertification: qwenCertificationSchema.optional(),
     missingRequiredComponentIds: z.array(z.enum([
       "application", "gpu-driver", "ffmpeg", "ffprobe", "llama-server",
       "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj",
       "perceptrum", "native-benchmark", "telemetry",
     ])).max(100),
   }).optional(),
+  qwenCertification: qwenCertificationSchema.optional(),
   runtimeProvenance: z.object({
     platform: z.enum(["aix", "android", "darwin", "freebsd", "haiku", "linux", "openbsd", "sunos", "win32", "cygwin", "netbsd"]),
     architecture: z.string().min(1).max(120),
@@ -638,7 +669,8 @@ export const localCalibrationRunSchema = z.object({
     context.addIssue({ code: "custom", path: ["pipelineEvidence"], message: "Eligible calibration requires complete production-pipeline evidence." });
   }
   if (value.schemaVersion === TELEMETRY_LOCAL_CALIBRATION_VERSION || value.schemaVersion === LOCAL_CALIBRATION_VERSION ||
-      value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
+      value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
+      value.schemaVersion === PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
     if (!value.telemetryCapabilities?.length) {
       context.addIssue({ code: "custom", path: ["telemetryCapabilities"], message: "Telemetry calibration requires capability declarations." });
     }
@@ -662,7 +694,9 @@ export const localCalibrationRunSchema = z.object({
       context.addIssue({ code: "custom", path: ["artifact"], message: "Telemetry calibration requires persisted artifact metadata." });
     }
   }
-  if (value.schemaVersion === LOCAL_CALIBRATION_VERSION || value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
+  if (value.schemaVersion === LOCAL_CALIBRATION_VERSION ||
+      value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
+      value.schemaVersion === PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
     const requiredStages = new Set([
       "rtsp_ingest", "video_decode", "bgr_processing", "video_encode", "disk_write", "disk_read",
       "frame_extraction", "local_inference", "memory_bandwidth", "network_ingest", "job_scheduler",
@@ -699,14 +733,15 @@ export const localCalibrationRunSchema = z.object({
       }
     }
   }
-  if (value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
+  if (value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
+      value.schemaVersion === PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
     if (value.mode === "full") {
-      context.addIssue({ code: "custom", path: ["mode"], message: "Version 6 uses quick, validation or qualification mode." });
+      context.addIssue({ code: "custom", path: ["mode"], message: "Autonomous calibration uses quick, validation or qualification mode." });
     }
     if (!value.kernelVersion || !value.runtimeManifestHash || !value.environmentSignature || !value.environmentProvenance ||
         !value.workloadProfileId || !value.workloadProfileSignature ||
         !value.compatiblePerceptrumCommit || !value.tierResults?.length || !value.cameraTiers?.length || !value.networkEvidence) {
-      context.addIssue({ code: "custom", path: ["environmentProvenance"], message: "Version 6 requires kernel, execution environment, profile, tiers and network evidence." });
+      context.addIssue({ code: "custom", path: ["environmentProvenance"], message: "Autonomous calibration requires kernel, execution environment, profile, tiers and network evidence." });
     }
     if (value.workloadProfileId !== `workload:${value.workloadProfileSignature}`) {
       context.addIssue({ code: "custom", path: ["workloadProfileId"], message: "Autonomous calibration workload ID must match its canonical signature." });
@@ -785,6 +820,25 @@ export const localCalibrationRunSchema = z.object({
           value.environmentProvenance.components.some((item) =>
             item.id !== "native-benchmark" && item.status === "installed" && item.selfTest !== "passed")) {
         context.addIssue({ code: "custom", path: ["environmentProvenance"], message: "Purchase eligibility requires the exact Perceptrum worker and every mandatory local component to pass its self-test." });
+      }
+    }
+    if (value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
+      if (!value.qwenCertification ||
+          value.qwenCertification.selectionSignature !==
+            value.environmentProvenance?.qwenCertification?.selectionSignature) {
+        context.addIssue({
+          code: "custom",
+          path: ["qwenCertification"],
+          message: "Version 7 requires the fresh Qwen3-VL stack certification used by this calibration.",
+        });
+      }
+      if (value.qualityGate?.eligibleForCapacityExtrapolation &&
+          value.qwenCertification?.usageGate !== "purchase") {
+        context.addIssue({
+          code: "custom",
+          path: ["qwenCertification", "usageGate"],
+          message: "Purchase eligibility requires approved Qwen3-VL hashes and a passed functional probe.",
+        });
       }
     }
     if (value.capacityBoundary?.bound === "inconclusive" &&

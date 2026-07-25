@@ -5,6 +5,7 @@ import { mkdtemp } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { HARDWARE_CATALOG } from "../src/engine/catalog.js";
+import { buildRecommendations } from "../src/engine/capacity.js";
 import { buildCapacityPredictions, createCalibrationPlan } from "../src/engine/calibration.js";
 import { buildCalibrationDiagnosticReport } from "../src/engine/calibrationDiagnostic.js";
 import { createDefaultScenario } from "../src/shared/schemas.js";
@@ -16,6 +17,7 @@ import {
 import { SqlitePlannerStore } from "../src/server/store.js";
 import { createInternalCalibrationSession } from "../src/server/calibrationSessions.js";
 import { autonomousCalibrationRun, autonomousCalibrationWorkloadProfile } from "./fixtures/autonomousCalibrationRun.js";
+import type { QwenModelProbeResult } from "../src/shared/types.js";
 
 const cleanupDirectories: string[] = [];
 afterEach(async () => {
@@ -56,7 +58,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await reopenedStore.close();
   });
 
-  it("keeps schema v12 while storing all autonomous session states as append-only events", async () => {
+  it("keeps schema v13 while storing all autonomous session states as append-only events", async () => {
     const directory = await mkdtemp(join(tmpdir(), "qual-hardware-calibration-extension-"));
     cleanupDirectories.push(directory);
     const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
@@ -74,7 +76,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await store.close();
 
     const database = new DatabaseSync(databasePath, { readOnly: true });
-    expect((database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(12);
+    expect((database.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(13);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_sessions").get() as { count: number }).count).toBe(0);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_sessions_v2").get() as { count: number }).count).toBe(1);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_session_events").get() as { count: number }).count).toBe(3);
@@ -82,13 +84,14 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     for (const table of ["calibration_checkpoints", "calibration_session_lineage", "calibration_device_identities",
       "measured_system_identities", "calibration_run_provenance", "calibration_import_batches",
       "calibration_import_items", "calibration_export_events", "calibration_collection_snapshots",
-      "calibration_probe_results", "calibration_diagnostic_reports"]) {
+      "calibration_probe_results", "calibration_diagnostic_reports", "qwen_model_probes",
+      "qwen_model_resource_profiles"]) {
       expect(database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)).toBeTruthy();
     }
     database.close();
   });
 
-  it("persists the detected environment, component self-tests and warnings in SQLite v12", async () => {
+  it("persists the detected environment, component self-tests and warnings in SQLite v13", async () => {
     const directory = await mkdtemp(join(tmpdir(), "qual-hardware-environment-"));
     cleanupDirectories.push(directory);
     const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
@@ -120,6 +123,66 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_environment_self_tests").get() as { count: number }).count).toBe(1);
     expect((database.prepare("SELECT COUNT(*) count FROM calibration_environment_warnings").get() as { count: number }).count).toBe(1);
     expect((database.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check).toBe("ok");
+    database.close();
+  });
+
+  it("updates a Qwen probe atomically and stores its measured resource profile", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-qwen-probe-database-"));
+    cleanupDirectories.push(directory);
+    const store = new SqlitePlannerStore(join(directory, QUAL_HARDWARE_SQLITE_FILENAME));
+    const probe: QwenModelProbeResult = {
+      schemaVersion: "qual-hardware-qwen-model-probe/1.0.0",
+      id: "00000000-0000-4000-8000-000000000311",
+      candidateId: "a".repeat(24),
+      inventorySignature: "b".repeat(64),
+      stackSignature: "c".repeat(64),
+      status: "passed",
+      certificationLevel: "approved_revision",
+      usageGate: "purchase",
+      approvedRevisionId: "fixture",
+      contractSha256: "d".repeat(64),
+      modelSha256: "e".repeat(64),
+      projectorSha256: "f".repeat(64),
+      llamaServerSha256: "1".repeat(64),
+      llamaServerVersion: "fixture",
+      llamaServerPath: "C:\\llama-server.exe",
+      backend: "cuda",
+      deviceId: "CUDA0",
+      deviceName: "NVIDIA",
+      hardwareSignature: "2".repeat(64),
+      driverVersion: "600",
+      platform: "win32",
+      architecture: "x64",
+      challenges: [],
+      concurrency: { attempted: true, passed: true, maxValidatedParallelism: 2 },
+      resourceProfile: {
+        staticEstimateBytes: 2_000_000_000,
+        peakRamParallel1Bytes: 1_000_000_000,
+        peakVramParallel1Bytes: 2_000_000_000,
+        peakRamParallel2Bytes: 1_100_000_000,
+        peakVramParallel2Bytes: 2_200_000_000,
+        baseRequirementBytes: 2_000_000_000,
+        incrementalSlotBytes: 200_000_000,
+        maxValidatedParallelism: 2,
+        safeAvailableMemoryFraction: 0.75,
+        sequentialLatencyMs: [10, 11, 12],
+        concurrentLatencyMs: [20, 21],
+      },
+      failureCode: null,
+      message: "passed",
+      startedAt: "2026-07-24T00:00:00.000Z",
+      completedAt: "2026-07-24T00:01:00.000Z",
+      expiresAt: "2026-08-23T00:01:00.000Z",
+    };
+    await store.saveQwenModelProbe({ ...probe, status: "running", certificationLevel: "none",
+      usageGate: "blocked", resourceProfile: null, completedAt: null, expiresAt: null });
+    await store.saveQwenModelProbe(probe);
+    expect(await store.listQwenModelProbes()).toEqual([probe]);
+    await store.close();
+
+    const database = new DatabaseSync(join(directory, QUAL_HARDWARE_SQLITE_FILENAME), { readOnly: true });
+    expect((database.prepare("SELECT COUNT(*) count FROM qwen_model_probes").get() as { count: number }).count).toBe(1);
+    expect((database.prepare("SELECT COUNT(*) count FROM qwen_model_resource_profiles").get() as { count: number }).count).toBe(1);
     database.close();
   });
 
@@ -189,13 +252,51 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     const migrated = new SqlitePlannerStore(databasePath);
     await migrated.close();
     const check = new DatabaseSync(databasePath);
-    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(12);
+    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(13);
     const tierSql = (check.prepare("SELECT sql FROM sqlite_master WHERE name='calibration_tier_results'").get() as { sql: string }).sql;
     expect(tierSql).toContain("1000000");
     expect((check.prepare("SELECT tier FROM calibration_tier_results WHERE id='legacy-tier'").get() as { tier: number }).tier).toBe(4096);
     expect((check.prepare("PRAGMA integrity_check").get() as { integrity_check: string }).integrity_check).toBe("ok");
     check.close();
     expect(await readdir(join(directory, "schema-backups"))).toHaveLength(1);
+  });
+
+  it("backs up and migrates v12 to v13 without losing scenarios, recommendations or calibrations", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "qual-hardware-v12-qwen-migration-"));
+    cleanupDirectories.push(directory);
+    const databasePath = join(directory, QUAL_HARDWARE_SQLITE_FILENAME);
+    const first = new SqlitePlannerStore(databasePath);
+    const scenario = await first.createScenario(createDefaultScenario(8));
+    await first.saveRecommendations(buildRecommendations(
+      scenario.id,
+      scenario.revision,
+      scenario.scenario,
+      HARDWARE_CATALOG,
+      [],
+    ));
+    await first.commitCalibrationRun(autonomousCalibrationRun(), []);
+    await first.close();
+
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec(`
+      DROP TABLE qwen_model_resource_profiles;
+      DROP TABLE qwen_model_probes;
+      PRAGMA user_version=12;
+    `);
+    legacy.close();
+
+    const migrated = new SqlitePlannerStore(databasePath);
+    expect(await migrated.listScenarios()).toHaveLength(1);
+    expect(await migrated.listRecommendations(scenario.id)).toHaveLength(3);
+    expect(await migrated.listCalibrationRuns()).toHaveLength(1);
+    await migrated.close();
+
+    const check = new DatabaseSync(databasePath, { readOnly: true });
+    expect((check.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(13);
+    expect(check.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='qwen_model_probes'").get()).toBeTruthy();
+    check.close();
+    const backups = await readdir(join(directory, "schema-backups"));
+    expect(backups.some((file) => /^qual-hardware-pre-v13-/.test(file))).toBe(true);
   });
 
   it("backs up and transactionally migrates the legacy v2 session-state constraint", async () => {
@@ -297,7 +398,7 @@ describe("dedicated Qual Hardware SQLite boundary", () => {
     await store.close();
     const backups = await readdir(join(directory, "schema-backups"));
     expect(backups).toHaveLength(1);
-    expect(backups[0]).toMatch(/^qual-hardware-pre-v12-.*-[0-9a-f-]{36}\.sqlite$/);
+    expect(backups[0]).toMatch(/^qual-hardware-pre-v13-.*-[0-9a-f-]{36}\.sqlite$/);
     const backup = new DatabaseSync(join(directory, "schema-backups", backups[0]!), { readOnly: true });
     expect(Object.values(backup.prepare("PRAGMA integrity_check").get() as Record<string, unknown>)[0]).toBe("ok");
     expect((backup.prepare("SELECT value FROM preserved_user_data WHERE id='one'").get() as { value: string }).value).toBe("keep");

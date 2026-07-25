@@ -65,6 +65,28 @@ describe("mandatory CPU and GPU calibration compute paths", () => {
     expect(llamaComputeArguments("gpu_accelerated", devices[0]!)).toContain("MTL0");
   });
 
+  it("recognizes the SYCL identifier emitted by llama.cpp for Intel GPUs", () => {
+    const devices = parseLlamaGpuDevices([
+      "Available devices:",
+      "  SYCL0: Intel Arc B580 (12288 MiB, 11742 MiB free)",
+    ].join("\n"));
+    expect(devices).toEqual([{
+      id: "SYCL0",
+      name: "Intel Arc B580 (12288 MiB, 11742 MiB free)",
+      backend: "sycl",
+    }]);
+    expect(expectedGpuInferenceBackend({
+      gpuModel: "Intel Arc B580",
+      gpuArchitecture: "Xe2",
+      gpuCount: 1,
+    }, "win32")).toBe("sycl");
+    expect(selectLlamaGpuDevice({
+      devices,
+      expectedBackend: "sycl",
+      gpuModel: "Intel Arc B580",
+    })?.id).toBe("SYCL0");
+  });
+
   it("requires both NVIDIA decode and encoders before declaring GPU media available", () => {
     const available = selectFfmpegGpuMediaBackend({
       platform: "win32",
@@ -102,7 +124,7 @@ describe("mandatory CPU and GPU calibration compute paths", () => {
     expect(expectedGpuInferenceBackend({ gpuModel: "Apple M4 Max", gpuArchitecture: "Apple GPU", gpuCount: 1 }, "darwin"))
       .toBe("metal");
     expect(expectedGpuInferenceBackend({ gpuModel: "Intel Arc", gpuArchitecture: "Xe", gpuCount: 1 }, "win32"))
-      .toBe("vulkan");
+      .toBe("sycl");
     expect(selectFfmpegGpuMediaBackend({
       platform: "darwin", gpuModel: "Apple M4 Max", requiredCodecs: ["h264"],
       hardwareAcceleratorsOutput: "videotoolbox", encodersOutput: "h264_videotoolbox",

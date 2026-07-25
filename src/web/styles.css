@@ -83,5 +83,11 @@ footer { border-top:1px solid var(--line); min-height:60px; padding:9px max(28px
 .qwen-model-summary{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
 .qwen-model-summary span{padding:5px 8px;border:1px solid #3a5661;color:#a9bec5;font:500 8px DM Mono,monospace;text-transform:uppercase}
 .qwen-model-warnings{display:flex;flex-direction:column;gap:4px;margin-top:10px;color:#ead57e;font-size:10px}
-@media(max-width:850px){.qwen-model-selection-heading{flex-direction:column}.qwen-memory-budget{width:100%;min-width:0}.qwen-model-fields{grid-template-columns:1fr}}
+.qwen-candidate-tests{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}
+.qwen-candidate-tests article{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px;border:1px solid #304b55;background:#0a171c}
+.qwen-candidate-tests article.approved_revision{border-left:3px solid #56c596}.qwen-candidate-tests article.incompatible{border-left:3px solid #d96c63}.qwen-candidate-tests article.testing{border-left:3px solid #63c6e4}
+.qwen-candidate-tests article>div{min-width:0;display:flex;flex-direction:column;gap:3px}.qwen-candidate-tests b,.qwen-candidate-tests span,.qwen-candidate-tests small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qwen-candidate-tests b{font-size:10px}.qwen-candidate-tests span,.qwen-candidate-tests small{color:#82979f;font-size:8px}.qwen-candidate-tests button{flex:none;min-height:32px;padding:0 9px;font-size:8px}
+.qwen-probe-progress{display:flex;flex-direction:column;gap:4px;margin-top:10px;padding:10px;border-left:3px solid #63c6e4;background:#10232a;color:#b6cbd2}.qwen-probe-progress.passed{border-color:#56c596}.qwen-probe-progress.failed,.qwen-probe-progress.cancelled{border-color:#d96c63}.qwen-probe-progress span{font-size:9px;line-height:1.45}
+@media(max-width:850px){.qwen-model-selection-heading{flex-direction:column}.qwen-memory-budget{width:100%;min-width:0}.qwen-model-fields,.qwen-candidate-tests{grid-template-columns:1fr}}
 .calibration-progress.failed i,.calibration-progress.interrupted i{background:#e07768}.calibration-progress.cancelled i{background:#c8a45c}.calibration-progress>b{min-width:92px;text-align:right}.terminal-diagnostic{margin-top:14px}.terminal-finding{display:flex;flex-direction:column;gap:6px;margin:12px 0;padding:14px;border-left:3px solid #d8a947;background:#171b1d}.terminal-finding.error{border-left-color:#e07768}.terminal-finding p,.terminal-finding span{margin:0;color:#c0cbd0;line-height:1.5}

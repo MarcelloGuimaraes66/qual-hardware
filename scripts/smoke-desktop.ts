@@ -32,6 +32,9 @@ const projectRoot = resolve(import.meta.dirname, "..");
 const releaseRoot = resolve(String(process.env.QUAL_HARDWARE_RELEASE_ROOT || "").trim() || join(projectRoot, "release"));
 const allowMissingRuntime = process.env.QUAL_HARDWARE_SMOKE_ALLOW_MISSING_RUNTIME === "1";
 const skipCalibration = process.env.QUAL_HARDWARE_SMOKE_SKIP_CALIBRATION === "1";
+const certifyInstalledQwen = process.env.QUAL_HARDWARE_SMOKE_CERTIFY_QWEN === "1";
+const smokeCameraCount = Math.max(1, Math.min(10_000,
+  Number.parseInt(process.env.QUAL_HARDWARE_SMOKE_CAMERA_COUNT ?? "1", 10) || 1));
 
 function packagePaths(): PackagePaths {
   if (process.platform === "darwin") {
@@ -336,6 +339,7 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
     "/contracts/qual-hardware-component-technical-specification-v1.schema.json",
     "/contracts/qual-hardware-procurement-neutral-specification-v1.schema.json",
     "/contracts/qual-hardware-tr-technical-annex-v1.schema.json",
+    "/contracts/qwen3-vl-approved-revisions-v1.json",
     "/database/sqlite-schema.sql",
     "/dist/server/server/calibrationKernelService.js",
     "/dist/server/server/calibrationKernelWorker.js",
@@ -350,6 +354,8 @@ async function verifyPackage(paths: PackagePaths): Promise<boolean> {
     "/dist/server/server/calibrationTemporaryFiles.js",
     "/node_modules/docx/dist/index.mjs",
   ]) assert(listing.includes(required), `ASAR is missing ${required}`);
+  await stat(join(dirname(paths.asar), "contracts", "qwen3-vl-approved-revisions-v1.json"));
+  await stat(join(dirname(paths.asar), "resources", "qwen-model-probe.png"));
   for (const forbidden of [
     "/dist/server/server/index.js",
     "/dist/server/server/worker.js",
@@ -427,13 +433,18 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
   assert(renderedText.includes("Qual Hardware"));
   assert(renderedText.includes("Verificação do ambiente"), "mandatory environment verification must precede the main UI");
   assert(renderedText.includes("Pronto para diagnóstico e dimensionamento") || renderedText.includes("Pronto para teste completo"));
-  const continued = await rendererValue<boolean>(application.debuggerUrl, `(() => {
-    const button = [...document.querySelectorAll('button')].find((item) =>
-      item.textContent?.includes('Continuar em modo diagnóstico') || item.textContent?.includes('Abrir o Qual Hardware'));
-    if (!button) return false;
-    button.click();
-    return true;
-  })()`);
+  // Give the renderer one event-loop turn to enqueue the recommended Qwen
+  // probe, then wait for either that real probe or the fail-closed inventory
+  // scan to finish before entering the application.
+  await new Promise((resolveWait) => setTimeout(resolveWait, 1_000));
+  const continued = await waitFor("the environment verification to become actionable", async () =>
+    rendererValue<boolean | null>(application.debuggerUrl, `(() => {
+      const button = [...document.querySelectorAll('button')].find((item) =>
+        item.textContent?.includes('Continuar em modo diagnóstico') || item.textContent?.includes('Abrir o Qual Hardware'));
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
+      button.click();
+      return true;
+    })()`), 180_000);
   assert.equal(continued, true, "the supported environment must allow the operator to continue");
   const mainText = await waitFor("the main Qual Hardware interface", async () => {
     const text = await rendererValue<string>(application.debuggerUrl, "document.body.innerText");
@@ -528,30 +539,114 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
   assert(htmlResponse.headers.get("content-security-policy")?.includes("frame-ancestors 'none'"));
   assert(!/http-equiv=["']Content-Security-Policy/i.test(html), "CSP must have a single HTTP-header source");
 
-  // Keep the packaged-app smoke bounded to one real camera. The physical
-  // validation below exercises the user's full eight-camera workload.
-  const scenario = createDefaultScenario(1);
+  // CI remains bounded to one camera. Physical acceptance may opt into the
+  // user's representative camera count without changing the packaged code.
+  const scenario = createDefaultScenario(smokeCameraCount);
   scenario.projectName = "Packaged desktop smoke test";
   const created = await api<ScenarioRecord>(application.origin, "/api/scenarios", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ scenario }),
   });
-  const recommendations = await api<CapacityRecommendation[]>(application.origin, `/api/scenarios/${created.id}/recommendations`, { method: "POST" });
+  let recommendations = await api<CapacityRecommendation[]>(application.origin, `/api/scenarios/${created.id}/recommendations`, { method: "POST" });
   assert.equal(recommendations.length, 3);
-  assert.equal(new Set(recommendations.map((item) => item.primary.hardware.id)).size, 3);
+  const initialDistinctHardwareCount = new Set(recommendations.map((item) => item.primary.hardware.id)).size;
   for (const item of recommendations) {
     assert(item.primary.price.median && item.primary.price.median > 0);
     const componentTotal = Math.round(item.primary.price.componentEstimates.reduce((sum, component) => sum + component.projectAmount, 0) * 100) / 100;
     assert.equal(componentTotal, item.primary.price.median);
   }
-  const recommendation = recommendations.find((item) => item.policy === "recommended");
+  let recommendation = recommendations.find((item) => item.policy === "recommended");
   assert(recommendation);
-  const environment = await api<{
+  let environment = await api<{
     schemaVersion: string; readiness: string; evidenceLevel: string; externalDownloadsPerformed: boolean;
     components: Array<{ id: string; status: string; selfTest: string }>;
+    qwenModelSelection?: {
+      selectedCoreModelId: string | null;
+      selectedCoreMaxModelId: string | null;
+      recommendedCoreModelId: string | null;
+      recommendedCoreMaxModelId: string | null;
+      candidates: Array<{
+        id: string;
+        compatible: boolean;
+        probeId: string | null;
+        resourceProfile: unknown | null;
+      }>;
+    };
   }>(application.origin, "/api/calibrations/environment");
-  assert.equal(environment.schemaVersion, "qual-hardware-execution-environment/1.0.0");
+  if (certifyInstalledQwen) {
+    const recommendedIds = [...new Set([
+      environment.qwenModelSelection?.recommendedCoreModelId,
+      environment.qwenModelSelection?.recommendedCoreMaxModelId,
+    ].filter((id): id is string => Boolean(id)))];
+    assert(recommendedIds.length > 0, "physical smoke requested Qwen certification but the inventory has no recommended pair");
+    type SmokeProbe = {
+      id: string;
+      candidateId: string;
+      status: string;
+      failureCode?: string | null;
+    };
+    for (const candidateId of recommendedIds) {
+      let existing = environment.qwenModelSelection?.candidates.find((item) => item.id === candidateId);
+      if (!existing?.compatible) {
+        const activeProbe = (await api<SmokeProbe[]>(
+          application.origin,
+          "/api/calibrations/environment/qwen-probes",
+        )).find((item) => ["queued", "running"].includes(item.status));
+        if (activeProbe) {
+          const completedActiveProbe = await waitFor(`automatic Qwen probe ${activeProbe.candidateId}`, async () => {
+            const current = await api<SmokeProbe>(
+              application.origin,
+              `/api/calibrations/environment/qwen-probes/${encodeURIComponent(activeProbe.id)}`,
+            );
+            return ["passed", "failed", "cancelled", "outdated"].includes(current.status) ? current : null;
+          }, 180_000);
+          assert.equal(completedActiveProbe.status, "passed",
+            `automatic Qwen probe ${activeProbe.candidateId} failed: ${completedActiveProbe.failureCode ?? "no failure code"}`);
+          environment = await api<typeof environment>(
+            application.origin,
+            "/api/calibrations/environment/refresh",
+            { method: "POST" },
+          );
+          existing = environment.qwenModelSelection?.candidates.find((item) => item.id === candidateId);
+        }
+      }
+      if (!existing?.compatible) {
+        let probe = await api<SmokeProbe>(
+          application.origin,
+          "/api/calibrations/environment/qwen-probes",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ candidateId }),
+          },
+        );
+        probe = await waitFor(`physical Qwen probe ${candidateId}`, async () => {
+          const current = await api<{ id: string; status: string; failureCode?: string | null }>(
+            application.origin,
+            `/api/calibrations/environment/qwen-probes/${encodeURIComponent(probe.id)}`,
+          );
+          return ["passed", "failed", "cancelled", "outdated"].includes(current.status) ? current : null;
+        }, 180_000);
+        assert.equal(probe.status, "passed",
+          `physical Qwen probe ${candidateId} failed: ${probe.failureCode ?? "no failure code"}`);
+      }
+      environment = await api<typeof environment>(
+        application.origin,
+        "/api/calibrations/environment/refresh",
+        { method: "POST" },
+      );
+    }
+    recommendations = await api<CapacityRecommendation[]>(
+      application.origin,
+      `/api/scenarios/${created.id}/recommendations`,
+      { method: "POST" },
+    );
+    recommendation = recommendations.find((item) => item.policy === "recommended");
+    assert(recommendation?.qwenCertification,
+      "recommendations generated after a physical probe must retain the complete Qwen stack signature");
+  }
+  assert.equal(environment.schemaVersion, "qual-hardware-execution-environment/2.0.0");
   assert.equal(environment.externalDownloadsPerformed, false);
   assert(environment.components.some((component) =>
     component.id === "native-benchmark" && component.status === "installed" && component.selfTest === "passed"),
@@ -566,7 +661,23 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     assets: Array<{ id: string; status: string }>;
     reasons: string[];
   }>(application.origin, "/api/calibrations/runtime-status");
-  assert.equal(runtime.readyForQuickTest, true);
+  if (runtime.readyForQuickTest) {
+    assert(initialDistinctHardwareCount >= 2,
+      "measured Qwen gates may consolidate policies but must retain at least two distinct safe primaries");
+    const selection = environment.qwenModelSelection;
+    assert(selection, "quick readiness requires an explicit Qwen3-VL selection");
+    for (const selectedId of [selection.selectedCoreModelId, selection.selectedCoreMaxModelId]) {
+      const candidate = selection.candidates.find((item) => item.id === selectedId);
+      assert(candidate?.compatible && candidate.probeId && candidate.resourceProfile,
+        "quick readiness must be backed by a completed functional Qwen3-VL probe");
+    }
+  } else {
+    assert.equal(initialDistinctHardwareCount, 3,
+      "an unmeasured planning run must preserve the three normal distinct primaries");
+    const qwenComponents = environment.components.filter((component) => component.id.startsWith("qwen-vl-"));
+    assert(!qwenComponents.length || qwenComponents.some((component) => component.selfTest !== "passed"),
+      "a package without a certified Qwen3-VL stack must remain fail-closed");
+  }
   assert.equal(runtime.readyForFullQualification, false,
     "the native benchmark must never enable commercial qualification");
   assert.equal(runtime.runtimeAssetsVerified, false);
@@ -584,13 +695,19 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     }),
     signal: AbortSignal.timeout(15_000),
   });
-  assert.equal(qualificationResponse.status, 503,
-    "generic native evidence must block complete physical qualification");
+  assert([409, 503].includes(qualificationResponse.status),
+    "generic native evidence or an active Qwen probe must block complete physical qualification");
   const qualificationError = await qualificationResponse.json() as { error?: string };
-  assert.equal(qualificationError.error, "calibration_runtime_not_ready_for_qualification");
+  assert([
+    "calibration_feature_disabled",
+    "calibration_perceptrum_build_not_supported",
+    "calibration_runtime_not_ready_for_qualification",
+    "calibration_blocked_during_qwen_probe",
+  ].includes(qualificationError.error ?? ""),
+  `unexpected qualification block: ${JSON.stringify(qualificationError)}`);
   assert(runtime.reasons.length > 0);
 
-  if (runtimeEmbedded && !skipCalibration) {
+  if (runtimeEmbedded && runtime.readyForQuickTest && !skipCalibration) {
     const startedCalibration = await api<{
       delivery: string;
       session: { id: string };
@@ -600,6 +717,8 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
       body: JSON.stringify({ recommendationId: recommendation.id, mode: "quick", targetHardwareTemplateId: null, advancedTelemetry: true }),
     });
     assert.equal(startedCalibration.delivery, "internal");
+    const calibrationTimeoutMs = Number(process.env.QUAL_HARDWARE_CALIBRATION_TIME_SCALE ?? "0.02") >= 0.5
+      ? 900_000 : 180_000;
     const completedCalibration = await waitFor("the autonomous calibration and exact-session cleanup", async () => {
       const current = await api<{
         id: string;
@@ -613,14 +732,16 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
         throw new Error(`calibration ended in ${current.state}: ${current.error ?? "no recorded error"}; electron logs: ${application.logs.join("").slice(-2_000)}`);
       }
       return current.state === "completed" ? current : null;
-    }, 180_000);
+    }, calibrationTimeoutMs);
     assert.equal(completedCalibration.progress?.percent, 100);
     assert.equal(completedCalibration.cleanup?.state, "completed");
     assert.equal(completedCalibration.cleanup?.remainingBytes, 0);
     assert.equal(completedCalibration.cleanup?.bytesRemoved, completedCalibration.cleanup?.bytesTemporary);
-    assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/6.0.0");
-    assert.equal(completedCalibration.result?.environmentProvenance?.evidenceLevel, "generic_native");
-    assert.equal(completedCalibration.result?.capacityRecommendation?.basis, "generic_native_estimate");
+    assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/7.0.0");
+    assert(completedCalibration.result?.environmentProvenance?.qwenCertification,
+      "calibration v7 must retain the certified Core/Core Max stack signatures");
+    assert.equal(completedCalibration.result?.environmentProvenance?.evidenceLevel, "compatible_local_stack");
+    assert.equal(completedCalibration.result?.capacityRecommendation?.basis, "physical_measurement");
     assert.equal(completedCalibration.result?.developmentOnly, true);
     assert.equal(completedCalibration.result?.externalRequestCount, 0);
     assert.equal(completedCalibration.result?.openAiRequestCount, 0);
@@ -632,7 +753,7 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
         "an inconclusive diagnostic must still preserve the measured boundary evidence");
       assert.equal(completedCalibration.result?.capacityRecommendation?.confidence, "insufficient");
     } else {
-      assert(smokeSafeCameraCount > 0, "a conclusive generic measurement must recommend at least one camera");
+      assert(smokeSafeCameraCount > 0, "a conclusive certified-stack measurement must recommend at least one camera");
     }
     assert.equal(completedCalibration.result?.overallSafeCameraCapacity,
       completedCalibration.result?.capacityRecommendation?.safeCameraCount);
@@ -713,7 +834,8 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     if (format === "json") {
       const report = JSON.parse(new TextDecoder().decode(bytes)) as { schemaVersion: string; commercialAndNeutralOptions: Array<{ commercialReference: unknown; procurementNeutralSpecification: { status: string } }> };
       assert.equal(report.schemaVersion, "capacity-recommendation-export/7.0.0");
-      assert(report.commercialAndNeutralOptions.length >= 6);
+      assert(report.commercialAndNeutralOptions.length >= (runtime.readyForQuickTest ? 1 : 6),
+        "the report must retain its normal alternatives unless measured Qwen gates remove unsafe options");
       assert(report.commercialAndNeutralOptions.every((item) => item.commercialReference && item.procurementNeutralSpecification.status === "blocked"));
     }
   }
@@ -726,7 +848,8 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     if (format === "tr-json") {
       const annex = JSON.parse(new TextDecoder().decode(bytes)) as { schemaVersion: string; specifications: Array<{ status: string; requirements: Array<{ matchingComponentIds: string[] }>; marketCompetitionAssessment: { matchingComponentIds: string[]; manufacturerNames: string[] } }> };
       assert.equal(annex.schemaVersion, "qual-hardware-tr-technical-annex/1.0.0");
-      assert(annex.specifications.length >= 6);
+      assert(annex.specifications.length >= (runtime.readyForQuickTest ? 1 : 6),
+        "the neutral annex must retain normal alternatives unless measured Qwen gates remove unsafe options");
       assert(annex.specifications.every((item) => item.status === "blocked" && item.requirements.every((requirement) => requirement.matchingComponentIds.length === 0)));
       assert(annex.specifications.every((item) => item.marketCompetitionAssessment.matchingComponentIds.length === 0 && item.marketCompetitionAssessment.manufacturerNames.length === 0));
       assert(!/\b(?:intel|nvidia|asus|dell|lenovo|supermicro)\b/i.test(new TextDecoder().decode(bytes)), "neutral annex contains a commercial identifier");
@@ -763,7 +886,7 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     assert.equal(exact?.status, "validated_local");
     assert.equal(exact?.exactCalibrationRunId, calibration.id);
   }
-  return { scenarioId: created.id, recommendationId: recommendation.id, runtimeReady: runtime.runtimeAssetsVerified };
+  return { scenarioId: created.id, recommendationId: recommendation.id, runtimeReady: runtime.readyForQuickTest };
 }
 
 async function main(): Promise<void> {
@@ -835,7 +958,7 @@ async function main(): Promise<void> {
     const database = await readFile(databasePath);
     assert.equal(database.subarray(0, 16).toString("binary"), "SQLite format 3\0");
     const sqlite = new DatabaseSync(databasePath, { readOnly: true });
-    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 12);
+    assert.equal((sqlite.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 13);
     assert((sqlite.prepare("SELECT count(*) AS total FROM component_technical_specification_versions").get() as { total: number }).total > 200);
     sqlite.close();
     console.log(`Packaged desktop smoke test passed on ${process.platform}/${process.arch}`);

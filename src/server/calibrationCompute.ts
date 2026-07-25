@@ -3,7 +3,7 @@ import type { CalibrationHardwarePreflight } from "../shared/types.js";
 export const REQUIRED_CALIBRATION_COMPUTE_MODES = ["cpu_only", "gpu_accelerated"] as const;
 export type CalibrationComputeMode = typeof REQUIRED_CALIBRATION_COMPUTE_MODES[number];
 
-export type CalibrationGpuInferenceBackend = "cuda" | "metal" | "vulkan" | "rocm" | "unavailable";
+export type CalibrationGpuInferenceBackend = "cuda" | "metal" | "vulkan" | "rocm" | "sycl" | "unavailable";
 export type CalibrationGpuMediaBackend =
   | "cuda_nvenc"
   | "videotoolbox"
@@ -41,6 +41,7 @@ export function expectedGpuInferenceBackend(
   if (platform === "darwin" || identity.includes("apple")) return "metal";
   if (identity.includes("nvidia") || identity.includes("cuda")) return "cuda";
   if (platform === "linux" && identity.includes("amd") && identity.includes("rocm")) return "rocm";
+  if (identity.includes("intel")) return "sycl";
   return "vulkan";
 }
 
@@ -48,13 +49,14 @@ export function parseLlamaGpuDevices(output: string): CalibrationGpuDevice[] {
   const devices: CalibrationGpuDevice[] = [];
   const seen = new Set<string>();
   for (const line of output.split(/\r?\n/)) {
-    const match = line.match(/^\s*(CUDA|Metal|MTL|Vulkan|ROCm|HIP)(\d*)\s*:\s*(.+?)\s*$/i);
+    const match = line.match(/^\s*(CUDA|Metal|MTL|Vulkan|ROCm|HIP|SYCL)(\d*)\s*:\s*(.+?)\s*$/i);
     if (!match) continue;
     const prefix = match[1]!.toLowerCase();
     const backend = prefix === "cuda" ? "cuda" : prefix === "metal" || prefix === "mtl" ? "metal"
-      : prefix === "rocm" || prefix === "hip" ? "rocm" : "vulkan";
+      : prefix === "rocm" || prefix === "hip" ? "rocm" : prefix === "sycl" ? "sycl" : "vulkan";
     const canonicalPrefix = prefix === "mtl" ? "MTL" : prefix === "hip" ? "HIP"
       : backend === "cuda" ? "CUDA" : backend === "rocm" ? "ROCm"
+        : backend === "sycl" ? "SYCL"
         : backend === "metal" ? "Metal" : "Vulkan";
     const id = `${canonicalPrefix}${match[2] ?? ""}`;
     if (seen.has(id.toLowerCase())) continue;
@@ -81,7 +83,7 @@ export function selectLlamaGpuDevices(input: {
   const preferred = input.devices.filter((device) => device.backend === input.expectedBackend);
   const candidates = preferred.length > 0
     ? preferred
-    : input.expectedBackend === "cuda" || input.expectedBackend === "rocm"
+    : input.expectedBackend === "cuda" || input.expectedBackend === "rocm" || input.expectedBackend === "sycl"
       ? input.devices.filter((device) => device.backend === "vulkan")
       : [];
   if (candidates.length === 0) return [];

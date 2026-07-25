@@ -34,6 +34,7 @@ import { technicalCadernoPdf } from "./technicalCadernoPdf.js";
 import { technicalCadernoDocx } from "./technicalCadernoDocx.js";
 import { findForbiddenCalibrationData, safeError } from "./security.js";
 import { RevisionConflictError, type PlannerStore } from "./store.js";
+import { QUAL_HARDWARE_SQLITE_SCHEMA_VERSION } from "./database.js";
 import {
   assertAutonomousCalibrationSessionContract,
   calibrationPayloadSha256,
@@ -55,6 +56,7 @@ import {
 import { calibrationHardwareDigest, calibrationHardwareMatchesTemplate, detectCalibrationHardware } from "./calibrationHardware.js";
 import { dependencyDownloadLink, detectExecutionEnvironment } from "./executionEnvironment.js";
 import type { QwenVisionSelectionPreference } from "./qwenVisionModelSelection.js";
+import { QwenModelCertificationService } from "./qwenModelCertification.js";
 import {
   CalibrationExchangeService,
   exchangeDigest,
@@ -148,6 +150,13 @@ function secretMatches(expected: string, received: string): boolean {
 
 function withComponentBuilds(recommendations: CapacityRecommendation[], builds: ComponentBuild[]): CapacityRecommendation[] {
   const byHardware = new Map(builds.filter((build) => build.hardwareTemplateId).map((build) => [build.hardwareTemplateId!, build]));
+  const restrictiveEligibility = (
+    left: RecommendationAlternative["procurementEligibility"],
+    right: RecommendationAlternative["procurementEligibility"],
+  ): RecommendationAlternative["procurementEligibility"] => {
+    const rank = { eligible: 0, planning_only: 1, blocked: 2 } as const;
+    return rank[left] >= rank[right] ? left : right;
+  };
   const decorate = (alternative: RecommendationAlternative): RecommendationAlternative => {
     const bom = byHardware.get(alternative.hardware.id);
     if (!bom) return alternative;
@@ -157,7 +166,10 @@ function withComponentBuilds(recommendations: CapacityRecommendation[], builds: 
       stagePredictions: alternative.calibration?.stagePredictions ?? [],
       coverage: bom.coverage,
       procurementGate: bom.procurementGate,
-      procurementEligibility: bom.procurementGate.eligibility,
+      procurementEligibility: restrictiveEligibility(
+        alternative.procurementEligibility,
+        bom.procurementGate.eligibility,
+      ),
       warnings: [...new Set([...alternative.warnings, ...bom.procurementGate.reasons])],
     };
   };
@@ -188,6 +200,7 @@ export interface ApplicationOptions {
   calibrationKernel?: CalibrationKernelPort;
   calibrationHardwareDetector?: () => Promise<CalibrationHardwarePreflight>;
   executionEnvironmentDetector?: () => Promise<ExecutionEnvironment>;
+  qwenCertificationService?: QwenModelCertificationService;
   calibrationTemporaryRoot?: string;
   calibrationEvidenceDirectory?: string;
   calibrationIdentityDirectory?: string;
@@ -213,14 +226,20 @@ export function createApp(
   const calibrationHardwareDetector = options.calibrationHardwareDetector ?? detectCalibrationHardware;
   const selectedEnvironmentPaths: Partial<Record<ExecutionEnvironment["components"][number]["id"], string>> = {};
   let qwenSelectionPreference: QwenVisionSelectionPreference = { mode: "automatic" };
+  const qwenCertification = options.qwenCertificationService ?? new QwenModelCertificationService({
+    resourceRoot,
+    onUpdate: (result) => store.saveQwenModelProbe(result),
+  });
   const executionEnvironmentDetector = options.executionEnvironmentDetector ?? (async () =>
     detectExecutionEnvironment({
       hardware: await calibrationHardwareDetector(),
       appVersion: applicationVersion,
+      resourceRoot,
       nativeBenchmarkPath: join(resourceRoot, "resources", "native", `${process.platform}-${process.arch}`,
         process.platform === "win32" ? "qual-hardware-native-bench.exe" : "qual-hardware-native-bench"),
       selectedPaths: selectedEnvironmentPaths,
       qwenSelection: qwenSelectionPreference,
+      qwenProbes: await store.listQwenModelProbes(),
     }));
   let executionEnvironmentPromise: Promise<ExecutionEnvironment> | null = null;
   const executionEnvironment = (refresh = false): Promise<ExecutionEnvironment> => {
@@ -779,7 +798,7 @@ export function createApp(
     architecture: process.arch,
     processId: process.pid,
     storage: store.storageKind,
-    sqliteSchemaVersion: 12,
+    sqliteSchemaVersion: QUAL_HARDWARE_SQLITE_SCHEMA_VERSION,
     databasePath: options.diagnostics?.databasePath ?? null,
     logDirectory: options.diagnostics?.logDirectory ?? null,
     catalog: catalogUpdates.status,
@@ -795,13 +814,15 @@ export function createApp(
   app.post("/api/scenarios/compare", async (context) => {
     const request = compareRequestSchema.parse(await context.req.json());
     const comparisons = [];
+    const qwenCertification = (await effectiveCalibrationRuntimeStatus())
+      .environmentProvenance?.qwenCertification;
     for (const id of request.scenarioIds) {
       const scenario = await store.getScenario(id);
       if (!scenario) return context.json({ error: "scenario_not_found", id }, 404);
       const stored = (await store.listRecommendations(id)).filter((item) => item.scenarioRevision === scenario.revision);
       const recommendations = stored.length ? stored : withComponentBuilds(buildRecommendations(
         id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
-        catalogUpdates.status.catalogVersion, await refreshCompatiblePredictions()), await store.listComponentBuilds());
+        catalogUpdates.status.catalogVersion, await refreshCompatiblePredictions(), qwenCertification), await store.listComponentBuilds());
       comparisons.push({ scenario, recommendations: withProcurementSpecifications(scenario.scenario, recommendations, await store.listCatalogComponents(), await store.listBenchmarkObservations()) });
     }
     return context.json({ schemaVersion: "capacity-scenario-comparison/1.0.0", comparisons });
@@ -825,9 +846,11 @@ export function createApp(
   app.post("/api/scenarios/:id/recommendations", async (context) => {
     const scenario = await store.getScenario(context.req.param("id"));
     if (!scenario) return context.json({ error: "scenario_not_found" }, 404);
+    const qwenCertification = (await effectiveCalibrationRuntimeStatus())
+      .environmentProvenance?.qwenCertification;
     const recommendations = withComponentBuilds(buildRecommendations(
       scenario.id, scenario.revision, scenario.scenario, await store.getCatalog(), await store.getQuotes(), false,
-      catalogUpdates.status.catalogVersion, await refreshCompatiblePredictions()), await store.listComponentBuilds());
+      catalogUpdates.status.catalogVersion, await refreshCompatiblePredictions(), qwenCertification), await store.listComponentBuilds());
     // Legacy benchmark rows remain readable for database compatibility, but
     // Only the current autonomous local calibration contract can provide
     // purchase-grade evidence; historical contracts remain diagnostic.
@@ -1159,14 +1182,16 @@ export function createApp(
   app.get("/api/calibrations/runtime-status", async (context) => context.json(await effectiveCalibrationRuntimeStatus()));
   app.get("/api/calibrations/environment", async (context) => context.json(await executionEnvironment()));
   app.post("/api/calibrations/environment/refresh", async (context) => {
-    if (calibrationKernel.hasActiveSession()) return context.json({ error: "environment_refresh_blocked_during_calibration" }, 409);
+    if (calibrationKernel.hasActiveSession() || qwenCertification.hasActiveProbe()) {
+      return context.json({ error: "environment_refresh_blocked_during_active_test" }, 409);
+    }
     const refreshed = await executionEnvironment(true);
     calibrationKernel.invalidateRuntimeStatus?.();
     return context.json(refreshed);
   });
   app.post("/api/calibrations/environment/qwen-selection", async (context) => {
-    if (calibrationKernel.hasActiveSession()) {
-      return context.json({ error: "environment_change_blocked_during_calibration" }, 409);
+    if (calibrationKernel.hasActiveSession() || qwenCertification.hasActiveProbe()) {
+      return context.json({ error: "environment_change_blocked_during_active_test" }, 409);
     }
     const request = qwenSelectionRequestSchema.parse(await context.req.json());
     if (request.mode === "manual") {
@@ -1189,8 +1214,41 @@ export function createApp(
     calibrationKernel.invalidateRuntimeStatus?.();
     return context.json(refreshed);
   });
+  app.get("/api/calibrations/environment/qwen-probes", async (context) =>
+    context.json(await store.listQwenModelProbes()));
+  app.post("/api/calibrations/environment/qwen-probes", async (context) => {
+    if (calibrationKernel.hasActiveSession() || catalogUpdates.refreshing) {
+      return context.json({ error: "qwen_probe_blocked_during_calibration_or_catalog_refresh" }, 409);
+    }
+    const request = z.object({ candidateId: z.string().length(24) }).parse(await context.req.json());
+    try {
+      const [environment, hardware] = await Promise.all([
+        executionEnvironment(),
+        calibrationHardwareDetector(),
+      ]);
+      return context.json(await qwenCertification.start(request.candidateId, environment, hardware), 202);
+    } catch (error) {
+      return context.json({ error: safeError(error) }, 409);
+    }
+  });
+  app.get("/api/calibrations/environment/qwen-probes/:id", async (context) => {
+    const id = context.req.param("id");
+    const current = qwenCertification.get(id) ??
+      (await store.listQwenModelProbes()).find((probe) => probe.id === id) ?? null;
+    if (!current) return context.json({ error: "qwen_probe_not_found" }, 404);
+    return context.json(current);
+  });
+  app.post("/api/calibrations/environment/qwen-probes/:id/cancel", async (context) => {
+    try {
+      return context.json(await qwenCertification.cancel(context.req.param("id")), 202);
+    } catch (error) {
+      return context.json({ error: safeError(error) }, 409);
+    }
+  });
   app.post("/api/calibrations/environment/open-link/:id", async (context) => {
-    if (calibrationKernel.hasActiveSession()) return context.json({ error: "external_link_blocked_during_calibration" }, 409);
+    if (calibrationKernel.hasActiveSession() || qwenCertification.hasActiveProbe()) {
+      return context.json({ error: "external_link_blocked_during_active_test" }, 409);
+    }
     const link = dependencyDownloadLink(context.req.param("id"));
     if (!link) return context.json({ error: "dependency_link_not_allowed" }, 404);
     if (!options.desktopBridge?.openExternalUrl) return context.json({ error: "external_link_bridge_unavailable" }, 503);
@@ -1198,7 +1256,9 @@ export function createApp(
     return context.json({ opened: true, linkId: link.id });
   });
   app.post("/api/calibrations/environment/locate/:id", async (context) => {
-    if (calibrationKernel.hasActiveSession()) return context.json({ error: "environment_change_blocked_during_calibration" }, 409);
+    if (calibrationKernel.hasActiveSession() || qwenCertification.hasActiveProbe()) {
+      return context.json({ error: "environment_change_blocked_during_active_test" }, 409);
+    }
     const id = context.req.param("id") as ExecutionEnvironment["components"][number]["id"];
     const selectableIds = new Set<ExecutionEnvironment["components"][number]["id"]>([
       "ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj",
@@ -1228,6 +1288,9 @@ export function createApp(
       (!workloadProfileId || assessment.workloadProfileId === workloadProfileId)));
   });
   app.post("/api/calibration-sessions", async (context) => {
+    if (qwenCertification.hasActiveProbe()) {
+      return context.json({ error: "calibration_blocked_during_qwen_probe" }, 409);
+    }
     const request = calibrationSessionRequestSchema.parse(await context.req.json());
     if (catalogUpdates.refreshing) {
       return context.json({ error: "calibration_blocked_during_catalog_refresh" }, 409);

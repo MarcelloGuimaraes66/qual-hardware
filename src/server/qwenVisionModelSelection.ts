@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { basename, dirname, resolve } from "node:path";
 import type {
   CalibrationHardwarePreflight,
+  QwenModelProbeResult,
   QwenVisionModelCandidate,
   QwenVisionModelFit,
   QwenVisionModelSelection,
 } from "../shared/types.js";
+import { QWEN_VISION_SELECTION_VERSION } from "../shared/types.js";
 
-export const QWEN_VISION_SELECTION_VERSION = "qual-hardware-qwen-vision-selection/1.0.0" as const;
+export { QWEN_VISION_SELECTION_VERSION };
 
 const GIB = 1024 ** 3;
 const MIB = 1024 ** 2;
@@ -26,6 +28,17 @@ export interface QwenVisionSelectionPreference {
   mode: "automatic" | "manual";
   coreModelId?: string | null;
   coreMaxModelId?: string | null;
+}
+
+export interface QwenVisionCertificationContext {
+  contractSha256: string;
+  probes: QwenModelProbeResult[];
+  hardwareSignature?: string;
+  llamaServerSha256?: string | null;
+  backend?: QwenModelProbeResult["backend"];
+  deviceId?: string | null;
+  driverVersion?: string | null;
+  now?: Date;
 }
 
 interface QwenVisionFileDescriptor extends QwenVisionDiscoveredFile {
@@ -76,6 +89,7 @@ export function qwenVisionFileDescriptor(file: QwenVisionDiscoveredFile): QwenVi
   if (!Number.isSafeInteger(file.sizeBytes) || file.sizeBytes <= 0) return null;
   const path = resolve(file.path);
   const fileName = basename(path);
+  if (/-\d{5}-of-\d{5}(?:[-_.]|$)/i.test(fileName)) return null;
   const match = fileName.match(/qwen3[-_.]?vl[-_.]?(\d+(?:\.\d+)?)b(?:[-_.]|$)/i);
   if (!match?.[1]) return null;
   const parameterBillions = Number(match[1]);
@@ -160,32 +174,85 @@ function modelId(modelPath: string, projectorPath: string | null): string {
   return createHash("sha256").update(`${modelPath}\0${projectorPath ?? ""}`).digest("hex").slice(0, 24);
 }
 
+function inventorySignature(model: QwenVisionFileDescriptor, projector: QwenVisionFileDescriptor | null): string {
+  return createHash("sha256").update(JSON.stringify({
+    family: "Qwen3-VL",
+    model: {
+      path: model.path,
+      sizeBytes: model.sizeBytes,
+      modifiedMs: model.modifiedMs ?? null,
+    },
+    projector: projector ? {
+      path: projector.path,
+      sizeBytes: projector.sizeBytes,
+      modifiedMs: projector.modifiedMs ?? null,
+    } : null,
+  })).digest("hex");
+}
+
+function matchingProbe(
+  candidateId: string,
+  candidateInventorySignature: string,
+  context: QwenVisionCertificationContext | undefined,
+): QwenModelProbeResult | null {
+  if (!context) return null;
+  const now = (context.now ?? new Date()).getTime();
+  const latest = context.probes
+    .filter((probe) =>
+      probe.candidateId === candidateId &&
+      probe.inventorySignature === candidateInventorySignature &&
+      probe.contractSha256 === context.contractSha256 &&
+      (!context.hardwareSignature || probe.hardwareSignature === context.hardwareSignature) &&
+      (!context.llamaServerSha256 || probe.llamaServerSha256 === context.llamaServerSha256) &&
+      (!context.backend || probe.backend === context.backend) &&
+      (context.deviceId === undefined || probe.deviceId === context.deviceId) &&
+      (context.driverVersion === undefined || probe.driverVersion === context.driverVersion))
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt))[0] ?? null;
+  if (latest?.status === "passed" &&
+      (latest.expiresAt === null || Date.parse(latest.expiresAt) <= now)) {
+    return { ...latest, status: "stale" };
+  }
+  return latest;
+}
+
 function modelQuality(left: QwenVisionModelCandidate, right: QwenVisionModelCandidate): number {
   return right.parameterBillions - left.parameterBillions ||
     (automaticModelQuantizationRanks[right.quantization] ?? 0) -
       (automaticModelQuantizationRanks[left.quantization] ?? 0) ||
+    projectorRankFromCandidate(right) - projectorRankFromCandidate(left) ||
     right.modelSizeBytes - left.modelSizeBytes ||
     left.modelPath.localeCompare(right.modelPath);
+}
+
+function projectorRankFromCandidate(candidate: QwenVisionModelCandidate): number {
+  if (!candidate.projectorFileName) return -1;
+  const projectorQuantization = quantization(candidate.projectorFileName);
+  if (projectorQuantization === "Q8_0") return 1_000;
+  return quantizationRanks[projectorQuantization] ?? 0;
 }
 
 export function selectQwenVisionModels(
   files: QwenVisionDiscoveredFile[],
   hardware: CalibrationHardwarePreflight,
   preference: QwenVisionSelectionPreference = { mode: "automatic" },
+  certification?: QwenVisionCertificationContext,
 ): QwenVisionModelSelection {
   const descriptors = files.map(qwenVisionFileDescriptor)
     .filter((item): item is QwenVisionFileDescriptor => item !== null);
   const models = descriptors.filter((item) => item.kind === "model");
   const projectors = descriptors.filter((item) => item.kind === "projector");
   const budgets = hardwareBudgets(hardware);
-  const candidates = models.map((model): QwenVisionModelCandidate => {
-    const projector = projectors
+  const candidates = models.flatMap((model): QwenVisionModelCandidate[] => {
+    const matchingProjectors = projectors
       .filter((item) => item.parameterBillions === model.parameterBillions)
       .sort((left, right) =>
         Number(dirname(right.path) === dirname(model.path)) - Number(dirname(left.path) === dirname(model.path)) ||
         projectorRank(right) - projectorRank(left) ||
         left.sizeBytes - right.sizeBytes ||
-        left.path.localeCompare(right.path))[0] ?? null;
+        left.path.localeCompare(right.path));
+    const pairs: Array<QwenVisionFileDescriptor | null> = matchingProjectors.length > 0
+      ? matchingProjectors : [null];
+    return pairs.map((projector): QwenVisionModelCandidate => {
     const estimatedMemoryBytes = runtimeMemoryBytes(model.sizeBytes, projector?.sizeBytes ?? 0);
     const suitability = candidateFit({
       projector,
@@ -194,8 +261,22 @@ export function selectQwenVisionModels(
       hardware,
       budgets,
     });
+    const id = modelId(model.path, projector?.path ?? null);
+    const candidateInventorySignature = inventorySignature(model, projector);
+    const probe = matchingProbe(id, candidateInventorySignature, certification);
+    const probePassed = probe?.status === "passed";
+    const compatible = suitability.compatible && probePassed && probe.resourceProfile !== null;
+    const certificationState = probe?.status === "queued" || probe?.status === "running"
+      ? "testing"
+      : probe?.status === "passed"
+        ? probe.certificationLevel === "approved_revision" ? "approved_revision" : "validated_locally"
+        : probe?.status === "failed" || probe?.status === "cancelled"
+          ? "incompatible"
+          : probe?.status === "stale"
+            ? "outdated"
+            : "not_tested";
     return {
-      id: modelId(model.path, projector?.path ?? null),
+      id,
       family: "Qwen3-VL",
       modelPath: model.path,
       modelFileName: model.fileName,
@@ -206,23 +287,34 @@ export function selectQwenVisionModels(
       parameterBillions: model.parameterBillions,
       quantization: model.quantization,
       estimatedMemoryBytes,
-      ...suitability,
+      fit: suitability.fit,
+      estimatedCompatible: suitability.compatible,
+      compatible,
+      inventorySignature: candidateInventorySignature,
+      certificationState,
+      certificationLevel: probe?.certificationLevel ?? "none",
+      usageGate: compatible ? probe?.usageGate ?? "blocked" : "blocked",
+      probeId: probe?.id ?? null,
+      resourceProfile: compatible ? probe?.resourceProfile ?? null : null,
     };
+    });
   }).sort(modelQuality);
   const compatible = candidates.filter((candidate) => candidate.compatible);
-  const recommendedCore = compatible.filter((candidate) => candidate.parameterBillions <= 2.5)[0] ??
-    [...compatible].sort((left, right) => left.parameterBillions - right.parameterBillions ||
+  const estimatedCompatible = candidates.filter((candidate) => candidate.estimatedCompatible);
+  const recommendedCore = estimatedCompatible.filter((candidate) => candidate.parameterBillions <= 2.5)[0] ??
+    [...estimatedCompatible].sort((left, right) => left.parameterBillions - right.parameterBillions ||
       modelQuality(left, right))[0] ?? null;
-  const recommendedCoreMax = compatible[0] ?? null;
+  const recommendedCoreMax = estimatedCompatible[0] ?? null;
   const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   const manualCore = preference.coreModelId ? candidateById.get(preference.coreModelId) ?? null : null;
   const manualCoreMax = preference.coreMaxModelId ? candidateById.get(preference.coreMaxModelId) ?? null : null;
   const manualValid = preference.mode === "manual" && Boolean(manualCore?.compatible && manualCoreMax?.compatible);
-  const selectedCore = manualValid ? manualCore : recommendedCore;
-  const selectedCoreMax = manualValid ? manualCoreMax : recommendedCoreMax;
+  const selectedCore = manualValid ? manualCore : compatible.find((candidate) => candidate.id === recommendedCore?.id) ?? null;
+  const selectedCoreMax = manualValid ? manualCoreMax : compatible.find((candidate) => candidate.id === recommendedCoreMax?.id) ?? null;
   const warnings = [
     ...(models.length === 0 ? ["qwen3_vl_models_not_found"] : []),
     ...(models.length > 0 && compatible.length === 0 ? ["qwen3_vl_models_incompatible_with_detected_hardware"] : []),
+    ...(estimatedCompatible.length > 0 && compatible.length === 0 ? ["qwen3_vl_functional_probe_required"] : []),
     ...(preference.mode === "manual" && !manualValid ? ["manual_qwen_selection_restored_to_automatic"] : []),
     ...(selectedCore && selectedCoreMax && selectedCore.id === selectedCoreMax.id
       ? ["same_qwen_model_selected_for_core_and_core_max"] : []),
@@ -230,6 +322,7 @@ export function selectQwenVisionModels(
   return {
     schemaVersion: QWEN_VISION_SELECTION_VERSION,
     mode: manualValid ? "manual" : "automatic",
+    certificationContractSha256: certification?.contractSha256 ?? "",
     systemMemoryBudgetBytes: budgets.systemMemoryBudgetBytes,
     acceleratorMemoryBudgetBytes: budgets.acceleratorMemoryBudgetBytes,
     effectiveMemoryBudgetBytes: budgets.effectiveMemoryBudgetBytes,

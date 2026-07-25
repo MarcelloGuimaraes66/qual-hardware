@@ -5,6 +5,7 @@ import { createApp, refreshPredictions } from "../server/app.js";
 import { CatalogUpdateService } from "../server/catalogUpdates.js";
 import { createStore, type PlannerStore } from "../server/store.js";
 import { CalibrationKernelService, type CalibrationWorkerHandle } from "../server/calibrationKernelService.js";
+import { QwenModelCertificationService } from "../server/qwenModelCertification.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -30,6 +31,7 @@ let catalogRefreshDeferred = false;
 let localOrigin = "";
 let shutdownComplete = false;
 let calibrationKernel: CalibrationKernelService | null = null;
+let qwenCertification: QwenModelCertificationService | null = null;
 let desktopLogDirectory = "";
 
 function createCalibrationChildProcess(): CalibrationWorkerHandle {
@@ -124,6 +126,10 @@ async function startLocalApplication(): Promise<string> {
     appVersion: app.getVersion(),
     workerFactory: createCalibrationChildProcess,
   });
+  qwenCertification = new QwenModelCertificationService({
+    resourceRoot: applicationResourceRoot,
+    onUpdate: (result) => store!.saveQwenModelProbe(result),
+  });
   const updates = new CatalogUpdateService(store, {
     remoteUrl: process.env.QUAL_HARDWARE_CATALOG_URL,
     publicKeyPem: process.env.QUAL_HARDWARE_CATALOG_PUBLIC_KEY?.replaceAll("\\n", "\n"),
@@ -190,6 +196,7 @@ async function startLocalApplication(): Promise<string> {
         appVersion: app.getVersion(),
         diagnostics: { databasePath: paths.databaseFile, logDirectory: desktopLogDirectory },
         calibrationKernel: calibrationKernel!,
+        qwenCertificationService: qwenCertification!,
         desktopBridge: {
           async openPath(path: string): Promise<void> {
             const failure = await shell.openPath(path);
@@ -284,6 +291,8 @@ const shutdown = createIdempotentShutdown(async (): Promise<void> => {
   catalogUpdates = null;
   await calibrationKernel?.close();
   calibrationKernel = null;
+  await qwenCertification?.stopAll();
+  qwenCertification = null;
   await store?.close();
   store = null;
 });

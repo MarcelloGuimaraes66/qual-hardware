@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import { access, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { arch, homedir, platform } from "node:os";
-import { basename, delimiter, extname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
   EXECUTION_ENVIRONMENT_VERSION,
@@ -12,8 +12,20 @@ import {
   type DependencyDownloadLink,
   type ExecutionEnvironment,
   type ExecutionEnvironmentComponent,
+  type QwenModelProbeResult,
   type QwenVisionModelCandidate,
 } from "../shared/types.js";
+import {
+  expectedGpuInferenceBackend,
+  parseLlamaGpuDevices,
+  selectLlamaGpuDevice,
+  type CalibrationGpuDevice,
+} from "./calibrationCompute.js";
+import { calibrationHardwareDigest } from "./calibrationHardware.js";
+import {
+  loadApprovedQwen3VlContract,
+  type LoadedQwen3VlContract,
+} from "./qwenModelCertificationRegistry.js";
 import {
   selectQwenVisionModels,
   type QwenVisionDiscoveredFile,
@@ -64,6 +76,32 @@ export async function runtimeStatusFromExecutionEnvironment(
   environment: ExecutionEnvironment,
   legacy: CalibrationRuntimeStatus,
 ): Promise<CalibrationRuntimeStatus> {
+  const candidates = environment.qwenModelSelection?.candidates ?? [];
+  const core = candidates.find((candidate) =>
+    candidate.id === environment.qwenModelSelection?.selectedCoreModelId) ?? null;
+  const coreMax = candidates.find((candidate) =>
+    candidate.id === environment.qwenModelSelection?.selectedCoreMaxModelId) ?? null;
+  const qwenCertified = Boolean(
+    core?.compatible && core.probeId && core.resourceProfile &&
+    coreMax?.compatible && coreMax.probeId && coreMax.resourceProfile,
+  );
+  const qwenCertification = qwenCertified && core?.probeId && core.resourceProfile &&
+    coreMax?.probeId && coreMax.resourceProfile
+    ? {
+        selectionSignature: createHash("sha256").update(JSON.stringify(canonical({
+          contractSha256: environment.qwenModelSelection?.certificationContractSha256 ?? "",
+          core: { id: core.id, inventorySignature: core.inventorySignature, probeId: core.probeId },
+          coreMax: { id: coreMax.id, inventorySignature: coreMax.inventorySignature, probeId: coreMax.probeId },
+          runtimeIdentity: environment.runtimeIdentity,
+        }))).digest("hex"),
+        coreProbeId: core.probeId,
+        coreMaxProbeId: coreMax.probeId,
+        usageGate: core.usageGate === "purchase" && coreMax.usageGate === "purchase"
+          ? "purchase" as const : "planning_only" as const,
+        coreResourceProfile: core.resourceProfile,
+        coreMaxResourceProfile: coreMax.resourceProfile,
+      }
+    : null;
   const discoveredAssets = await Promise.all(environment.components.flatMap((item) => {
     const id = runtimeAssetByComponentId[item.id];
     if (!id) return [];
@@ -89,8 +127,8 @@ export async function runtimeStatusFromExecutionEnvironment(
       : environment.evidenceLevel === "exact_perceptrum" ? "full" : "diagnostic",
     manifestApproved: environment.evidenceLevel === "exact_perceptrum",
     runtimeAssetsVerified: false,
-    readyForQuickTest: environment.supported,
-    readyForFullQualification: environment.evidenceLevel === "exact_perceptrum",
+    readyForQuickTest: environment.supported && qwenCertified,
+    readyForFullQualification: environment.evidenceLevel === "exact_perceptrum" && qwenCertified,
     manifestHash: environment.environmentSignature,
     environmentSignature: environment.environmentSignature,
     environmentEvidenceLevel: environment.evidenceLevel,
@@ -102,11 +140,13 @@ export async function runtimeStatusFromExecutionEnvironment(
       components: environment.components.map(({
         id, name, status, origin, path, version, sha256, selfTest, capabilities,
       }) => ({ id, name, status, origin, path, version, sha256, selfTest, capabilities })),
+      ...(qwenCertification ? { qwenCertification } : {}),
       missingRequiredComponentIds: [...environment.missingRequiredComponentIds],
     },
     assets: [...merged.values()],
     reasons: [...new Set([
       ...environment.warnings,
+      ...(!qwenCertified ? ["qwen3-vl:functional-probe-required"] : []),
       `evidence-level:${environment.evidenceLevel}`,
       ...environment.missingRequiredComponentIds.map((id) => `component:${id}:missing_or_incompatible`),
     ])],
@@ -170,6 +210,100 @@ async function discoverExecutable(name: string, extraCandidates: string[] = []):
     if (path) return path;
   }
   return null;
+}
+
+export interface DiscoveredLlamaServer {
+  path: string;
+  version: string;
+  sha256: string;
+  backend: QwenModelProbeResult["backend"];
+  device: CalibrationGpuDevice | null;
+  devices: CalibrationGpuDevice[];
+  listDevicesOutput: string;
+}
+
+async function executableOutput(
+  path: string,
+  argumentsList: string[],
+  timeoutMs = 4_000,
+): Promise<{ passed: boolean; output: string }> {
+  try {
+    const result = await execFileAsync(path, argumentsList, {
+      timeout: timeoutMs,
+      maxBuffer: VERSION_OUTPUT_LIMIT,
+      windowsHide: true,
+      shell: false,
+      env: { ...process.env, NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" },
+    });
+    return { passed: true, output: `${result.stdout}\n${result.stderr}`.trim() };
+  } catch (error) {
+    const failure = error as { stdout?: string; stderr?: string };
+    return { passed: false, output: `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`.trim() };
+  }
+}
+
+function llamaSearchCandidates(extraCandidates: string[]): string[] {
+  const backendDirectories = ["cuda", "vulkan", "sycl", "rocm", "hip", "metal", "cpu"];
+  const extraDirectories = extraCandidates.flatMap((candidate) => [
+    dirname(resolve(candidate)),
+    dirname(dirname(resolve(candidate))),
+  ]);
+  const searchDirectories = [...new Set([...programSearchDirectories(), ...extraDirectories])];
+  const baseCandidates = searchDirectories.flatMap((directory) =>
+    executableNames("llama-server").map((file) => join(directory, file)));
+  const nestedCandidates = searchDirectories.flatMap((directory) =>
+    backendDirectories.flatMap((backend) =>
+      executableNames("llama-server").map((file) => join(directory, backend, file))));
+  return [...new Set([...extraCandidates, ...baseCandidates, ...nestedCandidates])];
+}
+
+export async function discoverLlamaServer(
+  hardware: CalibrationHardwarePreflight,
+  extraCandidates: string[] = [],
+): Promise<DiscoveredLlamaServer | null> {
+  const expectedBackend = expectedGpuInferenceBackend(hardware, platform());
+  const discoveredPaths = (await Promise.all(llamaSearchCandidates(extraCandidates).map(readableFile)))
+    .filter((item): item is string => item !== null);
+  const candidates: Array<DiscoveredLlamaServer & { rank: number }> = [];
+  for (const path of [...new Set(discoveredPaths)]) {
+    const [versionResult, devicesResult] = await Promise.all([
+      executableOutput(path, ["--version"]),
+      executableOutput(path, ["--list-devices"]),
+    ]);
+    if (!versionResult.passed) continue;
+    const devices = parseLlamaGpuDevices(devicesResult.output);
+    const device = selectLlamaGpuDevice({
+      devices,
+      expectedBackend,
+      gpuModel: hardware.gpuModel,
+    });
+    const firstLine = versionResult.output.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "unknown";
+    const backend = device?.backend ?? "unavailable";
+    const exactGpuBackend = device?.backend === expectedBackend;
+    const acceptedGpuFallback = expectedBackend !== "unavailable" && device !== null;
+    const explicitRank = extraCandidates.some((candidate) => resolve(candidate).toLowerCase() === path.toLowerCase()) ? 20 : 0;
+    candidates.push({
+      path,
+      version: firstLine.slice(0, 240),
+      sha256: await sha256Path(path),
+      backend,
+      device,
+      devices,
+      listDevicesOutput: devicesResult.output,
+      rank: exactGpuBackend ? 1_000 + explicitRank
+        : acceptedGpuFallback ? 700 + explicitRank
+          : expectedBackend === "unavailable" ? 300 + explicitRank
+            : 10 + explicitRank,
+    });
+  }
+  candidates.sort((left, right) =>
+    right.rank - left.rank ||
+    Number(right.device !== null) - Number(left.device !== null) ||
+    left.path.localeCompare(right.path));
+  const selected = candidates[0];
+  if (!selected) return null;
+  const { rank: _rank, ...result } = selected;
+  return result;
 }
 
 async function versionProbe(
@@ -343,29 +477,45 @@ function canonical(value: unknown): unknown {
 export async function detectExecutionEnvironment(options: {
   hardware: CalibrationHardwarePreflight;
   appVersion: string;
+  resourceRoot?: string;
   nativeBenchmarkPath?: string | null;
   selectedPaths?: Partial<Record<ExecutionEnvironmentComponent["id"], string>>;
   qwenSelection?: QwenVisionSelectionPreference;
+  qwenProbes?: QwenModelProbeResult[];
+  certificationContract?: LoadedQwen3VlContract | null;
 }): Promise<ExecutionEnvironment> {
   const hostPlatform = platform();
   const hostArchitecture = arch();
   const supported = supportedTarget(hostPlatform, hostArchitecture);
-  const [ffmpegPath, ffprobePath, llamaPath, modelFiles] = await Promise.all([
+  const llamaExplicitCandidates = [
+    ...(options.selectedPaths?.["llama-server"] ? [options.selectedPaths["llama-server"]] : []),
+    ...(platform() === "win32" ? [
+      "C:\\Program Files (x86)\\Perceptrum\\llm\\bin\\llama-server.exe",
+      "C:\\Program Files (x86)\\Drakon\\llm\\bin\\llama-server.exe",
+    ] : []),
+  ];
+  const [ffmpegPath, ffprobePath, llamaDiscovery, modelFiles, loadedContract] = await Promise.all([
     discoverExecutable("ffmpeg", options.selectedPaths?.ffmpeg ? [options.selectedPaths.ffmpeg] : []),
     discoverExecutable("ffprobe", options.selectedPaths?.ffprobe ? [options.selectedPaths.ffprobe] : []),
-    discoverExecutable("llama-server", [
-      ...(options.selectedPaths?.["llama-server"] ? [options.selectedPaths["llama-server"]] : []),
-      ...(platform() === "win32" ? [
-        "C:\\Program Files (x86)\\Perceptrum\\llm\\bin\\llama-server.exe",
-        "C:\\Program Files (x86)\\Drakon\\llm\\bin\\llama-server.exe",
-      ] : []),
-    ]),
+    discoverLlamaServer(options.hardware, llamaExplicitCandidates),
     discoverModels([
       ...(["qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj"] as const)
         .map((id) => options.selectedPaths?.[id]).filter((item): item is string => Boolean(item)),
     ]),
+    options.certificationContract === undefined
+      ? loadApprovedQwen3VlContract(options.resourceRoot ?? process.cwd()).catch(() => null)
+      : Promise.resolve(options.certificationContract),
   ]);
-  const qwenModelSelection = selectQwenVisionModels(modelFiles, options.hardware, options.qwenSelection);
+  const hardwareSignature = calibrationHardwareDigest(options.hardware);
+  const qwenModelSelection = selectQwenVisionModels(modelFiles, options.hardware, options.qwenSelection, {
+    contractSha256: loadedContract?.sha256 ?? "",
+    probes: options.qwenProbes ?? [],
+    hardwareSignature,
+    llamaServerSha256: llamaDiscovery?.sha256 ?? null,
+    backend: llamaDiscovery?.backend ?? "unavailable",
+    deviceId: llamaDiscovery?.device?.id ?? null,
+    driverVersion: options.hardware.gpuDriver || null,
+  });
   const [ffmpeg, ffprobe, llama] = await Promise.all([
     programComponent({
       id: "ffmpeg", name: "FFmpeg", purpose: "Decodificação, encode e concorrência de vídeo.",
@@ -383,7 +533,14 @@ export async function detectExecutionEnvironment(options: {
     }),
     programComponent({
       id: "llama-server", name: "llama.cpp / llama-server", purpose: "Inferência local equivalente ao AiQ.",
-      path: llamaPath, argumentsList: ["--version"], capabilities: ["local_inference"],
+      path: llamaDiscovery?.path ?? null, argumentsList: ["--version"], capabilities: [
+        "local_inference",
+        `backend:${llamaDiscovery?.backend ?? "unavailable"}`,
+        ...(llamaDiscovery?.device ? [
+          `device:${llamaDiscovery.device.id}`,
+          `device-name:${llamaDiscovery.device.name}`,
+        ] : []),
+      ],
       impact: "A inferência real será substituída por um proxy computacional.",
       instruction: "Instale o llama.cpp e clique em Verificar novamente.",
       downloadLinkId: "llama-install",
@@ -412,12 +569,15 @@ export async function detectExecutionEnvironment(options: {
     }
     const modelInformation = modelFiles.find((file) => resolve(file.path) === candidate.modelPath);
     const projectorInformation = modelFiles.find((file) => resolve(file.path) === candidate.projectorPath);
-    const modelHash = modelInformation
+    const certifiedProbe = candidate.probeId
+      ? (options.qwenProbes ?? []).find((probe) => probe.id === candidate.probeId && probe.status === "passed") ?? null
+      : null;
+    const modelHash = certifiedProbe?.modelSha256 ?? (modelInformation
       ? scheduledHash(candidate.modelPath, modelInformation.sizeBytes, modelInformation.modifiedMs ?? 0)
-      : null;
-    const projectorHash = projectorInformation
+      : null);
+    const projectorHash = certifiedProbe?.projectorSha256 ?? (projectorInformation
       ? scheduledHash(candidate.projectorPath, projectorInformation.sizeBytes, projectorInformation.modifiedMs ?? 0)
-      : null;
+      : null);
     const origin = candidate.modelPath.toLowerCase().includes("perceptrum") ? "perceptrum" : "known_installation";
     return [
       component({
@@ -429,13 +589,19 @@ export async function detectExecutionEnvironment(options: {
         path: candidate.modelPath,
         version: candidate.modelFileName,
         sha256: modelHash,
-        selfTest: "passed",
+        selfTest: candidate.compatible ? "passed"
+          : candidate.certificationState === "incompatible" ? "failed" : "not_run",
         capabilities: ["gguf", "vision_language", `parameters:${candidate.parameterBillions}b`,
-          `selection:${qwenModelSelection.mode}`],
-        impact: modelHash ? "Modelo selecionado e verificado." : "Modelo selecionado; SHA-256 está sendo calculado em segundo plano.",
-        instruction: "Use a lista de modelos para manter a seleção automática ou escolher outro par compatível.",
+          `selection:${qwenModelSelection.mode}`, `certification:${candidate.certificationState}`,
+          `usage:${candidate.usageGate}`],
+        impact: candidate.compatible
+          ? "Modelo carregado e aprovado em inferência visual local."
+          : "Arquivo localizado, mas ainda não aprovado por inferência visual real.",
+        instruction: candidate.compatible
+          ? "Use a lista de modelos para manter a seleção automática ou escolher outro par validado."
+          : "Execute Testar modelo antes de selecionar este arquivo.",
         downloadLinkId: link,
-        diagnosticOnly: modelHash === null,
+        diagnosticOnly: modelHash === null || candidate.usageGate !== "purchase",
       }),
       component({
         id: projectorId,
@@ -446,13 +612,17 @@ export async function detectExecutionEnvironment(options: {
         path: candidate.projectorPath,
         version: candidate.projectorFileName,
         sha256: projectorHash,
-        selfTest: "passed",
+        selfTest: candidate.compatible ? "passed"
+          : candidate.certificationState === "incompatible" ? "failed" : "not_run",
         capabilities: ["gguf", "vision_projection", `parameters:${candidate.parameterBillions}b`,
-          `selection:${qwenModelSelection.mode}`],
-        impact: projectorHash ? "Projetor visual selecionado e verificado." : "Projetor selecionado; SHA-256 está sendo calculado em segundo plano.",
-        instruction: "Nenhuma ação necessária.",
+          `selection:${qwenModelSelection.mode}`, `certification:${candidate.certificationState}`,
+          `usage:${candidate.usageGate}`],
+        impact: candidate.compatible
+          ? "Projetor visual carregado com o modelo e aprovado localmente."
+          : "Arquivo localizado, mas o pareamento modelo + projetor ainda não foi aprovado.",
+        instruction: candidate.compatible ? "Nenhuma ação necessária." : "Execute Testar modelo para validar o par completo.",
         downloadLinkId: link,
-        diagnosticOnly: projectorHash === null,
+        diagnosticOnly: projectorHash === null || candidate.usageGate !== "purchase",
       }),
     ];
   };
@@ -535,6 +705,7 @@ export async function detectExecutionEnvironment(options: {
     platform: hostPlatform,
     architecture: hostArchitecture,
     hardware: options.hardware,
+    certificationContractSha256: loadedContract?.sha256 ?? null,
     components: signaturePayload,
     qwenModelSelection,
   }))).digest("hex");
@@ -547,14 +718,25 @@ export async function detectExecutionEnvironment(options: {
     readiness: !supported ? "unsupported" : compatibleLocalStack ? "ready_full" : "ready_diagnostic",
     evidenceLevel,
     environmentSignature,
+    runtimeIdentity: {
+      llamaServerPath: llamaDiscovery?.path ?? null,
+      llamaServerSha256: llamaDiscovery?.sha256 ?? null,
+      llamaServerVersion: llamaDiscovery?.version ?? null,
+      backend: llamaDiscovery?.backend ?? "unavailable",
+      deviceId: llamaDiscovery?.device?.id ?? null,
+      deviceName: llamaDiscovery?.device?.name ?? null,
+      driverVersion: options.hardware.gpuDriver || null,
+    },
     components,
     qwenModelSelection,
     missingRequiredComponentIds,
     warnings: [
       ...(compatibleLocalStack ? [] : ["O benchmark nativo permite diagnóstico e planejamento, mas o relatório não representa homologação comercial."]),
+      ...(!loadedContract ? ["O contrato embarcado de revisões Qwen3-VL não pôde ser validado; todos os modelos permanecerão bloqueados."] : []),
       ...qwenModelSelection.warnings.map((warning) => ({
         qwen3_vl_models_not_found: "Nenhum modelo Qwen3-VL foi localizado. Modelos Qwen apenas textuais não são aceitos.",
         qwen3_vl_models_incompatible_with_detected_hardware: "Os modelos Qwen3-VL localizados não cabem com segurança na memória detectada ou estão sem mmproj.",
+        qwen3_vl_functional_probe_required: "Os modelos localizados precisam passar no ensaio visual real antes da seleção.",
         manual_qwen_selection_restored_to_automatic: "A escolha manual de Qwen não está mais disponível; a seleção automática foi restaurada.",
         same_qwen_model_selected_for_core_and_core_max: "O mesmo Qwen3-VL atenderá Core e Core Max porque não há dois pares compatíveis disponíveis.",
       })[warning] ?? warning),

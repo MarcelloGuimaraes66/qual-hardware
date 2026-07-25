@@ -3,7 +3,12 @@ import { buildRecommendations, calculateScenarioDemand, CapacityError, normalize
 import { HARDWARE_CATALOG, SEED_PRICE_QUOTES } from "../src/engine/catalog.js";
 import { buildCalibrationWorkloadProfile } from "../src/engine/calibrationProfile.js";
 import { capacityScenarioSchema, createDefaultAgent, createDefaultScenario } from "../src/shared/schemas.js";
-import { CAPACITY_PREDICTION_VERSION, type CapacityPrediction, type PriceQuote } from "../src/shared/types.js";
+import {
+  CAPACITY_PREDICTION_VERSION,
+  type CapacityPrediction,
+  type PriceQuote,
+  type QwenStackCertification,
+} from "../src/shared/types.js";
 
 describe("capacity engine", () => {
   it("defaults platform fields that are absent from legacy saved scenarios", () => {
@@ -347,5 +352,119 @@ describe("capacity engine", () => {
     expect(recommendations.every((item) => item.primary.hardware.operatingSystemFamily === "macos")).toBe(true);
     expect(new Set(recommendations.map((item) => item.primary.hardware.id)).size).toBe(3);
     expect(recommendations.every((item) => item.primary.warnings.includes("macos_local_aiq_and_cpu_rtsp_path_require_matching_calibration"))).toBe(true);
+  });
+
+  it("uses the measured Qwen base and slot growth instead of the historical 5.12 GiB per slot", () => {
+    const scenario = createDefaultScenario(32);
+    const profile = {
+      staticEstimateBytes: 2 * 1024 ** 3,
+      peakRamParallel1Bytes: 1024 ** 3,
+      peakVramParallel1Bytes: 2 * 1024 ** 3,
+      peakRamParallel2Bytes: 1.1 * 1024 ** 3,
+      peakVramParallel2Bytes: 2.25 * 1024 ** 3,
+      baseRequirementBytes: 2 * 1024 ** 3,
+      incrementalSlotBytes: 0.25 * 1024 ** 3,
+      maxValidatedParallelism: 2,
+      safeAvailableMemoryFraction: 0.75 as const,
+      sequentialLatencyMs: [100, 110, 120],
+      concurrentLatencyMs: [180, 190],
+    };
+    const certification: QwenStackCertification = {
+      selectionSignature: "a".repeat(64),
+      coreProbeId: "00000000-0000-4000-8000-000000000401",
+      coreMaxProbeId: "00000000-0000-4000-8000-000000000402",
+      usageGate: "purchase",
+      coreResourceProfile: profile,
+      coreMaxResourceProfile: profile,
+    };
+    const conservative = calculateScenarioDemand(scenario);
+    const measured = calculateScenarioDemand(scenario, certification);
+    expect(measured.aggregate.gpuVramGb).toBeLessThan(conservative.aggregate.gpuVramGb);
+    expect(measured.perNode.gpuVramGb).toBe(2);
+    expect(measured.maximumValidatedParallelism).toBe(2);
+  });
+
+  it("deduplicates one shared Core/Core Max stack but adds distinct certified stacks", () => {
+    const scenario = createDefaultScenario(8);
+    const coreMax = createDefaultAgent();
+    coreMax.model = "aiq-3.7-max";
+    scenario.cameraGroups[0]!.agents.push(coreMax);
+    const profile = {
+      staticEstimateBytes: 2 * 1024 ** 3,
+      peakRamParallel1Bytes: null,
+      peakVramParallel1Bytes: 2 * 1024 ** 3,
+      peakRamParallel2Bytes: null,
+      peakVramParallel2Bytes: 2.25 * 1024 ** 3,
+      baseRequirementBytes: 2 * 1024 ** 3,
+      incrementalSlotBytes: 0.25 * 1024 ** 3,
+      maxValidatedParallelism: 2,
+      safeAvailableMemoryFraction: 0.75 as const,
+      sequentialLatencyMs: [100, 110, 120],
+      concurrentLatencyMs: [180, 190],
+    };
+    const sharedProbeId = "00000000-0000-4000-8000-000000000421";
+    const shared = calculateScenarioDemand(scenario, {
+      selectionSignature: "c".repeat(64),
+      coreProbeId: sharedProbeId,
+      coreMaxProbeId: sharedProbeId,
+      usageGate: "purchase",
+      coreResourceProfile: profile,
+      coreMaxResourceProfile: profile,
+    });
+    expect(shared.perNode.gpuVramGb).toBe(2);
+    expect(shared.maximumValidatedParallelism).toBe(2);
+
+    const distinct = calculateScenarioDemand(scenario, {
+      selectionSignature: "d".repeat(64),
+      coreProbeId: sharedProbeId,
+      coreMaxProbeId: "00000000-0000-4000-8000-000000000422",
+      usageGate: "purchase",
+      coreResourceProfile: profile,
+      coreMaxResourceProfile: profile,
+    });
+    expect(distinct.perNode.gpuVramGb).toBe(4);
+    expect(distinct.maximumValidatedParallelism).toBe(4);
+  });
+
+  it("eliminates hardware when the Qwen base exceeds 75 percent of available VRAM", () => {
+    const scenario = createDefaultScenario(4);
+    scenario.constraints.maxNodes = 4;
+    const profile = {
+      staticEstimateBytes: 3.5 * 1024 ** 3,
+      peakRamParallel1Bytes: null,
+      peakVramParallel1Bytes: 3.5 * 1024 ** 3,
+      peakRamParallel2Bytes: null,
+      peakVramParallel2Bytes: 3.75 * 1024 ** 3,
+      baseRequirementBytes: 3.5 * 1024 ** 3,
+      incrementalSlotBytes: 0.25 * 1024 ** 3,
+      maxValidatedParallelism: 2,
+      safeAvailableMemoryFraction: 0.75 as const,
+      sequentialLatencyMs: [100, 110, 120],
+      concurrentLatencyMs: [180, 190],
+    };
+    const certification: QwenStackCertification = {
+      selectionSignature: "b".repeat(64),
+      coreProbeId: "00000000-0000-4000-8000-000000000411",
+      coreMaxProbeId: "00000000-0000-4000-8000-000000000412",
+      usageGate: "purchase",
+      coreResourceProfile: profile,
+      coreMaxResourceProfile: profile,
+    };
+    const lowVram = {
+      ...structuredClone(HARDWARE_CATALOG.find((item) => item.gpuVramGbTotal >= 8)!),
+      id: "fixture-low-vram",
+      gpuVramGbTotal: 4,
+    };
+    expect(() => buildRecommendations(
+      "00000000-0000-4000-8000-000000000410",
+      1,
+      scenario,
+      [lowVram],
+      [],
+      false,
+      undefined,
+      [],
+      certification,
+    )).toThrow(CapacityError);
   });
 });

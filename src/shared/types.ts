@@ -13,7 +13,8 @@ export const LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/2.0.0"
 export const INITIAL_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/3.0.0" as const;
 export const LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/4.0.0" as const;
 export const PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/5.0.0" as const;
-export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/6.0.0" as const;
+export const PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/6.0.0" as const;
+export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/7.0.0" as const;
 export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/4.0.0" as const;
 export const PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT = "d918faa0ecd6a9906b711039e5d89f78e0536c44" as const;
 export const PERCEPTRUM_AUTHORITY_CONTRACT_VERSION = "perceptrum-authority-contract/2.0.0" as const;
@@ -48,7 +49,11 @@ export const CALIBRATION_COMPUTE_EVIDENCE_VERSION = "qual-hardware-calibration-c
 export const CALIBRATION_RUNTIME_MANIFEST_VERSION = "qual-hardware-calibration-runtime-manifest/3.0.0" as const;
 export const FLEET_PLAN_VERSION = "qual-hardware-fleet-plan/1.0.0" as const;
 export const CALIBRATION_DIAGNOSTIC_REPORT_VERSION = "qual-hardware-calibration-diagnostic-report/1.0.0" as const;
-export const EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/1.0.0" as const;
+export const PREVIOUS_EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/1.0.0" as const;
+export const EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/2.0.0" as const;
+export const QWEN_VISION_SELECTION_VERSION = "qual-hardware-qwen-vision-selection/2.0.0" as const;
+export const QWEN_MODEL_CERTIFICATION_CONTRACT_VERSION = "qual-hardware-qwen3-vl-approved-revisions/1.0.0" as const;
+export const QWEN_MODEL_PROBE_VERSION = "qual-hardware-qwen-model-probe/1.0.0" as const;
 export const NATIVE_BENCHMARK_VERSION = "qual-hardware-native-benchmark/1.0.0" as const;
 export const MAX_PROJECT_CAMERAS = 1_000_000 as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
@@ -128,7 +133,7 @@ export type CalibrationCleanupState = "not_started" | "pending" | "cleaning" | "
 export type CalibrationTemporaryFileState = "active" | "reclaimable" | "deleted" | "retained";
 export type CalibrationDeviceTrust = "pending" | "trusted" | "revoked";
 export type CalibrationComputeMode = "cpu_only" | "gpu_accelerated";
-export type CalibrationGpuInferenceBackend = "cuda" | "metal" | "vulkan" | "rocm" | "unavailable";
+export type CalibrationGpuInferenceBackend = "cuda" | "metal" | "vulkan" | "rocm" | "sycl" | "unavailable";
 export type CalibrationGpuMediaBackend =
   | "cuda_nvenc"
   | "videotoolbox"
@@ -647,6 +652,7 @@ export interface CapacityRecommendation {
   alternatives: RecommendationAlternative[];
   assumptions: string[];
   evidence: string[];
+  qwenCertification?: QwenStackCertification;
 }
 
 export interface HardwareFingerprint {
@@ -1004,6 +1010,7 @@ export interface CalibrationDiagnosticReportModel {
 export interface LocalCalibrationRun {
   schemaVersion:
     | typeof AUTONOMOUS_LOCAL_CALIBRATION_VERSION
+    | typeof PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof INITIAL_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
@@ -1104,6 +1111,7 @@ export interface LocalCalibrationRun {
   runtimeManifestHash?: string;
   environmentSignature?: string;
   environmentProvenance?: CalibrationEnvironmentProvenance;
+  qwenCertification?: QwenStackCertification;
   runtimeProvenance?: {
     platform: NodeJS.Platform;
     architecture: string;
@@ -1647,6 +1655,86 @@ export type QwenVisionModelFit =
   | "compute_limited"
   | "missing_projector";
 
+export type QwenModelCertificationState =
+  | "not_tested"
+  | "testing"
+  | "validated_locally"
+  | "approved_revision"
+  | "incompatible"
+  | "outdated";
+
+export type QwenModelCertificationLevel = "approved_revision" | "unknown_revision" | "none";
+export type QwenModelUsageGate = "purchase" | "planning_only" | "blocked";
+export type QwenModelProbeStatus = "queued" | "running" | "passed" | "failed" | "cancelled" | "stale";
+
+export interface QwenRuntimeResourceProfile {
+  staticEstimateBytes: number;
+  peakRamParallel1Bytes: number | null;
+  peakVramParallel1Bytes: number | null;
+  peakRamParallel2Bytes: number | null;
+  peakVramParallel2Bytes: number | null;
+  baseRequirementBytes: number;
+  incrementalSlotBytes: number;
+  maxValidatedParallelism: number;
+  safeAvailableMemoryFraction: 0.75;
+  sequentialLatencyMs: number[];
+  concurrentLatencyMs: number[];
+}
+
+export interface QwenModelProbeChallenge {
+  id: string;
+  expectedToken: string;
+  actualText: string;
+  latencyMs: number;
+  passed: boolean;
+}
+
+export interface QwenModelProbeResult {
+  schemaVersion: typeof QWEN_MODEL_PROBE_VERSION;
+  id: string;
+  candidateId: string;
+  inventorySignature: string;
+  stackSignature: string;
+  status: QwenModelProbeStatus;
+  certificationLevel: QwenModelCertificationLevel;
+  usageGate: QwenModelUsageGate;
+  approvedRevisionId: string | null;
+  contractSha256: string;
+  modelSha256: string;
+  projectorSha256: string;
+  llamaServerSha256: string;
+  llamaServerVersion: string;
+  llamaServerPath: string;
+  backend: CalibrationGpuInferenceBackend;
+  deviceId: string | null;
+  deviceName: string | null;
+  hardwareSignature: string;
+  driverVersion: string | null;
+  platform: NodeJS.Platform;
+  architecture: string;
+  challenges: QwenModelProbeChallenge[];
+  concurrency: {
+    attempted: boolean;
+    passed: boolean;
+    maxValidatedParallelism: number;
+  };
+  resourceProfile: QwenRuntimeResourceProfile | null;
+  failureCode: string | null;
+  message: string;
+  startedAt: string;
+  completedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface QwenStackCertification {
+  selectionSignature: string;
+  coreProbeId: string;
+  coreMaxProbeId: string;
+  usageGate: QwenModelUsageGate;
+  coreResourceProfile: QwenRuntimeResourceProfile;
+  coreMaxResourceProfile: QwenRuntimeResourceProfile;
+}
+
 export interface QwenVisionModelCandidate {
   id: string;
   family: "Qwen3-VL";
@@ -1660,12 +1748,20 @@ export interface QwenVisionModelCandidate {
   quantization: string;
   estimatedMemoryBytes: number;
   fit: QwenVisionModelFit;
+  estimatedCompatible: boolean;
   compatible: boolean;
+  inventorySignature: string;
+  certificationState: QwenModelCertificationState;
+  certificationLevel: QwenModelCertificationLevel;
+  usageGate: QwenModelUsageGate;
+  probeId: string | null;
+  resourceProfile: QwenRuntimeResourceProfile | null;
 }
 
 export interface QwenVisionModelSelection {
-  schemaVersion: "qual-hardware-qwen-vision-selection/1.0.0";
+  schemaVersion: typeof QWEN_VISION_SELECTION_VERSION;
   mode: "automatic" | "manual";
+  certificationContractSha256: string;
   systemMemoryBudgetBytes: number;
   acceleratorMemoryBudgetBytes: number | null;
   effectiveMemoryBudgetBytes: number;
@@ -1678,7 +1774,7 @@ export interface QwenVisionModelSelection {
 }
 
 export interface ExecutionEnvironment {
-  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION;
+  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION | typeof PREVIOUS_EXECUTION_ENVIRONMENT_VERSION;
   detectedAt: string;
   platform: NodeJS.Platform;
   architecture: string;
@@ -1686,6 +1782,15 @@ export interface ExecutionEnvironment {
   readiness: "ready_full" | "ready_diagnostic" | "unsupported";
   evidenceLevel: CalibrationEvidenceLevel;
   environmentSignature: string;
+  runtimeIdentity?: {
+    llamaServerPath: string | null;
+    llamaServerSha256: string | null;
+    llamaServerVersion: string | null;
+    backend: CalibrationGpuInferenceBackend;
+    deviceId: string | null;
+    deviceName: string | null;
+    driverVersion: string | null;
+  };
   components: ExecutionEnvironmentComponent[];
   qwenModelSelection?: QwenVisionModelSelection;
   missingRequiredComponentIds: ExecutionEnvironmentComponent["id"][];
@@ -1694,12 +1799,13 @@ export interface ExecutionEnvironment {
 }
 
 export interface CalibrationEnvironmentProvenance {
-  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION;
+  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION | typeof PREVIOUS_EXECUTION_ENVIRONMENT_VERSION;
   detectedAt: string;
   readiness: ExecutionEnvironment["readiness"];
   evidenceLevel: CalibrationEvidenceLevel;
   components: Array<Pick<ExecutionEnvironmentComponent,
     "id" | "name" | "status" | "origin" | "path" | "version" | "sha256" | "selfTest" | "capabilities">>;
+  qwenCertification?: QwenStackCertification;
   missingRequiredComponentIds: ExecutionEnvironmentComponent["id"][];
 }
 
@@ -2179,6 +2285,7 @@ export interface CapacityPrediction {
   targetBuildHash?: string | null;
   kernelVersion?: string | null;
   runtimeManifestHash?: string | null;
+  qwenCertification?: QwenStackCertification;
   generatedAt: string;
   status: CalibrationStatus;
   procurementEligibility: ProcurementEligibility;

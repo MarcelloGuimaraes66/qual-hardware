@@ -922,5 +922,35 @@ CREATE TABLE IF NOT EXISTS calibration_environment_warnings (
   PRIMARY KEY(environment_signature,warning)
 ) STRICT;
 
-PRAGMA user_version = 12;
+-- v13 stores fail-closed Qwen3-VL functional probes and their measured
+-- resource profiles. Existing scenarios, recommendations and calibration
+-- evidence remain unchanged.
+CREATE TABLE IF NOT EXISTS qwen_model_probes (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL,
+  inventory_signature TEXT NOT NULL CHECK (length(inventory_signature) = 64),
+  stack_signature TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued','running','passed','failed','cancelled','stale')),
+  certification_level TEXT NOT NULL CHECK (certification_level IN ('approved_revision','unknown_revision','none')),
+  usage_gate TEXT NOT NULL CHECK (usage_gate IN ('purchase','planning_only','blocked')),
+  contract_sha256 TEXT NOT NULL CHECK (length(contract_sha256) = 64),
+  hardware_signature TEXT NOT NULL CHECK (length(hardware_signature) = 64),
+  backend TEXT NOT NULL CHECK (backend IN ('cuda','metal','vulkan','rocm','sycl','unavailable')),
+  result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  expires_at TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS qwen_model_probes_inventory_idx
+  ON qwen_model_probes(candidate_id,inventory_signature,hardware_signature,started_at DESC);
+CREATE INDEX IF NOT EXISTS qwen_model_probes_stack_idx
+  ON qwen_model_probes(stack_signature,status,expires_at);
+
+CREATE TABLE IF NOT EXISTS qwen_model_resource_profiles (
+  probe_id TEXT PRIMARY KEY REFERENCES qwen_model_probes(id) ON DELETE CASCADE,
+  profile_json TEXT NOT NULL CHECK (json_valid(profile_json)),
+  recorded_at TEXT NOT NULL
+) STRICT;
+
+PRAGMA user_version = 13;
 COMMIT;

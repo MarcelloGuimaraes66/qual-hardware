@@ -1167,6 +1167,8 @@ async function run(): Promise<void> {
     environmentSignature: input.runtimeStatus.environmentSignature ?? input.runtimeStatus.manifestHash,
     ...(input.runtimeStatus.environmentProvenance
       ? { environmentProvenance: structuredClone(input.runtimeStatus.environmentProvenance) } : {}),
+    ...(input.runtimeStatus.environmentProvenance?.qwenCertification
+      ? { qwenCertification: structuredClone(input.runtimeStatus.environmentProvenance.qwenCertification) } : {}),
     runtimeProvenance: {
       platform: input.runtimeStatus.platform,
       architecture: input.runtimeStatus.architecture,

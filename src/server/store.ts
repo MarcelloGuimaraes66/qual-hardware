@@ -39,6 +39,7 @@ import type {
   LocalCalibrationRun,
   PriceQuote,
   PublicBenchmarkObservation,
+  QwenModelProbeResult,
   SignedCatalogBundle,
   SourceFetchRun,
   SourceObservation,
@@ -71,6 +72,8 @@ export interface PlannerStore {
   getRecommendation(id: string): Promise<CapacityRecommendation | null>;
   saveCalibrationRun(run: LocalCalibrationRun): Promise<void>;
   saveExecutionEnvironment(environment: ExecutionEnvironment): Promise<void>;
+  saveQwenModelProbe(result: QwenModelProbeResult): Promise<void>;
+  listQwenModelProbes(): Promise<QwenModelProbeResult[]>;
   commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void>;
   listCalibrationRuns(): Promise<LocalCalibrationRun[]>;
   saveCalibrationDiagnosticReport(input: {
@@ -170,6 +173,7 @@ export class MemoryPlannerStore implements PlannerStore {
   private recommendations = new Map<string, CapacityRecommendation>();
   private calibrationRuns = new Map<string, LocalCalibrationRun>();
   private executionEnvironments = new Map<string, ExecutionEnvironment>();
+  private qwenModelProbes = new Map<string, QwenModelProbeResult>();
   private calibrationDiagnosticReports = new Map<string, unknown>();
   private calibrationSessions = new Map<string, CalibrationSessionRecord>();
   private calibrationCheckpoints = new Map<string, CalibrationCheckpoint[]>();
@@ -237,6 +241,13 @@ export class MemoryPlannerStore implements PlannerStore {
   }
   async saveExecutionEnvironment(environment: ExecutionEnvironment): Promise<void> {
     this.executionEnvironments.set(environment.environmentSignature, structuredClone(environment));
+  }
+  async saveQwenModelProbe(result: QwenModelProbeResult): Promise<void> {
+    this.qwenModelProbes.set(result.id, structuredClone(result));
+  }
+  async listQwenModelProbes(): Promise<QwenModelProbeResult[]> {
+    return [...this.qwenModelProbes.values()].map((result) => structuredClone(result))
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   }
   async commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void> {
     await this.saveCalibrationRun(run);
@@ -1122,6 +1133,35 @@ export class SqlitePlannerStore implements PlannerStore {
         insertWarning.run(environment.environmentSignature, warning, environment.detectedAt);
       }
     }, "IMMEDIATE");
+  }
+  async saveQwenModelProbe(result: QwenModelProbeResult): Promise<void> {
+    this.inTransaction(() => {
+      this.database.prepare(
+        `INSERT INTO qwen_model_probes(
+          id,candidate_id,inventory_signature,stack_signature,status,certification_level,
+          usage_gate,contract_sha256,hardware_signature,backend,result_json,started_at,
+          completed_at,expires_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+          stack_signature=excluded.stack_signature,status=excluded.status,
+          certification_level=excluded.certification_level,usage_gate=excluded.usage_gate,
+          result_json=excluded.result_json,completed_at=excluded.completed_at,expires_at=excluded.expires_at`,
+      ).run(result.id, result.candidateId, result.inventorySignature, result.stackSignature,
+        result.status, result.certificationLevel, result.usageGate, result.contractSha256,
+        result.hardwareSignature, result.backend, JSON.stringify(result), result.startedAt,
+        result.completedAt, result.expiresAt);
+      this.database.prepare("DELETE FROM qwen_model_resource_profiles WHERE probe_id=?").run(result.id);
+      if (result.resourceProfile) {
+        this.database.prepare(
+          "INSERT INTO qwen_model_resource_profiles(probe_id,profile_json,recorded_at) VALUES(?,?,?)",
+        ).run(result.id, JSON.stringify(result.resourceProfile), result.completedAt ?? result.startedAt);
+      }
+    }, "IMMEDIATE");
+  }
+  async listQwenModelProbes(): Promise<QwenModelProbeResult[]> {
+    return rows(this.database.prepare(
+      "SELECT result_json FROM qwen_model_probes ORDER BY started_at DESC",
+    ).all()).map((row) => parseJson<QwenModelProbeResult>(row.result_json));
   }
   async commitCalibrationRun(run: LocalCalibrationRun, predictions: CapacityPrediction[]): Promise<void> {
     if (!this.calibrationExtensionReady) throw new Error("calibration_extension_unavailable");

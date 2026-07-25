@@ -92,6 +92,9 @@ function calibrationRunEligible(
     (run.mode === "qualification" || run.mode === "full") && run.executionMode === "production_pipeline" &&
     run.developmentOnly !== true &&
     run.runtimeProvenance?.manifestApproved === true &&
+    run.qwenCertification?.usageGate === "purchase" &&
+    run.qwenCertification.selectionSignature ===
+      run.environmentProvenance?.qwenCertification?.selectionSignature &&
     pipelineProof?.complete === true &&
     pipelineProof.jobSchedulerExecuted === true &&
     pipelineProof.jobRuntimeExecuted === true &&
@@ -404,6 +407,7 @@ export function buildCapacityPredictions(
         targetBuildHash: exact.fingerprint.perceptrumBuildHash,
         kernelVersion: exact.kernelVersion ?? null,
         runtimeManifestHash: exact.runtimeManifestHash ?? null,
+        qwenCertification: structuredClone(exact.qwenCertification!),
         generatedAt: new Date().toISOString(),
         status: "validated_local",
         procurementEligibility: "eligible",
@@ -469,9 +473,8 @@ export function buildCapacityPredictions(
     const status = overallClass === "A"
       ? "extrapolated_high"
       : overallClass === "B" ? "extrapolated_medium" : "reference_only";
-    const procurementEligibility = status === "extrapolated_high"
-      ? "eligible"
-      : status === "extrapolated_medium" ? "planning_only" : "blocked";
+    const procurementEligibility = status === "extrapolated_high" || status === "extrapolated_medium"
+      ? "planning_only" : "blocked";
     const safeCameraMaximum = status === "reference_only" ? null : bottleneckPrediction?.safeCameraCapacity ?? null;
     const missingStages = requiredCoverage.filter((stage) => !covered.has(stage));
     return {

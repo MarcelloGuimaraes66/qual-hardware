@@ -11,6 +11,28 @@ const catalog: HardwareNodeTemplate[] = ["anchor-a", "anchor-b", "anchor-d", "ta
   ...structuredClone(base), id, name: id, cpuArchitecture: "Arrow Lake", gpuArchitecture: "Ada Lovelace",
 }));
 
+const qwenResourceProfile = {
+  staticEstimateBytes: 2_000_000_000,
+  peakRamParallel1Bytes: 1_000_000_000,
+  peakVramParallel1Bytes: 2_000_000_000,
+  peakRamParallel2Bytes: 1_200_000_000,
+  peakVramParallel2Bytes: 2_200_000_000,
+  baseRequirementBytes: 2_000_000_000,
+  incrementalSlotBytes: 200_000_000,
+  maxValidatedParallelism: 2,
+  safeAvailableMemoryFraction: 0.75 as const,
+  sequentialLatencyMs: [10, 11, 12],
+  concurrentLatencyMs: [20, 21],
+};
+const qwenCertification = {
+  selectionSignature: "9".repeat(64),
+  coreProbeId: "00000000-0000-4000-8000-000000000091",
+  coreMaxProbeId: "00000000-0000-4000-8000-000000000092",
+  usageGate: "purchase" as const,
+  coreResourceProfile: qwenResourceProfile,
+  coreMaxResourceProfile: qwenResourceProfile,
+};
+
 function completeComputeEvidence(capacity: number): NonNullable<LocalCalibrationRun["computeEvidence"]> {
   return {
     schemaVersion: "qual-hardware-calibration-compute-evidence/2.0.0",
@@ -104,8 +126,9 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
     kernelVersion: CALIBRATION_KERNEL_VERSION,
     runtimeManifestHash: "c".repeat(64),
     environmentSignature: "c".repeat(64),
+    qwenCertification,
     environmentProvenance: {
-      schemaVersion: "qual-hardware-execution-environment/1.0.0",
+      schemaVersion: "qual-hardware-execution-environment/2.0.0",
       detectedAt: "2026-07-18T11:59:00.000Z",
       readiness: "ready_full",
       evidenceLevel: "exact_perceptrum",
@@ -114,6 +137,7 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
         path: "C:\\Program Files\\Perceptrum\\Perceptrum.exe", version: "test",
         sha256: "f".repeat(64), selfTest: "passed", capabilities: ["hardware_benchmark_worker"],
       }],
+      qwenCertification,
       missingRequiredComponentIds: [],
     },
     runtimeProvenance: {
@@ -238,7 +262,7 @@ describe("local calibration and conservative extrapolation", () => {
     ], observations());
     const target = predictions.find((item) => item.hardwareTemplateId === "target-c")!;
     expect(target.status).toBe("extrapolated_high");
-    expect(target.procurementEligibility).toBe("eligible");
+    expect(target.procurementEligibility).toBe("planning_only");
     expect(target.confidenceClass).toBe("A");
     expect(target.safeCameraMaximum).toBe(10);
     expect(target.stagePredictions.every((stage) => stage.anchorRunIds.length === 3)).toBe(true);

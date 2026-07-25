@@ -15,6 +15,6 @@ O arquivo guarda apenas projetos, recomendações, catálogos, preços, calibra�
 
 ## Confiabilidade e migração
 
-O esquema aditivo v12 está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A abertura cria apenas objetos ausentes e faz upsert de snapshots embarcados; não apaga catálogos, calibrações nem previsões anteriores. A v12 preserva integralmente v1–v11 e acrescenta inventários do ambiente, componentes, autotestes e avisos, mantendo as tentativas de capacidade e os relatórios vinculados por SHA-256. Uma ativação atualiza todos os dados ou nenhum deles. A aplicação recusa uma versão de banco mais nova do que o executável entende.
+O esquema aditivo v13 está em `sqlite-schema.sql`, usa tabelas `STRICT`, integridade referencial, transações e `PRAGMA user_version`. A abertura cria apenas objetos ausentes e faz upsert de snapshots embarcados; não apaga catálogos, calibrações nem previsões anteriores. A v13 preserva integralmente v1–v12 e acrescenta ensaios funcionais Qwen3-VL e perfis de recursos vinculados aos hashes, mantendo inventários do ambiente, tentativas de capacidade e relatórios. Uma ativação atualiza todos os dados ou nenhum deles. A aplicação recusa uma versão de banco mais nova do que o executável entende.
 
 SQLite não deve ser colocado em um compartilhamento SMB/NFS. Para backup manual, feche o Qual Hardware e copie `qual-hardware.sqlite`. Os arquivos auxiliares `-wal` e `-shm` desaparecem após o fechamento normal e não devem ser copiados isoladamente.
