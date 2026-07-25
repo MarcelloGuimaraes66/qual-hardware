@@ -1051,7 +1051,10 @@ function EnvironmentVerification({
     },
     {
       title: lang === "pt" ? "Componentes locais para vídeo e IA" : "Local video and AI components",
-      ids: ["ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj"],
+      ids: [
+        "ffmpeg", "ffprobe", "rtsp-simulator", "llama-server",
+        "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj",
+      ],
     },
     {
       title: lang === "pt" ? "Drivers e telemetria opcional" : "Drivers and optional telemetry",
@@ -1245,6 +1248,29 @@ function EnvironmentVerification({
       {qwenSelection.warnings.length > 0 && <div className="qwen-model-warnings">{qwenSelection.warnings.map((warning) =>
         <span key={warning}>{qwenWarningCopy[warning] ?? warning}</span>)}</div>}
     </section>}
+    {environment.rtspSimulatorProbe && <section className="qwen-model-selection" aria-labelledby="rtsp-simulator-title">
+      <div className="qwen-model-selection-heading">
+        <div><h2 id="rtsp-simulator-title">{lang === "pt" ? "Recepção RTSP real" : "Real RTSP reception"}</h2>
+          <p>{lang === "pt"
+            ? "O teste usa sessões TCP autenticadas do simulador Hikvision local. O tráfego em 127.0.0.1 mede recepção, decodificação, RAM e I/O, mas não mede a placa ou o cabo de rede."
+            : "The test uses authenticated TCP sessions from the local Hikvision simulator. Loopback traffic measures reception, decoding, memory, and I/O, but not the physical network adapter or cable."}</p></div>
+        <div className="qwen-memory-budget"><span>{lang === "pt" ? "Preflight funcional" : "Functional preflight"}</span>
+          <b>{environment.rtspSimulatorProbe.status === "passed"
+            ? (lang === "pt" ? "Aprovado" : "Passed")
+            : environment.rtspSimulatorProbe.status === "not_running"
+              ? (lang === "pt" ? "Simulador parado" : "Simulator stopped")
+              : (lang === "pt" ? "Não aprovado" : "Not approved")}</b>
+          <small>{environment.rtspSimulatorProbe.endpoints.length} {lang === "pt" ? "porta(s) validada(s)" : "validated port(s)"}</small></div>
+      </div>
+      <div className="qwen-model-summary">
+        {environment.rtspSimulatorProbe.endpoints.map((endpoint) =>
+          <span key={endpoint.redactedOrigin}>{endpoint.redactedOrigin} · {endpoint.codec.toUpperCase()} · {endpoint.width}×{endpoint.height} · {endpoint.fps.toFixed(1)} fps · {endpoint.payloadMbps.toFixed(2)} Mbps</span>)}
+        {environment.rtspSimulatorProbe.endpoints.length === 0 &&
+          <span>{lang === "pt"
+            ? "Inicie o Simulador de RTSP e depois clique em Verificar novamente."
+            : "Start the RTSP Simulator, then click Check again."}</span>}
+      </div>
+    </section>}
     {groups.map((group) => <section className="environment-group" key={group.title}><h2>{group.title}</h2>
       <div className="environment-components">{environment.components.filter((item) => group.ids.includes(item.id)).map((item) =>
         <article className={`environment-component ${item.status}`} key={item.id}>
@@ -1264,7 +1290,7 @@ function EnvironmentVerification({
             : visibleText(item.instruction)}</small>
           <div className="environment-actions">
             {item.downloadLinkId && <button type="button" className="secondary" onClick={() => void openOfficial(item.downloadLinkId!)}>{lang === "pt" ? "Abrir site oficial" : "Open official site"}</button>}
-            {["ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj"].includes(item.id) &&
+            {["ffmpeg", "ffprobe", "rtsp-simulator", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj"].includes(item.id) &&
               <button type="button" className="secondary" disabled={busy} onClick={() => onLocate(item.id)}>{lang === "pt" ? "Localizar no computador" : "Locate on computer"}</button>}
             <button type="button" className="secondary" onClick={() => void copyInstructions(item.name, item.instruction)}>{lang === "pt" ? "Copiar instruções" : "Copy instructions"}</button>
           </div>

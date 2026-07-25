@@ -647,7 +647,7 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     assert(recommendation?.qwenCertification,
       "recommendations generated after a physical probe must retain the complete Qwen stack signature");
   }
-  assert.equal(environment.schemaVersion, "qual-hardware-execution-environment/2.0.0");
+  assert.equal(environment.schemaVersion, "qual-hardware-execution-environment/3.0.0");
   assert.equal(environment.externalDownloadsPerformed, false);
   assert(environment.components.some((component) =>
     component.id === "native-benchmark" && component.status === "installed" && component.selfTest === "passed"),
@@ -738,9 +738,11 @@ async function exerciseApplication(application: RunningDesktop, runtimeEmbedded:
     assert.equal(completedCalibration.cleanup?.state, "completed");
     assert.equal(completedCalibration.cleanup?.remainingBytes, 0);
     assert.equal(completedCalibration.cleanup?.bytesRemoved, completedCalibration.cleanup?.bytesTemporary);
-    assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/7.0.0");
+    assert.equal(completedCalibration.result?.schemaVersion, "qual-hardware-local-calibration/8.0.0");
     assert(completedCalibration.result?.environmentProvenance?.qwenCertification,
-      "calibration v7 must retain the certified Core/Core Max stack signatures");
+      "calibration v8 must retain the certified Core/Core Max stack signatures");
+    assert(completedCalibration.result?.rtspEvidence,
+      "calibration v8 must retain the versioned RTSP stack evidence");
     assert.equal(completedCalibration.result?.environmentProvenance?.evidenceLevel, "compatible_local_stack");
     assert.equal(completedCalibration.result?.capacityRecommendation?.basis, "physical_measurement");
     assert.equal(completedCalibration.result?.developmentOnly, true);

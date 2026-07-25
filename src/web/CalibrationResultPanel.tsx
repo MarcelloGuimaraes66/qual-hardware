@@ -82,7 +82,8 @@ export function CalibrationResultPanel({
   const compute = result.computeEvidence;
   const computeDevices = compute && "devices" in compute ? compute.devices : [];
   const boundary = result.capacityBoundary;
-  const resultKind = result.schemaVersion.endsWith("6.0.0") || result.schemaVersion.endsWith("5.0.0") || result.schemaVersion.endsWith("4.0.0") ||
+  const resultKind = result.schemaVersion.endsWith("8.0.0") || result.schemaVersion.endsWith("7.0.0") ||
+    result.schemaVersion.endsWith("6.0.0") || result.schemaVersion.endsWith("5.0.0") || result.schemaVersion.endsWith("4.0.0") ||
     result.schemaVersion.endsWith("3.0.0")
     ? (lang === "pt" ? "TESTE AUTOMÁTICO CPU + GPU" : "AUTOMATIC CPU + GPU TEST")
     : result.schemaVersion.endsWith("2.0.0") ? "PIPELINE INTEGRAL"
@@ -147,6 +148,14 @@ export function CalibrationResultPanel({
       <div><span>FPS RTSP</span><b>{result.measuredSourceFps.toFixed(2)} / {result.requestedSourceFps}</b><small>{lang === "pt" ? "recebido / solicitado por câmera" : "received / requested per camera"}</small></div>
       <div><span>FPS AiQ</span><b>{result.effectiveInferenceFps.toFixed(2)} / {result.requestedInferenceFps}</b><small>{lang === "pt" ? "processado / solicitado ao modelo" : "processed / requested by model"}</small></div>
     </div>
+    {result.rtspEvidence && <div className="calibration-result-grid">
+      <div><span>{lang === "pt" ? "Certificação RTSP" : "RTSP certification"}</span><b>{result.rtspEvidence.qualified
+        ? (lang === "pt" ? "Aprovada" : "Passed")
+        : (lang === "pt" ? "Somente diagnóstico" : "Diagnostic only")}</b><small>{visibleText(result.rtspEvidence.certificationLevel)} · {visibleText(result.rtspEvidence.mode)}</small></div>
+      <div><span>{lang === "pt" ? "Sessões RTSP" : "RTSP sessions"}</span><b>{result.rtspEvidence.completedSessions} / {result.rtspEvidence.plannedSessions}</b><small>{lang === "pt" ? "concluídas / planejadas" : "completed / planned"} · {result.rtspEvidence.maximumConcurrentSessions} {lang === "pt" ? "simultâneas" : "concurrent"}</small></div>
+      <div><span>{lang === "pt" ? "Carga útil recebida" : "Received payload"}</span><b>{result.rtspEvidence.payloadMbps.toFixed(2)} Mbps</b><small>{formatBytes(result.rtspEvidence.payloadBytes)} · TCP</small></div>
+      <div><span>{lang === "pt" ? "Aumento de RAM" : "Memory increase"}</span><b>{formatBytes(result.rtspEvidence.peakMemoryDeltaBytes)}</b><small>{lang === "pt" ? "pico acima da linha de base da fase" : "peak above phase baseline"}</small></div>
+    </div>}
     {boundary && <div className="calibration-result-grid capacity-boundary-grid">
       <div><span>{lang === "pt" ? "Carga informada (semente)" : "Entered load (seed)"}</span><b>{boundary.seedCameraCount} {lang === "pt" ? "câmeras" : "cameras"}</b><small>{lang === "pt" ? "ponto inicial, nunca o teto" : "starting point, never the ceiling"}</small></div>
       <div><span>{lang === "pt" ? "Maior carga aprovada" : "Highest passing load"}</span><b>{boundary.highestPassingCameraCount ?? "—"}</b><small>{lang === "pt" ? "limite bruto observado" : "observed raw boundary"}</small></div>

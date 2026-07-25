@@ -40,7 +40,7 @@ Either mark the AppImage executable and launch it, or install the `.deb` with th
 
 The packaged application contains Electron, the topology helper and the native benchmark and does not use a separately installed Node.js or runtime file. It starts Hono on an operating-system-assigned port bound only to `127.0.0.1`. The renderer is sandboxed and can reach only the application origin. A single-instance lock prevents two applications from concurrently owning SQLite.
 
-Before the main window, **Verificação do ambiente** searches the system path and known installations for GPU drivers, FFmpeg/FFprobe, llama.cpp, Qwen models and a compatible Perceptrum worker. Missing items do not block the built-in diagnostic. The screen opens only catalogued official links after an explicit click; it never downloads or installs software. The operator can locate an existing executable/model and click **Verificar novamente**.
+Before the main window, **Verificação do ambiente** searches the system path and known installations for GPU drivers, FFmpeg/FFprobe, llama.cpp, Qwen models, a compatible Perceptrum worker and, on Windows, the RTSP Simulator. Missing items do not block the built-in diagnostic. The screen opens only catalogued official links after an explicit click; it never downloads or installs software. The operator can locate an existing executable/model and click **Verificar novamente**.
 
 Qual Hardware is exclusively desktop: it has no standalone server, Docker image or hosted deployment. The operating system chosen in a scenario is the target for the planned Perceptrum machine and is independent from the operating system running the calculator.
 
@@ -74,6 +74,8 @@ On Ubuntu, use `xvfb-run --auto-servernum npm run desktop:smoke` in headless env
 
 - Compare the data path printed by the current portable and the candidate; any difference blocks merge.
 - Open the portable, confirm the automatic-channel status and source health, inspect the active catalog, calculate Windows and macOS target scenarios, export PDF/XLSX/JSON and restart.
+- Start the RTSP Simulator with a representative video on port 554 or 5541+, keep `Streaming/Channels/101` and `admin/admin`, refresh the environment and confirm that codec, resolution, FPS and payload are shown without credentials.
+- Run at least one multi-session diagnostic and confirm the report records completed RTSP sessions, decoded frames, measured payload and RAM delta while keeping physical-NIC traffic marked unmeasured.
 - Confirm persisted data, single-instance focus behavior and complete exit after closing the window.
 
 ### macOS 26 arm64
@@ -105,6 +107,6 @@ The permanent **Calibração de capacidade** area is the only calibration runner
 
 There is no `.qhruntime` installation or rollback flow. The application uses, in order, a compatible isolated Perceptrum worker, a complete local stack that passes self-tests, compatible installed programs, and the built-in native benchmark. The weakest component used defines the evidence level. A generic result is an estimate and can never become commercial qualification.
 
-The application starts the calibration worker as an isolated utility process. Its internal RTSP/RTP loopback, FFmpeg, llama/Qwen, native benchmark and telemetry children are owned by the session and remain offline except for loopback traffic. Missing sensors are reported as `null` plus a reason. Results are saved append-only under the operating system's real Documents folder at `Qual Hardware/Calibracoes`; `.qhcal` and `.qhcalset` v4 remain signed interchange formats. PDF, TXT, XLSX and JSON operator reports are generated from the same model.
+The application starts the calibration worker as an isolated utility process. On Windows, a fresh authenticated functional probe can select the external RTSP Simulator; otherwise the internal RTSP/RTP loopback remains diagnostic-only. Every materialized camera gets its own FFmpeg receiver. FFmpeg, llama/Qwen, native benchmark and telemetry children are owned by the session and remain offline except for loopback traffic. Credentials are not persisted. Missing sensors are reported as `null` plus a reason. Results are saved append-only under the operating system's real Documents folder at `Qual Hardware/Calibracoes`; `.qhcal` and `.qhcalset` v4 remain signed interchange formats. PDF, TXT, XLSX and JSON operator reports are generated from the same model.
 
 While a run is active, **Interromper e limpar temporários** sends a private IPC cancellation. The app stops its workload processes, saves an append-only `-interrompido.partial.json` diagnostic, removes session-owned temporary files and only then confirms cancellation. Partial files never become capacity anchors or purchase evidence.

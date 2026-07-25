@@ -1265,7 +1265,7 @@ export function createApp(
     const id = context.req.param("id") as ExecutionEnvironment["components"][number]["id"];
     const selectableIds = new Set<ExecutionEnvironment["components"][number]["id"]>([
       "ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj",
-      "qwen-vl-4b", "qwen-vl-4b-mmproj", "perceptrum",
+      "qwen-vl-4b", "qwen-vl-4b-mmproj", "rtsp-simulator", "perceptrum",
     ]);
     if (!selectableIds.has(id)) return context.json({ error: "environment_component_not_selectable" }, 422);
     if (!options.desktopBridge?.selectEnvironmentComponent) {

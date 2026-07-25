@@ -25,15 +25,16 @@ On Ubuntu, run the final command through `xvfb-run --auto-servernum`. A release 
 ## Local calibration gate
 
 1. `quick` is a 10-minute non-commercial diagnostic; `validation` is a 60-minute single engineering repetition; `qualification` uses the automatic production allocation through four phases in three eight-hour repetitions, with two 30-minute cooldowns and at most 10% accepted variability, taking approximately 25 hours plus boundary discovery.
-2. The internal RTSP/RTP generator, FFmpeg and the real AiQ/Qwen backend remain on `127.0.0.1`; external/OpenAI count is zero.
+2. FFmpeg, the authenticated RTSP simulator and the real AiQ/Qwen backend remain on `127.0.0.1`; external/OpenAI count is zero. The internal RTSP/RTP generator is diagnostic fallback only.
 3. Delivered frames and completed inferences reach at least 99.5%; no OOM, sustained queue growth or critical throttling occurs, and p99 inference latency stays below 75% of the configured interval.
 4. All fifteen stages, four phase summaries, exact fingerprint/build/model hashes, temperatures and frame counters are present. The stages include frame extraction, Jobs, Intelligence, database persistence and concurrent dashboard queries in addition to media, memory, storage, network and thermal work.
 5. The local anchor never claims more cameras than were physically sustained. A development smoke uses shortened phases, is explicitly marked non-importable and never creates physical evidence.
 6. Import rejects a selected catalog profile when CPU, GPU or form factor does not match the measured fingerprint.
-7. Legacy local results v1–v6 remain readable as historical diagnostic evidence. Only `qual-hardware-local-calibration/7.0.0`, plan `4.0.0`, kernel `4.0.0`, workload `4.0.0`, `exact_perceptrum` environment evidence and an approved Qwen3-VL stack probe can be purchase-eligible; new `.qhcal` and `.qhcalset` exports use version `4.0.0`.
+7. Legacy local results v1–v7 remain readable as historical diagnostic evidence. Only `qual-hardware-local-calibration/8.0.0`, plan `4.0.0`, kernel `5.0.0`, workload `4.0.0`, an approved Qwen3-VL stack probe and qualified RTSP evidence (`functional_simulator` or `production`) can be purchase-eligible; new `.qhcal` and `.qhcalset` exports use version `4.0.0`.
 8. Session tests cover single active ownership, append-only transitions, IPC progress, cancellation, interruption recovery, resume compatibility, native Documents paths, atomic result persistence, replay rejection and cleanup retry. No external claim/control callback, custom protocol, bearer token or fixed calibration port exists.
 9. Environment tests cover PATH and known-installation discovery, bounded no-shell self-tests, official-link allowlisting, missing/incompatible components, native fallback, refresh, model hash caching and the prohibition on automatic downloads.
 10. Physical qualification is initiated only from the application interface. Build/test tooling must not act as an external calibration coordinator.
+11. Windows RTSP acceptance requires a fresh authenticated probe, at least three decoded frames, exact codec/resolution, sufficient FPS and measured payload for every workload group. Every materialized camera must complete its own RTSP session. Loopback evidence never claims physical-NIC traffic.
 
 ## Audited source baseline
 

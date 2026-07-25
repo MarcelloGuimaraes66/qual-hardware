@@ -850,7 +850,7 @@ async function run(): Promise<void> {
     degradedGpuMeasurement.failures.length === 0 && degradedGpuMeasurement.exactCameraConcurrency &&
     degradedGpuMeasurement.gpuInferenceMeasured &&
     (!gpuMediaLoadRequired || degradedGpuMeasurement.gpuMediaMeasured);
-  const eligible = qualificationEligible && multiDeviceEvidenceComplete;
+  const eligible = qualificationEligible && multiDeviceEvidenceComplete && pipelineSummary.rtspQualified;
   const technicalExactConcurrencyComplete = resultMeasurements.length > 0 &&
     resultMeasurements.every((measurement) => measurement.exactCameraConcurrency);
   const primaryModeMeasured = primaryComputeMode === "gpu_accelerated"
@@ -861,6 +861,7 @@ async function run(): Promise<void> {
       measurement.mediaMeasured &&
       (!pipelineSummary.localInferenceRequired || measurement.localInferenceMeasured));
   const technicalPipelineComplete = pipelineSummary.mediaAvailable && pipelineSummary.rtspAvailable &&
+    pipelineSummary.rtspQualified &&
     (!pipelineSummary.localInferenceRequired || pipelineSummary.localInferenceAvailable) &&
     resultMeasurements.length > 0 &&
     resultMeasurements.every((measurement) => measurement.mediaMeasured && measurement.rtspMeasured &&
@@ -878,6 +879,7 @@ async function run(): Promise<void> {
     measurement.hardwareTelemetry.thermalThrottlePercent !== null);
   const failures = [
     ...qualification.failures,
+    ...(!pipelineSummary.rtspQualified ? ["functional_rtsp_simulator_not_qualified"] : []),
     ...(!allEligibleDevicesReceivedLoad ? ["eligible_gpu_load_coverage_incomplete"] : []),
     ...(!allLoadedDevicesHaveTelemetry ? ["loaded_gpu_individual_telemetry_incomplete"] : []),
     ...(!isolatedDeviceCoverageComplete ? ["isolated_gpu_scaling_evidence_incomplete"] : []),
@@ -954,6 +956,8 @@ async function run(): Promise<void> {
       ? "loopback_measured_physical_link_unverified" as const
       : "unavailable" as const;
   const maximumNetworkIngressMbps = Math.max(0, ...resultMeasurements.map((measurement) => measurement.networkIngressMbps));
+  const maximumMeasuredRtspPayloadMbps = Math.max(0,
+    ...resultMeasurements.map((measurement) => measurement.rtspPayloadMbps ?? 0));
   const verifiedNetworkCapacityMbps = resultMeasurements
     .map((measurement) => measurement.physicalNetworkCapacityMbps)
     .filter((value): value is number => value !== null);
@@ -1001,8 +1005,13 @@ async function run(): Promise<void> {
         ? (isNetworkStage && networkSafeCameraCapacity !== null
           ? Math.min(technicalSafeCameraCapacity, networkSafeCameraCapacity) : technicalSafeCameraCapacity)
         : null,
-      throughput: measured ? (isNetworkStage ? maximumNetworkIngressMbps : stageThroughput(stage)) : null,
-      throughputUnit: measured ? (stage === "memory_bandwidth" ? "bytes-per-second" : isNetworkStage ? "megabits-per-second-required" : "measured-operations") : "unavailable",
+      throughput: measured ? (isNetworkStage
+        ? maximumMeasuredRtspPayloadMbps
+        : stageThroughput(stage)) : null,
+      throughputUnit: measured ? (stage === "memory_bandwidth"
+        ? "bytes-per-second"
+        : isNetworkStage ? "megabits-per-second-measured-loopback"
+          : "measured-operations") : "unavailable",
       p95LatencyMs: measured && latency !== null ? latency : null,
       peakUtilizationPercent: measured
         ? Math.max(0, ...resultMeasurements.map((item) => Math.max(
@@ -1024,6 +1033,7 @@ async function run(): Promise<void> {
           loopbackTrafficMeasured: pipelineSummary.rtspAvailable,
           physicalNetworkTrafficMeasured: false,
           requiredIngressMbps: maximumNetworkIngressMbps,
+          measuredRtspPayloadMbps: maximumMeasuredRtspPayloadMbps,
           negotiatedPhysicalCapacityMbps: minimumPhysicalNetworkCapacityMbps,
           reservedCapacityPercent: 20,
           usablePhysicalCapacityMbps: minimumPhysicalNetworkCapacityMbps === null
@@ -1092,6 +1102,31 @@ async function run(): Promise<void> {
     framesPacked: packedInferenceFrames,
     framesInferred: inferredFrames,
     rtspOrigin: pipelineSummary.rtspOrigin,
+    rtspEvidence: {
+      ...pipelineSummary.rtspEvidence,
+      plannedSessions: resultMeasurements.reduce((sum, item) =>
+        sum + (item.rtspSessionsPlanned ?? (item.rtspMeasured ? item.tier : 0)), 0),
+      openedSessions: resultMeasurements.reduce((sum, item) =>
+        sum + (item.rtspSessionsOpened ?? (item.rtspMeasured ? item.tier : 0)), 0),
+      completedSessions: resultMeasurements.reduce((sum, item) =>
+        sum + (item.rtspSessionsCompleted ?? (item.rtspMeasured ? item.tier : 0)), 0),
+      maximumConcurrentSessions: Math.max(0, ...resultMeasurements.map((item) =>
+        item.rtspSessionsCompleted ?? (item.rtspMeasured ? item.tier : 0))),
+      framesPlanned: plannedFrames,
+      framesDecoded: decodedFrames,
+      frameDeliveryRate: plannedFrames > 0 ? Math.min(1, decodedFrames / plannedFrames) : 0,
+      payloadBytes: resultMeasurements.reduce((sum, item) => sum + (item.rtspPayloadBytes ?? 0), 0),
+      payloadMbps: maximumMeasuredRtspPayloadMbps,
+      peakMemoryDeltaBytes: resultMeasurements.reduce<number | null>((peak, item) => {
+        if (item.memoryWorkingSetDeltaBytes === null || item.memoryWorkingSetDeltaBytes === undefined) return peak;
+        return peak === null ? item.memoryWorkingSetDeltaBytes : Math.max(peak, item.memoryWorkingSetDeltaBytes);
+      }, null),
+      failures: [...new Set([
+        ...pipelineSummary.rtspEvidence.failures,
+        ...resultMeasurements.flatMap((item) =>
+          item.failures.filter((failure) => failure.includes("rtsp"))),
+      ])].slice(0, 100),
+    },
     aiqOrigin: pipelineSummary.aiqOrigin,
     networkPolicy: "loopback_only",
     externalRequestCount: 0,

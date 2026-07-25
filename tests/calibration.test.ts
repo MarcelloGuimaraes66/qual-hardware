@@ -98,6 +98,31 @@ function run(id: string, hardwareTemplateId: string, capacity: number): LocalCal
     requestedSourceFps: 15, measuredSourceFps: 15, requestedInferenceFps: 5, effectiveInferenceFps: 5,
     framesPlanned: 300, framesExtracted: 300, framesPacked: 300, framesInferred: 300,
     rtspOrigin: "rtsp://127.0.0.1:8554", aiqOrigin: "http://127.0.0.1:8899",
+    rtspEvidence: {
+      schemaVersion: "qual-hardware-rtsp-stack-evidence/1.0.0",
+      mode: "production_worker",
+      certificationLevel: "production",
+      qualified: true,
+      transport: "tcp",
+      loopback: true,
+      physicalNicMeasured: false,
+      simulatorExecutable: null,
+      endpoints: [],
+      plannedSessions: capacity,
+      openedSessions: capacity,
+      completedSessions: capacity,
+      maximumConcurrentSessions: capacity,
+      framesPlanned: 300,
+      framesDecoded: 300,
+      frameDeliveryRate: 1,
+      payloadBytes: 1_000_000,
+      payloadMbps: 8,
+      peakMemoryDeltaBytes: 64 * 1024 ** 2,
+      credentialsPersisted: false,
+      externalRequestCount: 0,
+      failures: [],
+      warnings: ["physical_network_link_not_measured"],
+    },
     networkPolicy: "loopback_only", externalRequestCount: 0, openAiRequestCount: 0,
     mediaFieldCount: 0, credentialFieldCount: 0,
     stages: REQUIRED_CALIBRATION_STAGES.map((stage) => ({
@@ -367,6 +392,20 @@ describe("local calibration and conservative extrapolation", () => {
     const parsed = localCalibrationRunSchema.safeParse(invalid);
     expect(parsed.success).toBe(false);
     if (!parsed.success) expect(parsed.error.issues.some((issue) => issue.path.includes("networkEvidence"))).toBe(true);
+  });
+
+  it("rejects purchase eligibility backed only by the internal RTSP generator", () => {
+    const candidate = run("00000000-0000-4000-8000-000000000073", "anchor-a", 100);
+    candidate.rtspEvidence = {
+      ...candidate.rtspEvidence!,
+      mode: "internal_loopback",
+      certificationLevel: "synthetic_internal",
+      qualified: false,
+    };
+    expect(localCalibrationRunSchema.safeParse(candidate).success).toBe(false);
+    candidate.qualityGate!.eligibleForCapacityExtrapolation = false;
+    candidate.qualityGate!.validationStatus = "diagnostic";
+    expect(localCalibrationRunSchema.safeParse(candidate).success).toBe(true);
   });
 
   it("requires an explicit reason and null metrics for unavailable stage evidence", () => {

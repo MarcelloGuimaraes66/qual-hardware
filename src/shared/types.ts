@@ -14,8 +14,9 @@ export const INITIAL_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local
 export const LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/4.0.0" as const;
 export const PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/5.0.0" as const;
 export const PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/6.0.0" as const;
-export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/7.0.0" as const;
-export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/4.0.0" as const;
+export const QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/7.0.0" as const;
+export const AUTONOMOUS_LOCAL_CALIBRATION_VERSION = "qual-hardware-local-calibration/8.0.0" as const;
+export const CALIBRATION_KERNEL_VERSION = "qual-hardware-calibration-kernel/5.0.0" as const;
 export const PERCEPTRUM_CALIBRATION_AUTHORITY_COMMIT = "d918faa0ecd6a9906b711039e5d89f78e0536c44" as const;
 export const PERCEPTRUM_AUTHORITY_CONTRACT_VERSION = "perceptrum-authority-contract/2.0.0" as const;
 export const LEGACY_CALIBRATION_PLAN_VERSION = "qual-hardware-calibration-plan/1.0.0" as const;
@@ -50,10 +51,13 @@ export const CALIBRATION_RUNTIME_MANIFEST_VERSION = "qual-hardware-calibration-r
 export const FLEET_PLAN_VERSION = "qual-hardware-fleet-plan/1.0.0" as const;
 export const CALIBRATION_DIAGNOSTIC_REPORT_VERSION = "qual-hardware-calibration-diagnostic-report/1.0.0" as const;
 export const PREVIOUS_EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/1.0.0" as const;
-export const EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/2.0.0" as const;
+export const QWEN_EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/2.0.0" as const;
+export const EXECUTION_ENVIRONMENT_VERSION = "qual-hardware-execution-environment/3.0.0" as const;
 export const QWEN_VISION_SELECTION_VERSION = "qual-hardware-qwen-vision-selection/2.0.0" as const;
 export const QWEN_MODEL_CERTIFICATION_CONTRACT_VERSION = "qual-hardware-qwen3-vl-approved-revisions/1.0.0" as const;
 export const QWEN_MODEL_PROBE_VERSION = "qual-hardware-qwen-model-probe/1.0.0" as const;
+export const RTSP_SIMULATOR_PROBE_VERSION = "qual-hardware-rtsp-simulator-probe/1.0.0" as const;
+export const RTSP_STACK_EVIDENCE_VERSION = "qual-hardware-rtsp-stack-evidence/1.0.0" as const;
 export const NATIVE_BENCHMARK_VERSION = "qual-hardware-native-benchmark/1.0.0" as const;
 export const MAX_PROJECT_CAMERAS = 1_000_000 as const;
 export const SOURCE_REGISTRY_VERSION = "qual-hardware-source-registry/1.0.0" as const;
@@ -1010,6 +1014,7 @@ export interface CalibrationDiagnosticReportModel {
 export interface LocalCalibrationRun {
   schemaVersion:
     | typeof AUTONOMOUS_LOCAL_CALIBRATION_VERSION
+    | typeof QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
     | typeof LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION
@@ -1105,6 +1110,7 @@ export interface LocalCalibrationRun {
     errors: string[];
   };
   kernelVersion?: typeof CALIBRATION_KERNEL_VERSION |
+    "qual-hardware-calibration-kernel/4.0.0" |
     "qual-hardware-calibration-kernel/3.0.0" |
     "qual-hardware-calibration-kernel/2.0.0" |
     "qual-hardware-calibration-kernel/1.0.0";
@@ -1112,6 +1118,7 @@ export interface LocalCalibrationRun {
   environmentSignature?: string;
   environmentProvenance?: CalibrationEnvironmentProvenance;
   qwenCertification?: QwenStackCertification;
+  rtspEvidence?: RtspStackEvidence;
   runtimeProvenance?: {
     platform: NodeJS.Platform;
     architecture: string;
@@ -1467,7 +1474,8 @@ export interface CalibrationPlan {
   mode: CalibrationMode;
   executionMode: "readiness" | "production_pipeline";
   workloadContractVersion: typeof WORKLOAD_CONTRACT_VERSION;
-  kernelVersion: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/3.0.0" | "qual-hardware-calibration-kernel/2.0.0";
+  kernelVersion: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/4.0.0" |
+    "qual-hardware-calibration-kernel/3.0.0" | "qual-hardware-calibration-kernel/2.0.0";
   strategy: "adaptive";
   workloadProfile: CalibrationWorkloadProfile;
   cameraTiers: number[];
@@ -1553,7 +1561,8 @@ export interface CalibrationRepetitionResult {
 
 export interface CalibrationRuntimeStatus {
   schemaVersion: "qual-hardware-calibration-runtime-status/1.0.0";
-  kernelVersion: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/3.0.0" | "qual-hardware-calibration-kernel/2.0.0";
+  kernelVersion: typeof CALIBRATION_KERNEL_VERSION | "qual-hardware-calibration-kernel/4.0.0" |
+    "qual-hardware-calibration-kernel/3.0.0" | "qual-hardware-calibration-kernel/2.0.0";
   authorityCommit: string;
   platform: NodeJS.Platform;
   architecture: string;
@@ -1629,6 +1638,7 @@ export interface ExecutionEnvironmentComponent {
     | "qwen-vl-2b-mmproj"
     | "qwen-vl-4b"
     | "qwen-vl-4b-mmproj"
+    | "rtsp-simulator"
     | "perceptrum"
     | "native-benchmark"
     | "telemetry";
@@ -1773,8 +1783,71 @@ export interface QwenVisionModelSelection {
   warnings: string[];
 }
 
+export interface RtspStreamProbe {
+  redactedOrigin: string;
+  port: number;
+  path: "Streaming/Channels/101";
+  transport: "tcp";
+  codec: "h264" | "h265";
+  width: number;
+  height: number;
+  fps: number;
+  decodedFrames: number;
+  openLatencyMs: number;
+  payloadBytes: number;
+  payloadDurationSeconds: number;
+  payloadMbps: number;
+  compatibleGroupIndexes: number[];
+  warnings: string[];
+}
+
+export interface RtspSimulatorProbeResult {
+  schemaVersion: typeof RTSP_SIMULATOR_PROBE_VERSION;
+  status: "passed" | "not_running" | "incompatible" | "failed" | "unsupported";
+  detectedAt: string;
+  host: "127.0.0.1";
+  simulatorExecutable: {
+    path: string | null;
+    sha256: string | null;
+    sizeBytes: number | null;
+    version: string | null;
+  };
+  endpoints: RtspStreamProbe[];
+  credentialsPersisted: false;
+  externalRequestCount: 0;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface RtspStackEvidence {
+  schemaVersion: typeof RTSP_STACK_EVIDENCE_VERSION;
+  mode: "external_simulator" | "internal_loopback" | "generic_proxy" | "production_worker";
+  certificationLevel: "functional_simulator" | "synthetic_internal" | "proxy_only" | "production";
+  qualified: boolean;
+  transport: "tcp";
+  loopback: boolean;
+  physicalNicMeasured: boolean;
+  simulatorExecutable: RtspSimulatorProbeResult["simulatorExecutable"] | null;
+  endpoints: RtspStreamProbe[];
+  plannedSessions: number;
+  openedSessions: number;
+  completedSessions: number;
+  maximumConcurrentSessions: number;
+  framesPlanned: number;
+  framesDecoded: number;
+  frameDeliveryRate: number;
+  payloadBytes: number;
+  payloadMbps: number;
+  peakMemoryDeltaBytes: number | null;
+  credentialsPersisted: false;
+  externalRequestCount: 0;
+  failures: string[];
+  warnings: string[];
+}
+
 export interface ExecutionEnvironment {
-  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION | typeof PREVIOUS_EXECUTION_ENVIRONMENT_VERSION;
+  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION | typeof QWEN_EXECUTION_ENVIRONMENT_VERSION |
+    typeof PREVIOUS_EXECUTION_ENVIRONMENT_VERSION;
   detectedAt: string;
   platform: NodeJS.Platform;
   architecture: string;
@@ -1793,19 +1866,22 @@ export interface ExecutionEnvironment {
   };
   components: ExecutionEnvironmentComponent[];
   qwenModelSelection?: QwenVisionModelSelection;
+  rtspSimulatorProbe?: RtspSimulatorProbeResult;
   missingRequiredComponentIds: ExecutionEnvironmentComponent["id"][];
   warnings: string[];
   externalDownloadsPerformed: false;
 }
 
 export interface CalibrationEnvironmentProvenance {
-  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION | typeof PREVIOUS_EXECUTION_ENVIRONMENT_VERSION;
+  schemaVersion: typeof EXECUTION_ENVIRONMENT_VERSION | typeof QWEN_EXECUTION_ENVIRONMENT_VERSION |
+    typeof PREVIOUS_EXECUTION_ENVIRONMENT_VERSION;
   detectedAt: string;
   readiness: ExecutionEnvironment["readiness"];
   evidenceLevel: CalibrationEvidenceLevel;
   components: Array<Pick<ExecutionEnvironmentComponent,
     "id" | "name" | "status" | "origin" | "path" | "version" | "sha256" | "selfTest" | "capabilities">>;
   qwenCertification?: QwenStackCertification;
+  rtspSimulatorProbe?: RtspSimulatorProbeResult;
   missingRequiredComponentIds: ExecutionEnvironmentComponent["id"][];
 }
 

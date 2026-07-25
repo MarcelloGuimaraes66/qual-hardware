@@ -80,6 +80,7 @@ async function fixture(
   hardware?: CalibrationHardwarePreflight,
   onChildProcess?: (event: { action: "started" | "stopped"; pid: number; kind: "ffmpeg" | "ffprobe" | "mediamtx" | "llama-server" | "native-benchmark" | "perceptrum-worker" }) => void,
   timeScale = 0.001,
+  rtspProbe?: NonNullable<ConstructorParameters<typeof OfflineCalibrationPipeline>[0]["rtspProbe"]>,
 ) {
   const root = await mkdtemp(join(tmpdir(), "qual-hardware-pipeline-test-"));
   temporaryRoots.push(root);
@@ -97,6 +98,7 @@ async function fixture(
     timeScale,
     cancelled: () => false,
     ...(onChildProcess ? { onChildProcess } : {}),
+    ...(rtspProbe ? { rtspProbe } : {}),
     ...(diskStatus ? { diskStatus, diskCheckIntervalMs: 5 } : {}),
   });
   return { root, sessionId, workspace, database, pipeline };
@@ -224,7 +226,7 @@ describe("offline Perceptrum-equivalent calibration pipeline", () => {
   });
 
   it("pins the golden pipeline contract to the immutable Perceptrum authority", async () => {
-    const contract = JSON.parse(await readFile(join(import.meta.dirname, "..", "contracts", "calibration-pipeline-contract-v2.json"), "utf8")) as {
+    const contract = JSON.parse(await readFile(join(import.meta.dirname, "..", "contracts", "calibration-pipeline-contract-v3.json"), "utf8")) as {
       schemaVersion: string;
       authority: { commit: string };
       jobRuntime: { requiredTables: string[] };
@@ -379,6 +381,8 @@ process.stdout.write(JSON.stringify({
       const summary = await item.pipeline.initialize();
       expect(summary.mediaAvailable).toBe(true);
       expect(summary.rtspAvailable).toBe(true);
+      expect(summary.rtspQualified).toBe(false);
+      expect(summary.rtspEvidence.certificationLevel).toBe("synthetic_internal");
       await execFileAsync(ffmpeg, [
         "-hide_banner", "-loglevel", "error", "-nostdin",
         "-rtsp_transport", "tcp", "-i", summary.rtspOrigin,
@@ -389,6 +393,10 @@ process.stdout.write(JSON.stringify({
       expect(result.framesEncoded).toBeGreaterThan(0);
       expect(result.framesExtracted).toBe(1);
       expect(result.actualConcurrentMediaPipelines).toBe(4);
+      expect(result.rtspSessionsCompleted).toBe(4);
+      expect(result.memoryWorkingSetDeltaBytes).toEqual(expect.any(Number));
+      expect(result.memoryWorkingSetDeltaBytes!).toBeGreaterThanOrEqual(0);
+      expect(result.failures).not.toContain("functional_rtsp_simulator_not_qualified");
       expect(result.failures.filter((failure) => failure.includes("media_pipeline"))).toEqual([]);
       expect(result.measuredStages).toEqual(expect.arrayContaining([
         "video_decode", "bgr_processing", "video_encode", "disk_read", "disk_write", "frame_extraction",
@@ -400,6 +408,149 @@ process.stdout.write(JSON.stringify({
       await cleanupCalibrationWorkspace(item.root, item.sessionId);
     }
   }, 60_000);
+
+  it("prefers a freshly certified external simulator over the diagnostic internal loopback", async () => {
+    const ffmpeg = await executable("ffmpeg");
+    const ffprobe = await executable("ffprobe");
+    if (!ffmpeg || !ffprobe) return;
+    const asset = (id: string, path: string): CalibrationRuntimeStatus["assets"][number] => ({
+      id, status: "system_only", path, sha256: "b".repeat(64), sizeBytes: 1,
+      expectedSizeBytes: null, version: null, licenseSpdx: null, sbomRef: null,
+    });
+    const runtime = status([asset("ffmpeg", ffmpeg), asset("ffprobe", ffprobe)]);
+    runtime.environmentProvenance = {
+      schemaVersion: "qual-hardware-execution-environment/3.0.0",
+      detectedAt: new Date().toISOString(),
+      readiness: "ready_diagnostic",
+      evidenceLevel: "compatible_local_stack",
+      components: [],
+      rtspSimulatorProbe: {
+        schemaVersion: "qual-hardware-rtsp-simulator-probe/1.0.0",
+        status: "passed",
+        detectedAt: new Date().toISOString(),
+        host: "127.0.0.1",
+        simulatorExecutable: {
+          path: "C:\\Simulator\\SimuladorRtsp.exe",
+          sha256: "c".repeat(64),
+          sizeBytes: 100,
+          version: "1.0.0",
+        },
+        endpoints: [],
+        credentialsPersisted: false,
+        externalRequestCount: 0,
+        errors: [],
+        warnings: [],
+      },
+      missingRequiredComponentIds: [],
+    };
+    const plan = createCalibrationPlan(createDefaultScenario(4), "quick");
+    const item = await fixture(runtime, plan, false, undefined, undefined, undefined, 0.001,
+      async () => ({
+        schemaVersion: "qual-hardware-rtsp-simulator-probe/1.0.0",
+        status: "passed",
+        detectedAt: new Date().toISOString(),
+        host: "127.0.0.1",
+        simulatorExecutable: runtime.environmentProvenance!.rtspSimulatorProbe!.simulatorExecutable,
+        endpoints: [{
+          redactedOrigin: "rtsp://127.0.0.1:5541/Streaming/Channels/101",
+          port: 5_541,
+          path: "Streaming/Channels/101",
+          transport: "tcp",
+          codec: "h264",
+          width: 1_920,
+          height: 1_080,
+          fps: 15,
+          decodedFrames: 3,
+          openLatencyMs: 25,
+          payloadBytes: 1_000_000,
+          payloadDurationSeconds: 2,
+          payloadMbps: 4,
+          compatibleGroupIndexes: [0],
+          warnings: [],
+        }],
+        credentialsPersisted: false,
+        externalRequestCount: 0,
+        errors: [],
+        warnings: ["loopback_does_not_measure_physical_network_link"],
+      }));
+    try {
+      const summary = await item.pipeline.initialize();
+      expect(summary.rtspAvailable).toBe(true);
+      expect(summary.rtspQualified).toBe(true);
+      expect(summary.rtspEvidence.certificationLevel).toBe("functional_simulator");
+      expect(summary.rtspOrigin).not.toContain("admin:admin");
+    } finally {
+      await item.pipeline.close();
+      item.database.close();
+      await refreshRegisteredCalibrationTemporaryFiles(item.root, item.sessionId);
+      await cleanupCalibrationWorkspace(item.root, item.sessionId);
+    }
+  }, 60_000);
+
+  it("physically opens one authenticated simulator session per materialized camera", async () => {
+    const simulatorPath = process.env.QUAL_HARDWARE_PHYSICAL_RTSP_SIMULATOR_PATH;
+    const ffmpeg = process.env.QUAL_HARDWARE_PHYSICAL_RTSP_FFMPEG;
+    const ffprobe = process.env.QUAL_HARDWARE_PHYSICAL_RTSP_FFPROBE;
+    if (process.platform !== "win32" || !simulatorPath || !ffmpeg || !ffprobe) return;
+    const asset = (id: string, path: string): CalibrationRuntimeStatus["assets"][number] => ({
+      id, status: "system_only", path, sha256: "b".repeat(64), sizeBytes: 1,
+      expectedSizeBytes: null, version: null, licenseSpdx: null, sbomRef: null,
+    });
+    const runtime = status([asset("ffmpeg", ffmpeg), asset("ffprobe", ffprobe)]);
+    runtime.environmentProvenance = {
+      schemaVersion: "qual-hardware-execution-environment/3.0.0",
+      detectedAt: new Date().toISOString(),
+      readiness: "ready_diagnostic",
+      evidenceLevel: "compatible_local_stack",
+      components: [],
+      rtspSimulatorProbe: {
+        schemaVersion: "qual-hardware-rtsp-simulator-probe/1.0.0",
+        status: "passed",
+        detectedAt: new Date().toISOString(),
+        host: "127.0.0.1",
+        simulatorExecutable: {
+          path: simulatorPath,
+          sha256: "c".repeat(64),
+          sizeBytes: 1,
+          version: "physical-test",
+        },
+        endpoints: [],
+        credentialsPersisted: false,
+        externalRequestCount: 0,
+        errors: [],
+        warnings: [],
+      },
+      missingRequiredComponentIds: [],
+    };
+    const scenario = createDefaultScenario(4);
+    scenario.cameraGroups[0]!.source.sourceFps = 12;
+    const item = await fixture(runtime, createCalibrationPlan(scenario, "quick"),
+      false, undefined, undefined, undefined, 1);
+    try {
+      const summary = await item.pipeline.initialize();
+      expect(summary.rtspQualified).toBe(true);
+      expect(summary.rtspEvidence.endpoints[0]?.port).toBe(5_541);
+      const measurement = await item.pipeline.executePhase({
+        phase: "discovery",
+        tier: 4,
+        durationSeconds: 10,
+        computeMode: "cpu_only",
+      });
+      expect(measurement.rtspSessionsPlanned).toBe(4);
+      expect(measurement.rtspSessionsOpened).toBe(4);
+      expect(measurement.rtspSessionsCompleted).toBe(4);
+      expect(measurement.rtspPayloadBytes).toBeGreaterThan(0);
+      expect(measurement.rtspPayloadMbps).toBeGreaterThan(0);
+      expect(measurement.framesDecoded).toBeGreaterThanOrEqual(4 * 12 * 9);
+      expect(measurement.memoryWorkingSetDeltaBytes).toEqual(expect.any(Number));
+      expect(JSON.stringify({ summary, measurement })).not.toContain("admin:admin");
+    } finally {
+      await item.pipeline.close();
+      item.database.close();
+      await refreshRegisteredCalibrationTemporaryFiles(item.root, item.sessionId);
+      await cleanupCalibrationWorkspace(item.root, item.sessionId);
+    }
+  }, 180_000);
 
   it("keeps twelve concurrent mixed VÍDEO FULL and FRAME pipelines alive through the internal RTSP loopback", async () => {
     const ffmpeg = await executable("ffmpeg");

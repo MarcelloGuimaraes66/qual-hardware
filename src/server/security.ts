@@ -19,7 +19,9 @@ export function findForbiddenCalibrationData(value: unknown, path = "$", finding
   }
   if (value && typeof value === "object") {
     for (const [key, child] of Object.entries(value)) {
-      if (CALIBRATION_FORBIDDEN_KEY.test(key) && !EXEMPT_KEYS.has(key)) {
+      const explicitNoCredentialsMarker = key === "credentialsPersisted" && child === false;
+      if (CALIBRATION_FORBIDDEN_KEY.test(key) && !EXEMPT_KEYS.has(key) &&
+          !explicitNoCredentialsMarker) {
         findings.push({ path: `${path}.${key}`, reason: "forbidden_calibration_field" });
       }
       findForbiddenCalibrationData(child, `${path}.${key}`, findings);

@@ -30,6 +30,8 @@ extraResources:
     to: contracts/calibration-kernel-authority-v2.json
   - from: contracts/calibration-pipeline-contract-v2.json
     to: contracts/calibration-pipeline-contract-v2.json
+  - from: contracts/calibration-pipeline-contract-v3.json
+    to: contracts/calibration-pipeline-contract-v3.json
   - from: contracts/perceptrum-workload-v4.json
     to: contracts/perceptrum-workload-v4.json
   - from: contracts/qwen3-vl-approved-revisions-v1.json

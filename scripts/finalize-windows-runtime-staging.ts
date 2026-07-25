@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   const llamaDirectory = join(targetRoot, "bin", "llama");
   assets[3]!.companions = (await readdir(llamaDirectory)).filter((name) => name.toLowerCase().endsWith(".dll"))
     .sort().map((name) => `bin/llama/${name}`);
-  for (const contract of ["calibration-kernel-authority-v2.json", "calibration-pipeline-contract-v2.json"]) {
+  for (const contract of ["calibration-kernel-authority-v2.json", "calibration-pipeline-contract-v3.json"]) {
     await mkdir(join(stage, "contracts"), { recursive: true });
     await copyFile(join(repository, "contracts", contract), join(stage, "contracts", contract));
   }
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     pipelineImplementation: "perceptrum-equivalent-v3-mixed-workload",
     supportedTargets: ["darwin-arm64", "win32-x64", "linux-x64"],
     authorityContract: { relativePath: "contracts/calibration-kernel-authority-v2.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-kernel-authority-v2.json")) },
-    pipelineContract: { relativePath: "contracts/calibration-pipeline-contract-v2.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-pipeline-contract-v2.json")) },
+    pipelineContract: { relativePath: "contracts/calibration-pipeline-contract-v3.json", sha256: await canonicalTextDigest(join(stage, "contracts", "calibration-pipeline-contract-v3.json")) },
     sourceLock: { relativePath: "resources/calibration/asset-sources.lock.json", sha256: await canonicalTextDigest(join(stage, "resources", "calibration", "asset-sources.lock.json")) },
     assets: manifestAssets,
   };

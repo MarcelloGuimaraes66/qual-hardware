@@ -19,6 +19,7 @@ const INFRASTRUCTURE_CODES = [
   "start_timeout",
   "response_payload",
   "external_network",
+  "not_qualified",
 ];
 
 const CAPACITY_CODES = [
@@ -68,6 +69,14 @@ export interface CalibrationOperatorFinding {
 
 export function calibrationOperatorFinding(code: string): CalibrationOperatorFinding {
   const value = code.toLowerCase();
+  if (value.includes("functional_rtsp_simulator_not_qualified") ||
+      value.includes("external_rtsp_simulator")) {
+    return {
+      titlePt: "A recepção RTSP real não foi certificada.",
+      consequencePt: "O teste interno ainda pode diagnosticar CPU, GPU e disco, mas não pode afirmar que a máquina suporta as sessões RTSP solicitadas nem liberar uma compra.",
+      actionPt: "Inicie o Simulador de RTSP com admin/admin, confirme uma porta 554, 5541, 5542 ou seguinte e use um vídeo com codec, resolução, FPS e taxa de bits iguais ao cenário. Depois verifique o ambiente e repita o teste.",
+    };
+  }
   if (value.includes("calibration_worker_exit") || value.includes("calibration_worker_crash")) {
     return {
       titlePt: "O processo isolado de calibração foi encerrado inesperadamente.",

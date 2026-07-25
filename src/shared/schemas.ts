@@ -22,6 +22,10 @@ import {
   PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
   PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
   PREVIOUS_EXECUTION_ENVIRONMENT_VERSION,
+  QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION,
+  QWEN_EXECUTION_ENVIRONMENT_VERSION,
+  RTSP_SIMULATOR_PROBE_VERSION,
+  RTSP_STACK_EVIDENCE_VERSION,
   PREVIOUS_QHCAL_PACKAGE_VERSION,
   PREVIOUS_QHCALSET_PACKAGE_VERSION,
   MANUFACTURER_SPECIFICATION_OBSERVATION_VERSION,
@@ -302,9 +306,74 @@ const qwenCertificationSchema = z.object({
   coreMaxResourceProfile: qwenRuntimeResourceProfileSchema,
 });
 
+const rtspSimulatorExecutableSchema = z.object({
+  path: z.string().min(1).max(2_000).nullable(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/i).nullable(),
+  sizeBytes: z.number().int().nonnegative().nullable(),
+  version: z.string().min(1).max(500).nullable(),
+});
+
+const rtspStreamProbeSchema = z.object({
+  redactedOrigin: z.string().startsWith("rtsp://127.0.0.1:").max(500),
+  port: z.number().int().min(1).max(65_535),
+  path: z.literal("Streaming/Channels/101"),
+  transport: z.literal("tcp"),
+  codec: z.enum(["h264", "h265"]),
+  width: z.number().int().positive().max(32_768),
+  height: z.number().int().positive().max(32_768),
+  fps: z.number().positive().max(1_000),
+  decodedFrames: z.number().int().min(3),
+  openLatencyMs: z.number().nonnegative(),
+  payloadBytes: z.number().int().positive(),
+  payloadDurationSeconds: z.number().positive(),
+  payloadMbps: z.number().positive(),
+  compatibleGroupIndexes: z.array(z.number().int().nonnegative()).max(1_000),
+  warnings: z.array(z.string().min(1).max(500)).max(200),
+});
+
+const rtspSimulatorProbeSchema = z.object({
+  schemaVersion: z.literal(RTSP_SIMULATOR_PROBE_VERSION),
+  status: z.enum(["passed", "not_running", "incompatible", "failed", "unsupported"]),
+  detectedAt: z.iso.datetime(),
+  host: z.literal("127.0.0.1"),
+  simulatorExecutable: rtspSimulatorExecutableSchema,
+  endpoints: z.array(rtspStreamProbeSchema).max(64),
+  credentialsPersisted: z.literal(false),
+  externalRequestCount: z.literal(0),
+  errors: z.array(z.string().min(1).max(2_000)).max(64),
+  warnings: z.array(z.string().min(1).max(500)).max(200),
+});
+
+const rtspStackEvidenceSchema = z.object({
+  schemaVersion: z.literal(RTSP_STACK_EVIDENCE_VERSION),
+  mode: z.enum(["external_simulator", "internal_loopback", "generic_proxy", "production_worker"]),
+  certificationLevel: z.enum(["functional_simulator", "synthetic_internal", "proxy_only", "production"]),
+  qualified: z.boolean(),
+  transport: z.literal("tcp"),
+  loopback: z.boolean(),
+  physicalNicMeasured: z.boolean(),
+  simulatorExecutable: rtspSimulatorExecutableSchema.nullable(),
+  endpoints: z.array(rtspStreamProbeSchema).max(64),
+  plannedSessions: z.number().int().nonnegative(),
+  openedSessions: z.number().int().nonnegative(),
+  completedSessions: z.number().int().nonnegative(),
+  maximumConcurrentSessions: z.number().int().nonnegative(),
+  framesPlanned: z.number().int().nonnegative(),
+  framesDecoded: z.number().int().nonnegative(),
+  frameDeliveryRate: z.number().min(0).max(1),
+  payloadBytes: z.number().int().nonnegative(),
+  payloadMbps: z.number().nonnegative(),
+  peakMemoryDeltaBytes: z.number().int().nonnegative().nullable(),
+  credentialsPersisted: z.literal(false),
+  externalRequestCount: z.literal(0),
+  failures: z.array(z.string().min(1).max(500)).max(100),
+  warnings: z.array(z.string().min(1).max(500)).max(200),
+});
+
 export const localCalibrationRunSchema = z.object({
   schemaVersion: z.union([
     z.literal(AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
+    z.literal(QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
     z.literal(PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
     z.literal(PREVIOUS_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
     z.literal(LEGACY_AUTONOMOUS_LOCAL_CALIBRATION_VERSION),
@@ -468,6 +537,7 @@ export const localCalibrationRunSchema = z.object({
     errors: z.array(z.string().min(1).max(500)).max(100),
   }).optional(),
   kernelVersion: z.union([
+    z.literal("qual-hardware-calibration-kernel/5.0.0"),
     z.literal("qual-hardware-calibration-kernel/1.0.0"),
     z.literal("qual-hardware-calibration-kernel/2.0.0"),
     z.literal("qual-hardware-calibration-kernel/3.0.0"),
@@ -478,6 +548,7 @@ export const localCalibrationRunSchema = z.object({
   environmentProvenance: z.object({
     schemaVersion: z.union([
       z.literal(EXECUTION_ENVIRONMENT_VERSION),
+      z.literal(QWEN_EXECUTION_ENVIRONMENT_VERSION),
       z.literal(PREVIOUS_EXECUTION_ENVIRONMENT_VERSION),
     ]),
     detectedAt: z.iso.datetime(),
@@ -488,6 +559,7 @@ export const localCalibrationRunSchema = z.object({
         "application", "gpu-driver", "ffmpeg", "ffprobe", "llama-server",
         "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj",
         "perceptrum", "native-benchmark", "telemetry",
+        "rtsp-simulator",
       ]),
       name: z.string().min(1).max(160),
       status: z.enum(["installed", "missing", "incompatible", "not_applicable", "restart_required"]),
@@ -499,13 +571,16 @@ export const localCalibrationRunSchema = z.object({
       capabilities: z.array(z.string().min(1).max(160)).max(100),
     })).max(100),
     qwenCertification: qwenCertificationSchema.optional(),
+    rtspSimulatorProbe: rtspSimulatorProbeSchema.optional(),
     missingRequiredComponentIds: z.array(z.enum([
       "application", "gpu-driver", "ffmpeg", "ffprobe", "llama-server",
       "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj",
       "perceptrum", "native-benchmark", "telemetry",
+      "rtsp-simulator",
     ])).max(100),
   }).optional(),
   qwenCertification: qwenCertificationSchema.optional(),
+  rtspEvidence: rtspStackEvidenceSchema.optional(),
   runtimeProvenance: z.object({
     platform: z.enum(["aix", "android", "darwin", "freebsd", "haiku", "linux", "openbsd", "sunos", "win32", "cygwin", "netbsd"]),
     architecture: z.string().min(1).max(120),
@@ -670,6 +745,7 @@ export const localCalibrationRunSchema = z.object({
   }
   if (value.schemaVersion === TELEMETRY_LOCAL_CALIBRATION_VERSION || value.schemaVersion === LOCAL_CALIBRATION_VERSION ||
       value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
+      value.schemaVersion === QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
       value.schemaVersion === PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
     if (!value.telemetryCapabilities?.length) {
       context.addIssue({ code: "custom", path: ["telemetryCapabilities"], message: "Telemetry calibration requires capability declarations." });
@@ -696,6 +772,7 @@ export const localCalibrationRunSchema = z.object({
   }
   if (value.schemaVersion === LOCAL_CALIBRATION_VERSION ||
       value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
+      value.schemaVersion === QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
       value.schemaVersion === PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
     const requiredStages = new Set([
       "rtsp_ingest", "video_decode", "bgr_processing", "video_encode", "disk_write", "disk_read",
@@ -734,6 +811,7 @@ export const localCalibrationRunSchema = z.object({
     }
   }
   if (value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
+      value.schemaVersion === QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
       value.schemaVersion === PRE_CERTIFICATION_AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
     if (value.mode === "full") {
       context.addIssue({ code: "custom", path: ["mode"], message: "Autonomous calibration uses quick, validation or qualification mode." });
@@ -822,7 +900,8 @@ export const localCalibrationRunSchema = z.object({
         context.addIssue({ code: "custom", path: ["environmentProvenance"], message: "Purchase eligibility requires the exact Perceptrum worker and every mandatory local component to pass its self-test." });
       }
     }
-    if (value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
+    if (value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION ||
+        value.schemaVersion === QWEN_CERTIFIED_AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
       if (!value.qwenCertification ||
           value.qwenCertification.selectionSignature !==
             value.environmentProvenance?.qwenCertification?.selectionSignature) {
@@ -838,6 +917,34 @@ export const localCalibrationRunSchema = z.object({
           code: "custom",
           path: ["qwenCertification", "usageGate"],
           message: "Purchase eligibility requires approved Qwen3-VL hashes and a passed functional probe.",
+        });
+      }
+    }
+    if (value.schemaVersion === AUTONOMOUS_LOCAL_CALIBRATION_VERSION) {
+      if (!value.rtspEvidence) {
+        context.addIssue({
+          code: "custom",
+          path: ["rtspEvidence"],
+          message: "Version 8 requires versioned evidence for the RTSP stack and measured receiver load.",
+        });
+      }
+      if (value.rtspEvidence?.credentialsPersisted !== false ||
+          value.rtspEvidence?.externalRequestCount !== 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["rtspEvidence"],
+          message: "RTSP evidence must not persist credentials or make external requests.",
+        });
+      }
+      if (value.qualityGate?.eligibleForCapacityExtrapolation &&
+          (!value.rtspEvidence?.qualified ||
+            !["functional_simulator", "production"].includes(value.rtspEvidence.certificationLevel) ||
+            value.rtspEvidence.completedSessions < value.rtspEvidence.plannedSessions ||
+            value.rtspEvidence.framesDecoded < value.rtspEvidence.framesPlanned * 0.995)) {
+        context.addIssue({
+          code: "custom",
+          path: ["rtspEvidence"],
+          message: "Purchase eligibility requires qualified RTSP sessions and at least 99.5% frame delivery.",
         });
       }
     }

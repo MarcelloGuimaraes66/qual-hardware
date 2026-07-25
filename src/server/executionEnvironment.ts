@@ -31,6 +31,11 @@ import {
   type QwenVisionDiscoveredFile,
   type QwenVisionSelectionPreference,
 } from "./qwenVisionModelSelection.js";
+import {
+  discoverRtspSimulatorExecutable,
+  probeRtspSimulator,
+  simulatorBundledFfmpegPath,
+} from "./rtspSimulator.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_DISCOVERY_FILES = 8_000;
@@ -44,6 +49,7 @@ export const DEPENDENCY_DOWNLOAD_LINKS: readonly DependencyDownloadLink[] = Obje
   { id: "llama-releases", label: "llama.cpp — releases", url: "https://github.com/ggml-org/llama.cpp/releases", platforms: ["windows", "ubuntu", "macos"] },
   { id: "qwen-vl-2b", label: "Qwen3-VL 2B GGUF", url: "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF", platforms: ["windows", "ubuntu", "macos"] },
   { id: "qwen-vl-4b", label: "Qwen3-VL 4B GGUF", url: "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF", platforms: ["windows", "ubuntu", "macos"] },
+  { id: "rtsp-simulator-repository", label: "Simulador de RTSP", url: "https://github.com/edguimkit/simulador-rtsp", platforms: ["windows"] },
   { id: "nvidia-drivers", label: "Drivers NVIDIA", url: "https://www.nvidia.com/en-us/drivers/", platforms: ["windows"] },
   { id: "nvidia-ubuntu", label: "Drivers NVIDIA no Ubuntu", url: "https://documentation.ubuntu.com/server/how-to/graphics/install-nvidia-drivers/", platforms: ["ubuntu"] },
   { id: "amd-drivers", label: "Drivers AMD", url: "https://www.amd.com/en/support", platforms: ["windows", "ubuntu"] },
@@ -67,6 +73,7 @@ const runtimeAssetByComponentId: Partial<Record<ExecutionEnvironmentComponent["i
   "qwen-vl-2b-mmproj": "qwen-core-mmproj",
   "qwen-vl-4b": "qwen-core-max-gguf",
   "qwen-vl-4b-mmproj": "qwen-core-max-mmproj",
+  "rtsp-simulator": "rtsp-simulator",
   telemetry: "telemetry-probe",
   "native-benchmark": "native-benchmark",
   perceptrum: "perceptrum-worker",
@@ -141,6 +148,7 @@ export async function runtimeStatusFromExecutionEnvironment(
         id, name, status, origin, path, version, sha256, selfTest, capabilities,
       }) => ({ id, name, status, origin, path, version, sha256, selfTest, capabilities })),
       ...(qwenCertification ? { qwenCertification } : {}),
+      ...(environment.rtspSimulatorProbe ? { rtspSimulatorProbe: environment.rtspSimulatorProbe } : {}),
       missingRequiredComponentIds: [...environment.missingRequiredComponentIds],
     },
     assets: [...merged.values()],
@@ -494,8 +502,15 @@ export async function detectExecutionEnvironment(options: {
       "C:\\Program Files (x86)\\Drakon\\llm\\bin\\llama-server.exe",
     ] : []),
   ];
+  const rtspSimulatorExecutable = await discoverRtspSimulatorExecutable(
+    options.selectedPaths?.["rtsp-simulator"],
+  );
+  const bundledSimulatorFfmpeg = simulatorBundledFfmpegPath(rtspSimulatorExecutable.path);
   const [ffmpegPath, ffprobePath, llamaDiscovery, modelFiles, loadedContract] = await Promise.all([
-    discoverExecutable("ffmpeg", options.selectedPaths?.ffmpeg ? [options.selectedPaths.ffmpeg] : []),
+    discoverExecutable("ffmpeg", [
+      ...(options.selectedPaths?.ffmpeg ? [options.selectedPaths.ffmpeg] : []),
+      ...(bundledSimulatorFfmpeg ? [bundledSimulatorFfmpeg] : []),
+    ]),
     discoverExecutable("ffprobe", options.selectedPaths?.ffprobe ? [options.selectedPaths.ffprobe] : []),
     discoverLlamaServer(options.hardware, llamaExplicitCandidates),
     discoverModels([
@@ -546,6 +561,78 @@ export async function detectExecutionEnvironment(options: {
       downloadLinkId: "llama-install",
     }),
   ]);
+  const rtspSimulatorProbe = rtspSimulatorExecutable.path && ffmpegPath && ffprobePath
+    ? await probeRtspSimulator({
+        ffmpegPath,
+        ffprobePath,
+        simulatorExecutable: rtspSimulatorExecutable,
+      }).catch((error) => ({
+        schemaVersion: "qual-hardware-rtsp-simulator-probe/1.0.0" as const,
+        status: "failed" as const,
+        detectedAt: new Date().toISOString(),
+        host: "127.0.0.1" as const,
+        simulatorExecutable: rtspSimulatorExecutable,
+        endpoints: [],
+        credentialsPersisted: false as const,
+        externalRequestCount: 0 as const,
+        errors: [error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500)],
+        warnings: [],
+      }))
+    : undefined;
+  const rtspSimulator: ExecutionEnvironmentComponent = platform() !== "win32"
+    ? component({
+        id: "rtsp-simulator",
+        name: "Simulador de RTSP",
+        purpose: "Fonte Hikvision compatível para carga RTSP autenticada.",
+        status: "not_applicable",
+        origin: "missing",
+        path: null,
+        version: null,
+        sha256: null,
+        selfTest: "not_applicable",
+        capabilities: [],
+        impact: "O simulador atual é WPF e executa somente no Windows.",
+        instruction: "No macOS e Ubuntu, a ausência mantém a qualificação RTSP bloqueada com segurança.",
+        downloadLinkId: null,
+        diagnosticOnly: true,
+      })
+    : rtspSimulatorExecutable.path
+      ? component({
+          id: "rtsp-simulator",
+          name: "Simulador de RTSP",
+          purpose: "Fonte Hikvision compatível para carga RTSP autenticada.",
+          status: "installed",
+          origin: "known_installation",
+          path: rtspSimulatorExecutable.path,
+          version: rtspSimulatorExecutable.version,
+          sha256: rtspSimulatorExecutable.sha256,
+          selfTest: rtspSimulatorProbe?.status === "passed" ? "passed"
+            : rtspSimulatorProbe?.status === "failed" || rtspSimulatorProbe?.status === "incompatible"
+              ? "failed" : "not_run",
+          capabilities: [
+            "rtsp_loopback",
+            "hikvision_compatible_path",
+            "fixed_test_credentials",
+            ...(rtspSimulatorProbe?.endpoints.map((endpoint) =>
+              `endpoint:${endpoint.redactedOrigin}`) ?? []),
+          ],
+          impact: rtspSimulatorProbe?.status === "passed"
+            ? "Stream autenticado, caracterizado e decodificado com frames reais."
+            : "O executável foi localizado, mas a calibração fará um preflight fresco antes de usar o stream.",
+          instruction: rtspSimulatorProbe?.status === "passed"
+            ? "Mantenha o simulador aberto durante a calibração."
+            : "Abra o simulador, carregue um vídeo, inicie RTSP na porta 554 ou 5541+ e verifique novamente.",
+          downloadLinkId: "rtsp-simulator-repository",
+          diagnosticOnly: true,
+        })
+      : missingProgram(
+          "rtsp-simulator",
+          "Simulador de RTSP",
+          "Fonte Hikvision compatível para carga RTSP autenticada.",
+          "O gerador interno continuará disponível apenas como evidência diagnóstica.",
+          "Instale ou localize o Simulador de RTSP antes da validação física.",
+          "rtsp-simulator-repository",
+        );
   const candidateById = new Map(qwenModelSelection.candidates.map((candidate) => [candidate.id, candidate]));
   const activeCandidate = (id: string | null): QwenVisionModelCandidate | null =>
     id ? candidateById.get(id) ?? null : null;
@@ -687,7 +774,9 @@ export async function detectExecutionEnvironment(options: {
     instruction: "Mantenha os drivers atualizados para ampliar a cobertura.", downloadLinkId: driver.downloadLinkId,
     diagnosticOnly: false,
   });
-  const components = [application, driver, ffmpeg, ffprobe, llama, ...models, perceptrum, builtIn, telemetry];
+  const components = [
+    application, driver, ffmpeg, ffprobe, rtspSimulator, llama, ...models, perceptrum, builtIn, telemetry,
+  ];
   const requiredIds: ExecutionEnvironmentComponent["id"][] = [
     "ffmpeg", "ffprobe", "llama-server", "qwen-vl-2b", "qwen-vl-2b-mmproj", "qwen-vl-4b", "qwen-vl-4b-mmproj",
   ];
@@ -708,6 +797,7 @@ export async function detectExecutionEnvironment(options: {
     certificationContractSha256: loadedContract?.sha256 ?? null,
     components: signaturePayload,
     qwenModelSelection,
+    rtspSimulatorProbe: rtspSimulatorProbe ?? null,
   }))).digest("hex");
   return {
     schemaVersion: EXECUTION_ENVIRONMENT_VERSION,
@@ -729,10 +819,17 @@ export async function detectExecutionEnvironment(options: {
     },
     components,
     qwenModelSelection,
+    ...(rtspSimulatorProbe ? { rtspSimulatorProbe } : {}),
     missingRequiredComponentIds,
     warnings: [
       ...(compatibleLocalStack ? [] : ["O benchmark nativo permite diagnóstico e planejamento, mas o relatório não representa homologação comercial."]),
       ...(!loadedContract ? ["O contrato embarcado de revisões Qwen3-VL não pôde ser validado; todos os modelos permanecerão bloqueados."] : []),
+      ...(rtspSimulatorExecutable.path && rtspSimulatorProbe?.status !== "passed"
+        ? ["O Simulador de RTSP foi localizado, mas nenhum stream autenticado e compatível foi aprovado nesta verificação."] : []),
+      ...(rtspSimulatorExecutable.path
+        ? ["Use o Simulador de RTSP somente em rede de teste protegida: o MediaMTX pode escutar também fora do loopback com as credenciais fixas de ensaio."] : []),
+      ...(rtspSimulatorProbe?.status === "passed"
+        ? ["O RTSP em 127.0.0.1 mede recepção e decode, mas não comprova o enlace físico da placa de rede."] : []),
       ...qwenModelSelection.warnings.map((warning) => ({
         qwen3_vl_models_not_found: "Nenhum modelo Qwen3-VL foi localizado. Modelos Qwen apenas textuais não são aceitos.",
         qwen3_vl_models_incompatible_with_detected_hardware: "Os modelos Qwen3-VL localizados não cabem com segurança na memória detectada ou estão sem mmproj.",

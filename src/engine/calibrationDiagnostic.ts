@@ -164,7 +164,9 @@ export function buildCalibrationDiagnosticReport(
   const methodLabelPt = environmentEvidenceLevel === "exact_perceptrum"
     ? "Pipeline local compatível executado em processo isolado"
     : environmentEvidenceLevel === "compatible_local_stack"
-      ? "Stack local compatível e submetida a autotestes"
+      ? run.rtspEvidence?.certificationLevel === "functional_simulator"
+        ? "Stack local com recepção RTSP/TCP autenticada e decodificação real"
+        : "Stack local compatível e submetida a autotestes"
       : environmentEvidenceLevel === "generic_native"
         ? "Benchmark nativo genérico incorporado ao Qual Hardware"
         : "Somente inventário do equipamento";
@@ -261,6 +263,14 @@ export function buildCalibrationDiagnosticReport(
       "A capacidade segura aplica 20% de margem ao maior valor sustentável, respeita o menor limite medido entre os subsistemas e pode ser reduzida novamente quando o pico de 120% não passa.",
       "VÍDEO FULL e FRAME mantêm RTSP e decodificação de base; FRAME extrai uma imagem no intervalo do Agent e evita o clipe de vídeo quando não há gravação, por isso sua análise é significativamente mais leve.",
       "A conclusão vale somente para o perfil de codecs, resolução, FPS, taxa de bits, Agents, modelos, versão do aplicativo e ambiente registrados.",
+      ...(run.rtspEvidence ? [
+        `O ensaio RTSP abriu ${run.rtspEvidence.completedSessions} de ${run.rtspEvidence.plannedSessions} sessões planejadas, recebeu ${run.rtspEvidence.payloadMbps.toFixed(2)} Mbps no loopback e decodificou ${run.rtspEvidence.framesDecoded} de ${run.rtspEvidence.framesPlanned} frames planejados.`,
+        `O pico de RAM acima da linha de base das fases RTSP foi ${
+          run.rtspEvidence.peakMemoryDeltaBytes === null
+            ? "indisponível"
+            : `${(run.rtspEvidence.peakMemoryDeltaBytes / 1024 ** 2).toFixed(1)} MiB`
+        }. Como o endereço é 127.0.0.1, o teste não mede placa, cabo, switch nem tráfego físico de rede.`,
+      ] : []),
       measurementKind === "estimated"
         ? "O benchmark nativo é uma estimativa diagnóstica: ele orienta planejamento, mas não substitui a qualificação física completa da carga de produção."
         : "O método e todos os componentes efetivamente usados estão identificados na evidência técnica.",

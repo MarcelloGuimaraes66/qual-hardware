@@ -18,7 +18,10 @@ import type {
   CalibrationGpuInferenceBackend,
   CalibrationGpuMediaBackend,
   CalibrationCapacityBoundary,
+  RtspStackEvidence,
+  RtspStreamProbe,
 } from "../shared/types.js";
+import { RTSP_STACK_EVIDENCE_VERSION } from "../shared/types.js";
 import {
   calibrationDiskStatus,
   prepareCalibrationTemporaryFile,
@@ -42,8 +45,13 @@ import {
   type CalibrationGpuDevice,
 } from "./calibrationCompute.js";
 import { createInternalRtspLoopback, type InternalRtspLoopback } from "./internalRtspLoopback.js";
+import {
+  authenticatedRtspSimulatorOrigin,
+  probeRtspSimulator,
+  sanitizeRtspDiagnostic,
+} from "./rtspSimulator.js";
 
-export const CALIBRATION_PIPELINE_CONTRACT_VERSION = "qual-hardware-calibration-pipeline-contract/2.0.0";
+export const CALIBRATION_PIPELINE_CONTRACT_VERSION = "qual-hardware-calibration-pipeline-contract/3.0.0";
 const CALIBRATION_MEDIA_RING_SECONDS = 2;
 const CALIBRATION_MEDIA_RING_SEGMENTS = 2;
 
@@ -227,8 +235,15 @@ export interface PipelinePhaseMeasurement {
   temporaryDiskReserveBytes?: number;
   cpuUtilizationPercent: TelemetryMetricSummary | null;
   memoryUsedBytes: TelemetryMetricSummary | null;
+  memoryWorkingSetDeltaBytes?: number | null;
   hardwareTelemetry: CalibrationHardwareTelemetrySummary;
   rtspMeasured: boolean;
+  rtspSessionsPlanned?: number;
+  rtspSessionsOpened?: number;
+  rtspSessionsCompleted?: number;
+  rtspPayloadBytes?: number;
+  rtspPayloadMbps?: number;
+  rtspOpenLatencyP95Ms?: number | null;
   mediaMeasured: boolean;
   localInferenceMeasured: boolean;
   queueGrowthPerMinute: number;
@@ -240,6 +255,8 @@ export interface CalibrationPipelineSummary {
   contractVersion: typeof CALIBRATION_PIPELINE_CONTRACT_VERSION;
   mediaAvailable: boolean;
   rtspAvailable: boolean;
+  rtspQualified: boolean;
+  rtspEvidence: RtspStackEvidence;
   localInferenceRequired: boolean;
   localInferenceAvailable: boolean;
   cpuInferenceAvailable: boolean;
@@ -429,19 +446,32 @@ class SystemResourceSampler {
   private previous = cpuSnapshot();
   private readonly cpuSamples: number[] = [];
   private readonly memorySamples: number[] = [];
+  private baselineMemoryBytes: number | null = null;
   private timer: NodeJS.Timeout | null = null;
 
   start(intervalMs: number): void {
+    this.baselineMemoryBytes = Math.max(0, totalmem() - freemem());
     this.capture();
     this.timer = setInterval(() => this.capture(), intervalMs);
     this.timer.unref();
   }
 
-  stop(): { cpu: TelemetryMetricSummary | null; memory: TelemetryMetricSummary | null } {
+  stop(): {
+    cpu: TelemetryMetricSummary | null;
+    memory: TelemetryMetricSummary | null;
+    peakMemoryDeltaBytes: number | null;
+  } {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.capture();
-    return { cpu: metricSummary(this.cpuSamples), memory: metricSummary(this.memorySamples) };
+    const peak = this.memorySamples.length > 0 ? Math.max(...this.memorySamples) : null;
+    return {
+      cpu: metricSummary(this.cpuSamples),
+      memory: metricSummary(this.memorySamples),
+      peakMemoryDeltaBytes: peak === null || this.baselineMemoryBytes === null
+        ? null
+        : Math.max(0, peak - this.baselineMemoryBytes),
+    };
   }
 
   private capture(): void {
@@ -675,12 +705,53 @@ async function waitForLoopbackPort(port: number, cancelled: () => boolean): Prom
   throw new Error("calibration_mediamtx_start_timeout");
 }
 
+function initialRtspEvidence(input: {
+  mode: RtspStackEvidence["mode"];
+  qualified: boolean;
+  simulatorExecutable?: RtspStackEvidence["simulatorExecutable"];
+  endpoints?: RtspStreamProbe[];
+  failures?: string[];
+  warnings?: string[];
+}): RtspStackEvidence {
+  const certificationLevel: RtspStackEvidence["certificationLevel"] =
+    input.mode === "external_simulator" ? "functional_simulator"
+      : input.mode === "production_worker" ? "production"
+        : input.mode === "generic_proxy" ? "proxy_only"
+          : "synthetic_internal";
+  return {
+    schemaVersion: RTSP_STACK_EVIDENCE_VERSION,
+    mode: input.mode,
+    certificationLevel,
+    qualified: input.qualified,
+    transport: "tcp",
+    loopback: true,
+    physicalNicMeasured: false,
+    simulatorExecutable: input.simulatorExecutable ?? null,
+    endpoints: input.endpoints ?? [],
+    plannedSessions: 0,
+    openedSessions: 0,
+    completedSessions: 0,
+    maximumConcurrentSessions: 0,
+    framesPlanned: 0,
+    framesDecoded: 0,
+    frameDeliveryRate: 0,
+    payloadBytes: 0,
+    payloadMbps: 0,
+    peakMemoryDeltaBytes: null,
+    credentialsPersisted: false,
+    externalRequestCount: 0,
+    failures: input.failures ?? [],
+    warnings: input.warnings ?? [],
+  };
+}
+
 export class OfflineCalibrationPipeline {
   private files: PipelineFiles | null = null;
   private readonly children = new Set<ChildProcess>();
   private internalRtsp: InternalRtspLoopback | null = null;
   private readonly publishers: ChildProcess[] = [];
   private rtspPort: number | null = null;
+  private externalRtspSources: RtspStreamProbe[] = [];
   private readonly llamaServers: Array<{
     model: "core" | "core-max";
     computeMode: CalibrationComputeMode;
@@ -713,6 +784,7 @@ export class OfflineCalibrationPipeline {
     cancelled: () => boolean;
     diskStatus?: (path: string, projectedPeakBytes: number) => Promise<CalibrationDiskStatus>;
     diskCheckIntervalMs?: number;
+    rtspProbe?: typeof probeRtspSimulator;
     onChildProcess?: (event: { action: "started" | "stopped"; pid: number; kind: CalibrationChildProcessKind }) => void;
   }) {}
 
@@ -755,6 +827,12 @@ export class OfflineCalibrationPipeline {
         contractVersion: CALIBRATION_PIPELINE_CONTRACT_VERSION,
         mediaAvailable: true,
         rtspAvailable: true,
+        rtspQualified: true,
+        rtspEvidence: initialRtspEvidence({
+          mode: "production_worker",
+          qualified: true,
+          warnings: ["physical_network_link_is_not_measured_by_the_isolated_worker"],
+        }),
         localInferenceRequired,
         localInferenceAvailable: true,
         cpuInferenceAvailable: true,
@@ -799,6 +877,12 @@ export class OfflineCalibrationPipeline {
     if (forceNativeDiagnostic) reasons.push("native_diagnostic_forced_by_test_harness");
     let mediaAvailable = false;
     let rtspAvailable = false;
+    let rtspQualified = false;
+    let rtspEvidence = initialRtspEvidence({
+      mode: "internal_loopback",
+      qualified: false,
+      warnings: ["internal_loopback_is_diagnostic_only", "loopback_does_not_measure_physical_network_link"],
+    });
     if (forceNativeDiagnostic) {
       // Automated package smoke verifies only the built-in proxy. It must not
       // turn into a physical media or model workload on the operator's host.
@@ -858,7 +942,40 @@ export class OfflineCalibrationPipeline {
       mediaAvailable = true;
       reasons.push("video_pipeline_represented_by_built_in_native_proxy");
     }
-    if (mediaAvailable && ffmpeg && !forceNativeDiagnostic) {
+    const simulatorIdentity = this.input.runtimeStatus.environmentProvenance?.rtspSimulatorProbe
+      ?.simulatorExecutable;
+    if (mediaAvailable && ffmpeg && ffprobe && simulatorIdentity?.path && !forceNativeDiagnostic) {
+      try {
+        const freshProbe = await (this.input.rtspProbe ?? probeRtspSimulator)({
+          ffmpegPath: ffmpeg,
+          ffprobePath: ffprobe,
+          simulatorExecutable: simulatorIdentity,
+          workloadProfile: this.input.workloadProfile,
+          cancelled: this.input.cancelled,
+        });
+        if (freshProbe.status === "passed") {
+          this.externalRtspSources = freshProbe.endpoints;
+          rtspAvailable = true;
+          rtspQualified = true;
+          rtspEvidence = initialRtspEvidence({
+            mode: "external_simulator",
+            qualified: true,
+            simulatorExecutable: freshProbe.simulatorExecutable,
+            endpoints: freshProbe.endpoints,
+            failures: freshProbe.errors,
+            warnings: freshProbe.warnings,
+          });
+        } else {
+          reasons.push(`external_rtsp_simulator_${freshProbe.status}`);
+          reasons.push(...freshProbe.errors.map((error) => `external_rtsp_simulator:${error}`));
+        }
+      } catch (error) {
+        reasons.push(`external_rtsp_simulator_preflight:${
+          error instanceof Error ? error.message : String(error)
+        }`);
+      }
+    }
+    if (mediaAvailable && ffmpeg && !forceNativeDiagnostic && !rtspAvailable) {
       try {
         this.internalRtsp = await createInternalRtspLoopback(
           this.input.workloadProfile.cameraGroups.map((group, index) => ({
@@ -880,6 +997,11 @@ export class OfflineCalibrationPipeline {
         const failedPublisher = this.publishers.find((publisher) => publisher.exitCode !== null);
         if (failedPublisher) throw new Error(`calibration_rtsp_publisher_exit_${failedPublisher.exitCode}`);
         rtspAvailable = true;
+        rtspEvidence = initialRtspEvidence({
+          mode: "internal_loopback",
+          qualified: false,
+          warnings: ["internal_loopback_is_diagnostic_only", "loopback_does_not_measure_physical_network_link"],
+        });
       } catch (error) {
         reasons.push(`rtsp_preflight:${error instanceof Error ? error.message : String(error)}`);
         await this.stopBackgroundProcesses();
@@ -887,8 +1009,13 @@ export class OfflineCalibrationPipeline {
         this.internalRtsp = null;
         this.rtspPort = null;
       }
-    } else if (genericNativeBenchmark) {
+    } else if (genericNativeBenchmark && !rtspAvailable) {
       rtspAvailable = true;
+      rtspEvidence = initialRtspEvidence({
+        mode: "generic_proxy",
+        qualified: false,
+        warnings: ["generic_proxy_is_not_a_functional_rtsp_certification"],
+      });
       reasons.push("rtsp_ingest_represented_by_internal_loopback_generator");
     }
     let gpuMediaBackend: CalibrationGpuMediaBackend = "unavailable";
@@ -1020,6 +1147,8 @@ export class OfflineCalibrationPipeline {
       contractVersion: CALIBRATION_PIPELINE_CONTRACT_VERSION,
       mediaAvailable,
       rtspAvailable,
+      rtspQualified,
+      rtspEvidence,
       localInferenceRequired,
       localInferenceAvailable,
       cpuInferenceAvailable,
@@ -1033,7 +1162,9 @@ export class OfflineCalibrationPipeline {
       ffmpegPath: forceNativeDiagnostic ? null : ffmpeg,
       ffprobePath: forceNativeDiagnostic ? null : ffprobe,
       mediamtxPath: null,
-      rtspOrigin: this.rtspPort ? `rtsp://127.0.0.1:${this.rtspPort}/calibration-0` : "rtsp://127.0.0.1:8554/calibration-0",
+      rtspOrigin: this.externalRtspSources[0]?.redactedOrigin ??
+        (this.rtspPort ? `rtsp://127.0.0.1:${this.rtspPort}/calibration-0`
+          : "rtsp://127.0.0.1:8554/calibration-0"),
       aiqOrigin: "http://127.0.0.1:8899",
       exactCameraGeneratorLimit: exactCameraGeneratorLimit(),
       genericNativeBenchmark,
@@ -1119,6 +1250,13 @@ export class OfflineCalibrationPipeline {
       }).finally(() => { diskCheckBusy = false; });
     }, this.input.diskCheckIntervalMs ?? 2_000);
     diskMonitor.unref?.();
+    const resources = new SystemResourceSampler();
+    const hardwareTelemetry = new CalibrationHardwareTelemetrySampler({
+      enabled: this.input.advancedTelemetry === true,
+      approvedProbePath: verifiedAssetPath(this.input.runtimeStatus, "telemetry-probe"),
+    });
+    resources.start(Math.max(50, Math.min(1_000, scaledSeconds * 1_000 / 10)));
+    hardwareTelemetry.start(Math.max(250, Math.min(1_000, scaledSeconds * 1_000 / 5)));
     const mediaPromise = mediaAvailable
       ? this.runMediaPipeline(
         scaledSeconds,
@@ -1131,6 +1269,12 @@ export class OfflineCalibrationPipeline {
       actualConcurrentPipelines: 0,
       mediaDeviceIds: [] as string[],
       fallbackCameraCount: 0,
+      rtspSessionsPlanned: 0,
+      rtspSessionsOpened: 0,
+      rtspSessionsCompleted: 0,
+      rtspPayloadBytes: 0,
+      rtspPayloadMbps: 0,
+      rtspOpenLatenciesMs: [] as number[],
       errors: [] as string[],
     });
     const databasePromise = this.runEquivalentRuntimeLoad(input.tier, scaledSeconds, groupAllocations);
@@ -1140,13 +1284,6 @@ export class OfflineCalibrationPipeline {
       : Promise.resolve({ successful: 0, attempted: 0, framesPacked: 0, maxConcurrentRequests: 0,
         latencies: [] as number[], errors: [] as string[],
         deviceInference: [] as NonNullable<PipelinePhaseMeasurement["deviceInference"]> });
-    const resources = new SystemResourceSampler();
-    const hardwareTelemetry = new CalibrationHardwareTelemetrySampler({
-      enabled: this.input.advancedTelemetry === true,
-      approvedProbePath: verifiedAssetPath(this.input.runtimeStatus, "telemetry-probe"),
-    });
-    resources.start(Math.max(50, Math.min(1_000, scaledSeconds * 1_000 / 10)));
-    hardwareTelemetry.start(Math.max(250, Math.min(1_000, scaledSeconds * 1_000 / 5)));
     let sampledResources: ReturnType<SystemResourceSampler["stop"]>;
     let media: Awaited<typeof mediaPromise>;
     let database: Awaited<typeof databasePromise>;
@@ -1274,8 +1411,15 @@ export class OfflineCalibrationPipeline {
       temporaryDiskReserveBytes: disk.reserveBytes,
       cpuUtilizationPercent: sampledResources.cpu,
       memoryUsedBytes: sampledResources.memory,
+      memoryWorkingSetDeltaBytes: sampledResources.peakMemoryDeltaBytes,
       hardwareTelemetry: sampledHardwareTelemetry,
-      rtspMeasured: this.summary.rtspAvailable,
+      rtspMeasured: this.summary.rtspAvailable && media.rtspSessionsCompleted > 0,
+      rtspSessionsPlanned: media.rtspSessionsPlanned,
+      rtspSessionsOpened: media.rtspSessionsOpened,
+      rtspSessionsCompleted: media.rtspSessionsCompleted,
+      rtspPayloadBytes: media.rtspPayloadBytes,
+      rtspPayloadMbps: media.rtspPayloadMbps,
+      rtspOpenLatencyP95Ms: percentile95(media.rtspOpenLatenciesMs),
       mediaMeasured: mediaAvailable,
       localInferenceMeasured: !this.summary.localInferenceRequired || inference.successful > 0,
       queueGrowthPerMinute: Math.max(database.queueGrowthPerMinute, inferenceQueueGrowthPerMinute),
@@ -1540,8 +1684,16 @@ export class OfflineCalibrationPipeline {
       temporaryDiskReserveBytes: context.diskReserveBytes,
       cpuUtilizationPercent: genericCpuUtilization,
       memoryUsedBytes: sampledResources.memory,
+      memoryWorkingSetDeltaBytes: sampledResources.peakMemoryDeltaBytes,
       hardwareTelemetry: sampledHardwareTelemetry,
-      rtspMeasured: Boolean(realMedia && this.summary.rtspAvailable),
+      rtspMeasured: Boolean(realMedia && this.summary.rtspAvailable &&
+        realMedia.rtspSessionsCompleted > 0),
+      rtspSessionsPlanned: realMedia?.rtspSessionsPlanned ?? 0,
+      rtspSessionsOpened: realMedia?.rtspSessionsOpened ?? 0,
+      rtspSessionsCompleted: realMedia?.rtspSessionsCompleted ?? 0,
+      rtspPayloadBytes: realMedia?.rtspPayloadBytes ?? 0,
+      rtspPayloadMbps: realMedia?.rtspPayloadMbps ?? 0,
+      rtspOpenLatencyP95Ms: percentile95(realMedia?.rtspOpenLatenciesMs ?? []),
       mediaMeasured: true,
       localInferenceMeasured: context.inferencePlan.requestsPlanned === 0 || inferencesAttempted > 0,
       queueGrowthPerMinute: Math.max(database.queueGrowthPerMinute,
@@ -1783,6 +1935,12 @@ export class OfflineCalibrationPipeline {
     actualConcurrentPipelines: number;
     mediaDeviceIds: string[];
     fallbackCameraCount: number;
+    rtspSessionsPlanned: number;
+    rtspSessionsOpened: number;
+    rtspSessionsCompleted: number;
+    rtspPayloadBytes: number;
+    rtspPayloadMbps: number;
+    rtspOpenLatenciesMs: number[];
     errors: string[];
   }> {
     const summary = this.summary;
@@ -1804,6 +1962,11 @@ export class OfflineCalibrationPipeline {
     const started = performance.now();
     const outcomes = await Promise.all(cameras.map(async ({ group, camera }) => {
       const profile = this.input.workloadProfile.cameraGroups[group]!;
+      const compatibleExternalSources = this.externalRtspSources.filter((source) =>
+        source.compatibleGroupIndexes.includes(group));
+      const externalSource = compatibleExternalSources.length > 0
+        ? compatibleExternalSources[(group + camera) % compatibleExternalSources.length]!
+        : null;
       const mediaDevice = mediaDevices.length > 0 ? mediaDevices[(group + camera) % mediaDevices.length]! : null;
       const videoCaptureRequired = profile.storage.storeVideo ||
         profile.agents.some((agent) => agent.inputType === "video");
@@ -1820,9 +1983,12 @@ export class OfflineCalibrationPipeline {
         : { inputArguments: [] as string[], encoderArguments: [] as string[] };
       const sourceArguments = [
         ...gpuDeviceArguments.inputArguments,
-        ...(this.summary?.rtspAvailable && this.rtspPort
-          ? ["-rtsp_transport", "tcp", "-i", `rtsp://127.0.0.1:${this.rtspPort}/calibration-${group}`]
-          : ["-stream_loop", "-1", "-i", files.sources[group]!]),
+        ...(externalSource
+          ? ["-rtsp_transport", "tcp", "-timeout", "3000000", "-i",
+            authenticatedRtspSimulatorOrigin(externalSource.port)]
+          : this.summary?.rtspAvailable && this.rtspPort
+            ? ["-rtsp_transport", "tcp", "-i", `rtsp://127.0.0.1:${this.rtspPort}/calibration-${group}`]
+            : ["-stream_loop", "-1", "-i", files.sources[group]!]),
       ];
       try {
         const command = calibrationMediaCommand({
@@ -1845,13 +2011,20 @@ export class OfflineCalibrationPipeline {
           outputs,
           mediaDeviceId: videoCaptureRequired ? mediaDevice?.id ?? null : null,
           fallbackUsed: false,
+          rtspSession: Boolean(externalSource || this.rtspPort),
+          payloadBytes: Math.round((externalSource?.payloadMbps ?? profile.bitrateMbps) *
+            1_000_000 / 8 * seconds),
+          openLatencyMs: externalSource?.openLatencyMs ?? null,
         };
       } catch (error) {
         if (videoCaptureRequired && computeMode === "gpu_accelerated" && mediaDevice) {
           try {
-            const fallbackSourceArguments = this.summary?.rtspAvailable && this.rtspPort
-              ? ["-rtsp_transport", "tcp", "-i", `rtsp://127.0.0.1:${this.rtspPort}/calibration-${group}`]
-              : ["-stream_loop", "-1", "-i", files.sources[group]!];
+            const fallbackSourceArguments = externalSource
+              ? ["-rtsp_transport", "tcp", "-timeout", "3000000", "-i",
+                authenticatedRtspSimulatorOrigin(externalSource.port)]
+              : this.summary?.rtspAvailable && this.rtspPort
+                ? ["-rtsp_transport", "tcp", "-i", `rtsp://127.0.0.1:${this.rtspPort}/calibration-${group}`]
+                : ["-stream_loop", "-1", "-i", files.sources[group]!];
             const fallbackCommand = calibrationMediaCommand({
               sourceArguments: fallbackSourceArguments,
               durationSeconds: seconds,
@@ -1876,6 +2049,10 @@ export class OfflineCalibrationPipeline {
               outputs,
               mediaDeviceId: null,
               fallbackUsed: true,
+              rtspSession: Boolean(externalSource || this.rtspPort),
+              payloadBytes: Math.round((externalSource?.payloadMbps ?? profile.bitrateMbps) *
+                1_000_000 / 8 * seconds),
+              openLatencyMs: externalSource?.openLatencyMs ?? null,
             };
           } catch {
             // The source and both encoding paths passed preflight. Failing only
@@ -1888,6 +2065,9 @@ export class OfflineCalibrationPipeline {
           outputKind: videoCaptureRequired ? "video_clip" as const : "frame_snapshot" as const,
           outputs, mediaDeviceId: mediaDevice?.id ?? null,
           fallbackUsed: false,
+          rtspSession: false,
+          payloadBytes: 0,
+          openLatencyMs: null,
           error: "media_concurrency_capacity_exhausted",
         };
       }
@@ -1911,6 +2091,7 @@ export class OfflineCalibrationPipeline {
     const framesEncoded = outcomes.reduce((sum, outcome) => sum + outcome.encodedFrames, 0);
     const framesExtracted = outcomes.reduce((sum, outcome) => sum + outcome.extractedFrames, 0) +
       (frameExtracted ? 1 : 0);
+    const rtspPayloadBytes = outcomes.reduce((sum, outcome) => sum + outcome.payloadBytes, 0);
     return {
       framesDecoded,
       framesEncoded,
@@ -1920,6 +2101,13 @@ export class OfflineCalibrationPipeline {
       mediaDeviceIds: [...new Set(outcomes.flatMap((outcome) =>
         outcome.cameraCount > 0 && outcome.mediaDeviceId ? [outcome.mediaDeviceId] : []))],
       fallbackCameraCount: outcomes.filter((outcome) => outcome.cameraCount > 0 && outcome.fallbackUsed).length,
+      rtspSessionsPlanned: summary.rtspAvailable ? cameras.length : 0,
+      rtspSessionsOpened: outcomes.filter((outcome) => outcome.rtspSession && outcome.cameraCount > 0).length,
+      rtspSessionsCompleted: outcomes.filter((outcome) => outcome.rtspSession && outcome.cameraCount > 0).length,
+      rtspPayloadBytes,
+      rtspPayloadMbps: seconds > 0 ? rtspPayloadBytes * 8 / seconds / 1_000_000 : 0,
+      rtspOpenLatenciesMs: outcomes.flatMap((outcome) =>
+        outcome.openLatencyMs === null ? [] : [outcome.openLatencyMs]),
       errors: [...outcomes.flatMap((outcome) => outcome.error ? [outcome.error.slice(0, 180)] : []), ...extractionErrors],
     };
   }
@@ -2156,7 +2344,9 @@ export class OfflineCalibrationPipeline {
       child.once("close", (code, signal) => {
         if (stopping) return;
         if (code === 0) finish();
-        else finish(new Error(`calibration_process_failed:${basename(command)}:${code ?? signal}:${stderr.slice(-500)}`));
+        else finish(new Error(sanitizeRtspDiagnostic(
+          `calibration_process_failed:${basename(command)}:${code ?? signal}:${stderr.slice(-500)}`,
+        )));
       });
       if (stdin !== null) child.stdin?.end(stdin);
     });
