@@ -161,6 +161,44 @@ describe("secure cross-platform autonomous calibration", () => {
     expect(await resolveCalibrationDirectory({ platform: "linux", home: "/home/test", env: { QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR: "/mnt/docs" } })).toBe("/mnt/docs/Qual Hardware/Calibracoes");
   });
 
+  it("uses platform-explicit resolution for explicit Windows document inputs", async () => {
+    await expect(resolveCalibrationDirectory({
+      platform: "win32",
+      documentsDirectory: "C:\\Users\\test\\Docs",
+      env: {},
+    })).resolves.toBe("C:\\Users\\test\\Docs\\Qual Hardware\\Calibracoes");
+
+    await expect(resolveCalibrationDirectory({
+      platform: "win32",
+      home: "C:\\Users\\test",
+      env: { QUAL_HARDWARE_CALIBRATION_DOCUMENTS_DIR: "D:\\Calibrations" },
+    })).resolves.toBe("D:\\Calibrations\\Qual Hardware\\Calibracoes");
+  });
+
+  it("bypasses shell Documents lookup when a Windows home path is injected", async () => {
+    vi.resetModules();
+    const execFileMock = vi.fn();
+    vi.doMock("node:child_process", async () => {
+      const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+      return { ...actual, execFile: execFileMock };
+    });
+    try {
+      const { resolveCalibrationDirectory: resolveWithMock } =
+        await import("../src/server/calibrationSessions.js");
+
+      await expect(resolveWithMock({
+        platform: "win32",
+        home: "C:\\Users\\test",
+        env: {},
+      })).resolves.toBe("C:\\Users\\test\\Documents\\Qual Hardware\\Calibracoes");
+
+      expect(execFileMock).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock("node:child_process");
+      vi.resetModules();
+    }
+  });
+
   it("uses the exact evidence directory supplied by the desktop application", async () => {
     expect(await resolveCalibrationDirectory({
       directory: "/Users/test/Library/Application Support/Qual Hardware/calibration-evidence",
