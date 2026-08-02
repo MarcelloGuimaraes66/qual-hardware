@@ -1,0 +1,4 @@
+interface:
+  display_name: "Qual Hardware System"
+  short_description: "Desenvolve e publica o Qual Hardware com segurança"
+  default_prompt: "Use $qual-hardware-system para trabalhar exclusivamente no Qual Hardware; para finalizar uma implementação grande, invoque também $qual-hardware-finalize-large-implementation."

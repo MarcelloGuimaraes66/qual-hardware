@@ -1,0 +1,4 @@
+interface:
+  display_name: "Finalizar Qual Hardware"
+  short_description: "Publica grandes mudanças do Qual Hardware"
+  default_prompt: "Use $qual-hardware-finalize-large-implementation com $qual-hardware-system para commitar, publicar e abrir o PR de uma implementação grande, apresentando os testes antes de pedir autorização para merge."
